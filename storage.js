@@ -100,6 +100,10 @@ const StorageService = {
     }
   },
 
+  async getAllNovels() {
+    return this.getManagedNovels();
+  },
+
   async getManagedNovels() {
     const db = await openDatabase();
     const isInitialized = await this._isDbInitialized();

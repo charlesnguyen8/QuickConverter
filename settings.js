@@ -618,17 +618,20 @@ async function loadStorageData() {
 
   try {
     const disk = await StorageService.getDiskUsage();
-    const novels = await StorageService.getAllNovels();
+    const getNovelsFn = StorageService.getManagedNovels || StorageService.getAllNovels;
+    const novels = getNovelsFn ? await getNovelsFn.call(StorageService) : [];
 
     if (novelCountEl) novelCountEl.textContent = novels.length.toString();
-    if (chapterCountEl) chapterCountEl.textContent = (disk.totalChapters || 0).toString();
+    if (chapterCountEl) chapterCountEl.textContent = (disk.totalDownloadedChapters || 0).toString();
 
-    if (usedDisplay) usedDisplay.textContent = `${disk.formattedUsage} used`;
-    if (quotaDisplay) quotaDisplay.textContent = `Quota: ~${disk.formattedQuota}`;
+    if (usedDisplay) usedDisplay.textContent = `${disk.formatted} used`;
+    if (quotaDisplay) quotaDisplay.textContent = `Quota: ~${disk.formattedQuota || '120 GB'}`;
 
     let percent = 0.01;
-    if (disk.quota && disk.quota > 0) {
-      percent = Math.max(0.01, (disk.usage / disk.quota) * 100);
+    if (disk.percentOfQuota) {
+      percent = Math.max(0.01, parseFloat(disk.percentOfQuota));
+    } else if (disk.quotaBytes && disk.quotaBytes > 0) {
+      percent = Math.max(0.01, (disk.bytes / disk.quotaBytes) * 100);
     }
 
     if (progressBar) {
