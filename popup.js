@@ -20,6 +20,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const popupNovelStats = document.getElementById('popup-novel-stats');
   const popupChapterCount = document.getElementById('popup-chapter-count');
   const popupChapterList = document.getElementById('popup-chapter-list');
+  const settingsBtn = document.getElementById('settings-btn');
+  const novelSettingsBtn = document.getElementById('novel-settings-btn');
+
+  // Settings button handlers (reserved for future functionality)
+  [settingsBtn, novelSettingsBtn].forEach((btn) => {
+    if (btn) {
+      btn.addEventListener('click', () => {
+        // Reserved for future settings view/modal
+      });
+    }
+  });
 
   // --- Novel & URL Detection Helpers ---
   function formatSlugToTitle(slug) {
