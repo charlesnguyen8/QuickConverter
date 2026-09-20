@@ -131,24 +131,46 @@ document.addEventListener('DOMContentLoaded', async () => {
       else readerMainEl.classList.add('max-w-3xl');
     }
 
-    // Apply Theme
-    if (theme === 'oled') {
+    // Apply Theme attribute and colors
+    document.body.setAttribute('data-theme', theme);
+
+    if (theme === 'sepia') {
+      document.body.style.backgroundColor = '#fbf0d9';
+      document.body.style.color = '#2d231b';
+      if (chapterBody) chapterBody.style.color = '#2d231b';
+      if (chapterMainTitle) chapterMainTitle.style.color = '#2d231b';
+      if (readerHeaderEl) {
+        readerHeaderEl.style.backgroundColor = 'rgba(251, 240, 217, 0.95)';
+        readerHeaderEl.style.borderColor = '#e5d5be';
+      }
+    } else if (theme === 'oled') {
       document.body.style.backgroundColor = '#000000';
       document.body.style.color = '#f4f4f5';
-      if (readerHeaderEl) readerHeaderEl.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
-    } else if (theme === 'sepia') {
-      document.body.style.backgroundColor = '#fbf0d9';
-      document.body.style.color = '#382a1d';
-      if (readerHeaderEl) readerHeaderEl.style.backgroundColor = 'rgba(251, 240, 217, 0.95)';
+      if (chapterBody) chapterBody.style.color = '#f4f4f5';
+      if (chapterMainTitle) chapterMainTitle.style.color = '#f4f4f5';
+      if (readerHeaderEl) {
+        readerHeaderEl.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
+        readerHeaderEl.style.borderColor = '#27272a';
+      }
     } else if (theme === 'forest') {
       document.body.style.backgroundColor = '#0d1712';
       document.body.style.color = '#e2f2e9';
-      if (readerHeaderEl) readerHeaderEl.style.backgroundColor = 'rgba(13, 23, 18, 0.95)';
+      if (chapterBody) chapterBody.style.color = '#e2f2e9';
+      if (chapterMainTitle) chapterMainTitle.style.color = '#e2f2e9';
+      if (readerHeaderEl) {
+        readerHeaderEl.style.backgroundColor = 'rgba(13, 23, 18, 0.95)';
+        readerHeaderEl.style.borderColor = '#1a3325';
+      }
     } else {
       // Default slate
       document.body.style.backgroundColor = '';
       document.body.style.color = '';
-      if (readerHeaderEl) readerHeaderEl.style.backgroundColor = '';
+      if (chapterBody) chapterBody.style.color = '#e2e8f0';
+      if (chapterMainTitle) chapterMainTitle.style.color = '#f8fafc';
+      if (readerHeaderEl) {
+        readerHeaderEl.style.backgroundColor = '';
+        readerHeaderEl.style.borderColor = '';
+      }
     }
   }
 
@@ -884,6 +906,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             pEl.addEventListener('blur', () => finishEditingParagraph(pBlock, true));
           });
+
+          // Ensure theme and typography are applied to newly rendered paragraphs
+          applyReaderPreferences();
         }
 
         const charCount = text.length;
