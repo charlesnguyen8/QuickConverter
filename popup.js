@@ -32,6 +32,93 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // --- DeepSeek Translation UI Wiring ---
+  function initDeepSeekUI() {
+    const toggleEl = document.getElementById('deepseek-toggle');
+    const badgeEl = document.getElementById('deepseek-toggle-badge');
+    const keyEl = document.getElementById('deepseek-api-key');
+    const promptEl = document.getElementById('deepseek-prompt');
+    const visibilityBtn = document.getElementById('toggle-key-visibility');
+    const fieldsEl = document.getElementById('deepseek-config-fields');
+
+    if (!toggleEl) return;
+
+    const DEFAULT_PROMPT = 'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
+
+    const getStored = (key, fallback) => {
+      try {
+        const val = localStorage.getItem(key);
+        return val !== null ? val : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    };
+
+    const setStored = (key, val) => {
+      try {
+        localStorage.setItem(key, val);
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set({ [key]: val });
+        }
+      } catch (e) {}
+    };
+
+    const isEnabled = getStored('quickconverter_deepseek_enabled', 'false') === 'true';
+    const savedKey = getStored('quickconverter_deepseek_key', '');
+    const savedPrompt = getStored('quickconverter_deepseek_prompt', DEFAULT_PROMPT);
+
+    toggleEl.checked = isEnabled;
+    if (keyEl) keyEl.value = savedKey;
+    if (promptEl) promptEl.value = savedPrompt;
+
+    function updateState(checked) {
+      if (badgeEl) {
+        if (checked) {
+          badgeEl.textContent = 'Active (Translates on Download)';
+          badgeEl.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+        } else {
+          badgeEl.textContent = 'Off (Save Raw)';
+          badgeEl.className = 'text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 border border-slate-600';
+        }
+      }
+      if (fieldsEl) {
+        fieldsEl.className = checked
+          ? 'flex flex-col gap-2 pt-2 border-t border-indigo-500/30 transition-all opacity-100'
+          : 'flex flex-col gap-2 pt-2 border-t border-slate-700/60 transition-all opacity-60';
+      }
+    }
+
+    updateState(isEnabled);
+
+    toggleEl.addEventListener('change', () => {
+      const checked = toggleEl.checked;
+      setStored('quickconverter_deepseek_enabled', checked ? 'true' : 'false');
+      updateState(checked);
+    });
+
+    if (keyEl) {
+      keyEl.addEventListener('input', () => {
+        setStored('quickconverter_deepseek_key', keyEl.value.trim());
+      });
+    }
+
+    if (promptEl) {
+      promptEl.addEventListener('input', () => {
+        setStored('quickconverter_deepseek_prompt', promptEl.value);
+      });
+    }
+
+    if (visibilityBtn && keyEl) {
+      visibilityBtn.addEventListener('click', () => {
+        const isPassword = keyEl.type === 'password';
+        keyEl.type = isPassword ? 'text' : 'password';
+        visibilityBtn.textContent = isPassword ? 'Hide' : 'Show';
+      });
+    }
+  }
+
+  initDeepSeekUI();
+
   // --- Novel & URL Detection Helpers ---
   function formatSlugToTitle(slug) {
     if (!slug) return '';
