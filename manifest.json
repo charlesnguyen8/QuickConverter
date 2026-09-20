@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "QuickConverter Chrome Extension",
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "views/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -12,11 +12,11 @@
     }
   },
   "options_ui": {
-    "page": "settings.html",
+    "page": "views/settings.html",
     "open_in_tab": true
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "scripts/background.js"
   },
   "permissions": [
     "tabs",
@@ -38,7 +38,7 @@
       "js": [
         "providers/wetriedtls.js",
         "providers/registry.js",
-        "content.js"
+        "scripts/content.js"
       ],
       "run_at": "document_idle"
     }
@@ -50,7 +50,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["fonts/*"],
+      "resources": ["fonts/*", "views/*"],
       "matches": ["<all_urls>"]
     }
   ]

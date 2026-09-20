@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       btn.addEventListener('click', () => {
         const settingsUrl =
           typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
-            ? chrome.runtime.getURL('settings.html')
+            ? chrome.runtime.getURL('views/settings.html')
             : 'settings.html';
         if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
           chrome.tabs.create({ url: settingsUrl });
@@ -546,7 +546,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         row.title = `Click to read ${chapter.title || 'Chapter ' + chNum}`;
         row.addEventListener('click', () => {
           const readerUrl = chrome.runtime && chrome.runtime.getURL
-            ? chrome.runtime.getURL(`reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(chNum)}`)
+            ? chrome.runtime.getURL(`views/reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(chNum)}`)
             : `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(chNum)}`;
           if (chrome.tabs && chrome.tabs.create) {
             chrome.tabs.create({ url: readerUrl });
@@ -994,7 +994,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (openLibraryBtn) {
     openLibraryBtn.addEventListener('click', () => {
-      const url = chrome.runtime && chrome.runtime.getURL ? chrome.runtime.getURL('library.html') : 'library.html';
+      const url = chrome.runtime && chrome.runtime.getURL ? chrome.runtime.getURL('views/library.html') : 'library.html';
       if (chrome.tabs && chrome.tabs.create) {
         chrome.tabs.create({ url });
       } else {
