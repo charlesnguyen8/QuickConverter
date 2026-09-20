@@ -565,11 +565,96 @@ const StorageService = {
     });
   },
 
+  formatBytes(bytes) {
+    if (bytes === null || bytes === undefined || isNaN(bytes) || bytes <= 0) return '0 B';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  },
+
   async getNovelDownloadStats(novelId, totalChapters = 100) {
     const chapters = await this.getNovelChapters(novelId);
+    let bytes = 0;
+    chapters.forEach((ch) => {
+      if (typeof ch.rawText === 'string') bytes += ch.rawText.length * 2;
+      if (typeof ch.originalRawText === 'string') bytes += ch.originalRawText.length * 2;
+      if (typeof ch.title === 'string') bytes += ch.title.length * 2;
+      bytes += 256;
+    });
+
     return {
       downloadedCount: chapters.length,
-      totalChapters: totalChapters
+      totalChapters: totalChapters,
+      bytes: bytes,
+      formattedSize: this.formatBytes(bytes)
+    };
+  },
+
+  /**
+   * Retrieves overall disk and IndexedDB storage usage for saved chapters.
+   * @returns {Promise<{ bytes: number, contentBytes: number, formatted: string, quotaBytes: number|null, formattedQuota: string|null, percentOfQuota: string|null, totalDownloadedChapters: number, novelBytesMap: object }>}
+   */
+  async getDiskUsage() {
+    let quota = null;
+    let usageBytes = null;
+    let estimateSuccess = false;
+
+    if (typeof navigator !== 'undefined' && navigator.storage && typeof navigator.storage.estimate === 'function') {
+      try {
+        const estimate = await navigator.storage.estimate();
+        if (estimate && typeof estimate.usage === 'number') {
+          usageBytes = estimate.usage;
+          quota = estimate.quota || null;
+          estimateSuccess = true;
+        }
+      } catch (e) {
+        console.warn('[StorageService] navigator.storage.estimate warning:', e);
+      }
+    }
+
+    const db = await openDatabase();
+    let contentBytes = 0;
+    let totalChapters = 0;
+    const novelBytesMap = {};
+
+    await new Promise((resolve) => {
+      const tx = db.transaction('chapters', 'readonly');
+      const store = tx.objectStore('chapters');
+      const req = store.openCursor();
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          totalChapters++;
+          const ch = cursor.value;
+          let chBytes = 0;
+          if (typeof ch.rawText === 'string') chBytes += ch.rawText.length * 2;
+          if (typeof ch.originalRawText === 'string') chBytes += ch.originalRawText.length * 2;
+          if (typeof ch.title === 'string') chBytes += ch.title.length * 2;
+          chBytes += 256;
+
+          contentBytes += chBytes;
+          const nid = ch.novelId || 'unknown';
+          novelBytesMap[nid] = (novelBytesMap[nid] || 0) + chBytes;
+          cursor.continue();
+        } else {
+          resolve();
+        }
+      };
+      req.onerror = () => resolve();
+    });
+
+    const effectiveBytes = (estimateSuccess && usageBytes !== null) ? usageBytes : contentBytes;
+
+    return {
+      bytes: effectiveBytes,
+      contentBytes: contentBytes,
+      formatted: this.formatBytes(effectiveBytes),
+      quotaBytes: quota,
+      formattedQuota: quota ? this.formatBytes(quota) : null,
+      percentOfQuota: (quota && quota > 0) ? ((effectiveBytes / quota) * 100).toFixed(2) : null,
+      totalDownloadedChapters: totalChapters,
+      novelBytesMap
     };
   },
 
@@ -698,4 +783,7 @@ if (typeof global !== 'undefined') {
 }
 if (typeof globalThis !== 'undefined') {
   globalThis.StorageService = StorageService;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = StorageService;
 }

@@ -1,6 +1,9 @@
 document.addEventListener('DOMContentLoaded', async () => {
   const gridEl = document.getElementById('library-grid');
   const statsEl = document.getElementById('library-stats');
+  const novelCountEl = document.getElementById('library-novel-count');
+  const diskTextEl = document.getElementById('library-disk-text');
+  const diskBadgeEl = document.getElementById('library-disk-badge');
 
   if (!window.StorageService) {
     console.error('StorageService not available');
@@ -10,8 +13,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     const novels = await window.StorageService.getManagedNovels();
 
-    if (statsEl) {
-      statsEl.textContent = `${novels.length} Novel${novels.length === 1 ? '' : 's'} Managed`;
+    // Fetch and display overall disk usage
+    if (typeof window.StorageService.getDiskUsage === 'function') {
+      try {
+        const diskUsage = await window.StorageService.getDiskUsage();
+        if (novelCountEl) {
+          novelCountEl.textContent = `${novels.length} Novel${novels.length === 1 ? '' : 's'} Managed`;
+        }
+        if (diskTextEl) {
+          diskTextEl.textContent = `Disk: ${diskUsage.formatted}`;
+        }
+        if (diskBadgeEl) {
+          const quotaStr = diskUsage.formattedQuota ? ` • Quota: ~${diskUsage.formattedQuota}` : '';
+          const pctStr = diskUsage.percentOfQuota ? ` (${diskUsage.percentOfQuota}%)` : '';
+          diskBadgeEl.title = `Browser Storage: ${diskUsage.formatted} used across ${diskUsage.totalDownloadedChapters} saved chapters${quotaStr}${pctStr}`;
+        }
+      } catch (diskErr) {
+        console.warn('Failed to calculate disk usage:', diskErr);
+        if (diskTextEl) diskTextEl.textContent = 'Disk: Available';
+      }
+    } else if (novelCountEl) {
+      novelCountEl.textContent = `${novels.length} Novel${novels.length === 1 ? '' : 's'} Managed`;
     }
 
     if (!gridEl) return;
@@ -38,6 +60,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const downloaded = stats.downloadedCount;
       const total = novel.totalChapters || stats.totalChapters || 100;
       const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
+      const formattedSize = stats.formattedSize || '0 B';
 
       const card = document.createElement('div');
       card.className = 'flex flex-col rounded-lg border border-slate-800 bg-slate-800/80 hover:border-indigo-500/60 hover:bg-slate-800 hover:shadow-md transition overflow-hidden shadow-sm group cursor-pointer';
@@ -92,8 +115,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
 
             <div class="flex items-center justify-between text-[11px] text-slate-400">
-              <span>Progress</span>
-              <span class="text-indigo-400 font-semibold">${percent}%</span>
+              <div class="flex items-center gap-1">
+                <span>Progress:</span>
+                <span class="text-indigo-400 font-semibold">${percent}%</span>
+              </div>
+              <span class="inline-flex items-center gap-1 text-[10px] font-mono text-slate-400 bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-700/50" title="Disk storage used by this novel">
+                <span>💾</span>
+                <span>${formattedSize}</span>
+              </span>
             </div>
           </div>
         </div>
