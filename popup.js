@@ -33,6 +33,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // --- DeepSeek Translation UI Wiring ---
+  let currentActiveNovel = null;
+  let updateNovelPromptUI = null;
+
   function initDeepSeekUI() {
     const toggleEl = document.getElementById('deepseek-toggle');
     const badgeEl = document.getElementById('deepseek-toggle-badge');
@@ -40,8 +43,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const promptEl = document.getElementById('deepseek-prompt');
     const visibilityBtn = document.getElementById('toggle-key-visibility');
     const fieldsEl = document.getElementById('deepseek-config-fields');
+    const editPromptBtn = document.getElementById('edit-prompt-btn');
 
     if (!toggleEl) return;
+
+    // Safety: Purge any previously saved API key from storage to ensure it is never stored on disk
+    try {
+      localStorage.removeItem('quickconverter_deepseek_key');
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.remove(['quickconverter_deepseek_key']);
+      }
+    } catch (e) {}
 
     const DEFAULT_PROMPT = 'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
@@ -64,12 +76,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const isEnabled = getStored('quickconverter_deepseek_enabled', 'false') === 'true';
-    const savedKey = getStored('quickconverter_deepseek_key', '');
-    const savedPrompt = getStored('quickconverter_deepseek_prompt', DEFAULT_PROMPT);
-
     toggleEl.checked = isEnabled;
-    if (keyEl) keyEl.value = savedKey;
-    if (promptEl) promptEl.value = savedPrompt;
 
     function updateState(checked) {
       if (badgeEl) {
@@ -96,23 +103,60 @@ document.addEventListener('DOMContentLoaded', async () => {
       updateState(checked);
     });
 
-    if (keyEl) {
-      keyEl.addEventListener('input', () => {
-        setStored('quickconverter_deepseek_key', keyEl.value.trim());
-      });
-    }
-
-    if (promptEl) {
-      promptEl.addEventListener('input', () => {
-        setStored('quickconverter_deepseek_prompt', promptEl.value);
-      });
-    }
+    // API Key: strictly in-memory during session (NOT persisted to storage/disk)
 
     if (visibilityBtn && keyEl) {
       visibilityBtn.addEventListener('click', () => {
         const isPassword = keyEl.type === 'password';
         keyEl.type = isPassword ? 'text' : 'password';
         visibilityBtn.textContent = isPassword ? 'Hide' : 'Show';
+      });
+    }
+
+    // Translation Prompt: saved per novel with Edit button
+    let isEditingPrompt = false;
+
+    updateNovelPromptUI = (novel) => {
+      if (!promptEl) return;
+      promptEl.value = (novel && novel.translationPrompt) ? novel.translationPrompt : DEFAULT_PROMPT;
+      promptEl.readOnly = true;
+      promptEl.className = 'w-full px-2.5 py-1.5 text-xs bg-slate-900/90 border border-slate-700 rounded-md text-slate-300 placeholder-slate-500 focus:outline-none transition resize-none leading-relaxed cursor-default';
+      if (editPromptBtn) {
+        editPromptBtn.textContent = 'Edit';
+        editPromptBtn.className = 'text-[10px] font-medium text-indigo-400 hover:text-indigo-300 transition cursor-pointer px-1.5 py-0.5 rounded hover:bg-slate-700/60';
+      }
+      isEditingPrompt = false;
+    };
+
+    if (editPromptBtn && promptEl) {
+      editPromptBtn.addEventListener('click', async () => {
+        if (!currentActiveNovel) return;
+
+        if (isEditingPrompt) {
+          // Save prompt to novel record in IndexedDB
+          const updatedPrompt = promptEl.value.trim() || DEFAULT_PROMPT;
+          currentActiveNovel.translationPrompt = updatedPrompt;
+          await window.StorageService.updateNovel(currentActiveNovel.id, { translationPrompt: updatedPrompt });
+
+          promptEl.readOnly = true;
+          promptEl.className = 'w-full px-2.5 py-1.5 text-xs bg-slate-900/90 border border-slate-700 rounded-md text-slate-300 placeholder-slate-500 focus:outline-none transition resize-none leading-relaxed cursor-default';
+          editPromptBtn.textContent = 'Saved ✓';
+          editPromptBtn.className = 'text-[10px] font-semibold text-emerald-400 px-1.5 py-0.5 rounded';
+          setTimeout(() => {
+            editPromptBtn.textContent = 'Edit';
+            editPromptBtn.className = 'text-[10px] font-medium text-indigo-400 hover:text-indigo-300 transition cursor-pointer px-1.5 py-0.5 rounded hover:bg-slate-700/60';
+          }, 1500);
+          isEditingPrompt = false;
+        } else {
+          // Enter edit mode
+          isEditingPrompt = true;
+          promptEl.readOnly = false;
+          promptEl.className = 'w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-indigo-500 rounded-md text-slate-100 placeholder-slate-500 focus:outline-none ring-1 ring-indigo-500/50 transition resize-none leading-relaxed';
+          promptEl.focus();
+          promptEl.setSelectionRange(promptEl.value.length, promptEl.value.length);
+          editPromptBtn.textContent = 'Save';
+          editPromptBtn.className = 'text-[10px] font-semibold text-white bg-indigo-600 hover:bg-indigo-500 transition cursor-pointer px-2 py-0.5 rounded shadow-sm';
+        }
       });
     }
   }
@@ -206,6 +250,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (popupNovelThumb) {
       popupNovelThumb.src = novel.thumbnail || 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp';
       popupNovelThumb.alt = novel.title;
+    }
+
+    // Populate Novel Translation Prompt
+    currentActiveNovel = novel;
+    if (typeof updateNovelPromptUI === 'function') {
+      updateNovelPromptUI(currentActiveNovel);
     }
 
     // Load and render chapters
