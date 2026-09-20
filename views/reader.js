@@ -746,9 +746,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- DeepSeek Pre-Download UI for Reader ---
     let readerBalanceTracker = null;
 
-    function initReaderDeepSeekUI(novelRecord) {
+    async function initReaderDeepSeekUI(novelRecord) {
       const toggleEl = document.getElementById('reader-deepseek-toggle');
       const badgeEl = document.getElementById('reader-deepseek-toggle-badge');
+      const providerBadgeEl = document.getElementById('reader-provider-badge');
       const keyEl = document.getElementById('reader-deepseek-api-key');
       const rememberKeyEl = document.getElementById('reader-remember-deepseek-key');
       const clearKeyBtn = document.getElementById('reader-clear-deepseek-btn');
@@ -771,8 +772,38 @@ document.addEventListener('DOMContentLoaded', async () => {
       const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
         (typeof DeepSeekService !== 'undefined' && DeepSeekService);
 
+      // Fetch active AI provider configuration
+      let providerConfig = { provider: 'official', baseUrl: 'http://127.0.0.1:8000/v1' };
+      if (deepseek && typeof deepseek.getProviderConfig === 'function') {
+        try {
+          providerConfig = await deepseek.getProviderConfig();
+        } catch (e) {
+          console.warn('[reader.js] Could not load provider config:', e);
+        }
+      }
+
+      const isLocalBridge = providerConfig.provider === (deepseek ? deepseek.PROVIDER_LOCAL_BRIDGE : 'local_bridge');
+
+      // Update provider badge
+      if (providerBadgeEl) {
+        if (isLocalBridge) {
+          providerBadgeEl.textContent = 'Local Bridge (Free)';
+          providerBadgeEl.className = 'text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/30';
+          providerBadgeEl.title = `Connected to local bridge at ${providerConfig.baseUrl || 'http://127.0.0.1:8000/v1'}`;
+        } else {
+          providerBadgeEl.textContent = 'Official API';
+          providerBadgeEl.className = 'text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+          providerBadgeEl.title = 'Using official api.deepseek.com';
+        }
+      }
+
       const updateBalanceUI = (balanceInfo, isUpdating) => {
         if (!balanceBadgeEl) return;
+        if (isLocalBridge) {
+          balanceBadgeEl.classList.add('hidden');
+          balanceBadgeEl.classList.remove('inline-flex');
+          return;
+        }
         if (refreshBalanceIcon) {
           refreshBalanceIcon.classList.toggle('animate-spin', !!isUpdating);
         }
@@ -811,7 +842,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       };
 
-      if (deepseek && typeof deepseek.createBalanceTracker === 'function') {
+      if (!isLocalBridge && deepseek && typeof deepseek.createBalanceTracker === 'function') {
         readerBalanceTracker = deepseek.createBalanceTracker(
           () => (keyEl ? keyEl.value.trim() : ''),
           updateBalanceUI
@@ -838,6 +869,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         deepseek.getApiKey().then(({ apiKey, remembered }) => {
           if (keyEl && apiKey) {
             keyEl.value = apiKey;
+          } else if (keyEl && isLocalBridge && !keyEl.value) {
+            keyEl.placeholder = 'sk-local (Free Bridge)';
           }
           if (rememberKeyEl) {
             rememberKeyEl.checked = !!remembered;
@@ -898,11 +931,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       const pricingBadgeEl = document.getElementById('reader-deepseek-pricing-badge');
-      if (pricingBadgeEl && deepseek && typeof deepseek.getPricingStatus === 'function') {
-        const pStatus = deepseek.getPricingStatus();
-        pricingBadgeEl.textContent = pStatus.label;
-        pricingBadgeEl.className = `text-[10px] font-semibold px-1.5 py-0.5 rounded border ${pStatus.badgeClass}`;
-        pricingBadgeEl.title = `${pStatus.windowDesc} • Auto-applied UTC Schedule`;
+      if (pricingBadgeEl) {
+        if (isLocalBridge) {
+          pricingBadgeEl.textContent = '100% Free (Bridge)';
+          pricingBadgeEl.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded border border-purple-500/30 bg-purple-500/15 text-purple-300';
+          pricingBadgeEl.title = 'Local Web Bridge translation costs zero credits';
+        } else if (deepseek && typeof deepseek.getPricingStatus === 'function') {
+          const pStatus = deepseek.getPricingStatus();
+          pricingBadgeEl.textContent = pStatus.label;
+          pricingBadgeEl.className = `text-[10px] font-semibold px-1.5 py-0.5 rounded border ${pStatus.badgeClass}`;
+          pricingBadgeEl.title = `${pStatus.windowDesc} • Auto-applied UTC Schedule`;
+        }
       }
 
       const DEFAULT_PROMPT = 'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
@@ -968,14 +1007,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       }
 
-      // "Test Key" button click handler
-      if (testBtn && keyEl && testStatusEl) {
+      // "Test Key" / "Test Connection" button click handler
+      if (testBtn && testStatusEl) {
+        if (isLocalBridge) {
+          testBtn.textContent = 'Test Bridge';
+        }
         testBtn.addEventListener('click', async () => {
-          const key = keyEl.value.trim();
-          if (!key) {
+          const key = keyEl ? keyEl.value.trim() : '';
+          if (!isLocalBridge && !key) {
             testStatusEl.className = 'text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-md block mt-1';
             testStatusEl.textContent = 'Please enter an API key to test.';
-            keyEl.focus();
+            if (keyEl) keyEl.focus();
             return;
           }
 
@@ -986,7 +1028,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
             </svg>
-            <span>Testing connection & fetching models...</span>
+            <span>Connecting to ${isLocalBridge ? 'local bridge' : 'DeepSeek API'}...</span>
           `;
 
           try {
@@ -994,7 +1036,11 @@ document.addEventListener('DOMContentLoaded', async () => {
               throw new Error('DeepSeekService not loaded');
             }
 
-            const res = await deepseek.testConnection(key);
+            const res = await deepseek.testConnection(key, {
+              provider: providerConfig.provider,
+              baseUrl: providerConfig.baseUrl
+            });
+
             if (res.success) {
               const currentSelected = (modelSelectEl && modelSelectEl.value) || savedModel;
               if (modelSelectEl && Array.isArray(res.models) && res.models.length > 0) {
@@ -1002,7 +1048,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 res.models.forEach((mId) => {
                   const opt = document.createElement('option');
                   opt.value = mId;
-                  opt.textContent = mId + (mId === 'deepseek-flash' ? ' (V4.1-Flash • Fast)' : (mId === 'deepseek-chat' ? ' (V3 • Standard)' : ''));
+                  let label = mId;
+                  if (mId === 'deepseek-flash') label += ' (V4.1-Flash • Fast)';
+                  else if (mId === 'deepseek-chat') label += ' (V3 • Standard)';
+                  else if (mId === 'deepseek-reasoner') label += ' (R1 • DeepThink)';
+                  opt.textContent = label;
                   if (mId === currentSelected || (!currentSelected && mId === 'deepseek-flash')) {
                     opt.selected = true;
                   }
@@ -1010,7 +1060,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
               }
 
-              const balStr = res.balance ? ` • Balance: ${res.balance.totalBalance === 'Available' ? 'Available' : '$' + res.balance.totalBalance}` : '';
+              const balStr = isLocalBridge ? ' • 100% Free' : (res.balance ? ` • Balance: ${res.balance.totalBalance === 'Available' ? 'Available' : '$' + res.balance.totalBalance}` : '');
               testStatusEl.className = 'text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5 rounded-md block mt-1';
               testStatusEl.textContent = `✓ Connected (${(res.models || []).length} models ready${balStr})`;
             } else {
@@ -1195,7 +1245,28 @@ document.addEventListener('DOMContentLoaded', async () => {
           sourceDrawerCostCard.classList.add('hidden');
         }
 
-        if ((chapter.originalRawText && chapter.originalRawText.trim() !== text.trim()) || chapter.translationCost) {
+        // Handle DeepSeek Reasoner (R1) chain-of-thought drawer section
+        const reasoningContainer = document.getElementById('source-reasoning-container');
+        const reasoningHeader = document.getElementById('source-reasoning-header');
+        const reasoningContent = document.getElementById('source-reasoning-content');
+        const reasoningToggleIcon = document.getElementById('source-reasoning-toggle-icon');
+
+        if (chapter.reasoningText && reasoningContainer && reasoningContent) {
+          reasoningContainer.classList.remove('hidden');
+          reasoningContent.textContent = chapter.reasoningText;
+          if (reasoningHeader && !reasoningHeader.dataset.wired) {
+            reasoningHeader.dataset.wired = 'true';
+            reasoningHeader.addEventListener('click', () => {
+              const isCollapsed = reasoningContent.classList.contains('hidden');
+              reasoningContent.classList.toggle('hidden', !isCollapsed);
+              if (reasoningToggleIcon) reasoningToggleIcon.textContent = isCollapsed ? '▼' : '►';
+            });
+          }
+        } else if (reasoningContainer) {
+          reasoningContainer.classList.add('hidden');
+        }
+
+        if ((chapter.originalRawText && chapter.originalRawText.trim() !== text.trim()) || chapter.translationCost || chapter.reasoningText) {
           if (toggleSourceDrawerBtn) toggleSourceDrawerBtn.classList.remove('hidden');
           if (sourceDrawerText) sourceDrawerText.textContent = chapter.originalRawText || 'No separate raw source text stored.';
         } else {
@@ -1224,10 +1295,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             let apiKey = keyEl ? keyEl.value.trim() : '';
             const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
 
+            const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+              (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+            let curProvConfig = { provider: 'official' };
+            if (deepseek && typeof deepseek.getProviderConfig === 'function') {
+              try {
+                curProvConfig = await deepseek.getProviderConfig();
+              } catch (e) {}
+            }
+            const isBridgeMode = curProvConfig.provider === (deepseek ? deepseek.PROVIDER_LOCAL_BRIDGE : 'local_bridge');
+
             if (isTranslationEnabled && !apiKey) {
-              const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
-                (typeof DeepSeekService !== 'undefined' && DeepSeekService);
-              if (deepseek && typeof deepseek.getApiKey === 'function') {
+              if (isBridgeMode) {
+                apiKey = 'sk-local';
+              } else if (deepseek && typeof deepseek.getApiKey === 'function') {
                 try {
                   const stored = await deepseek.getApiKey();
                   if (stored && stored.apiKey) {
@@ -1240,7 +1322,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
             }
 
-            if (isTranslationEnabled && !apiKey) {
+            if (isTranslationEnabled && !apiKey && !isBridgeMode) {
               if (keyEl) {
                 keyEl.focus();
                 keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');

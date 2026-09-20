@@ -9,7 +9,8 @@ const testFiles = [
   'typography.test.js',
   'settings.test.js',
   'reader.test.js',
-  'deepseek.test.js'
+  'deepseek.test.js',
+  'bridge.test.js'
 ];
 
 let allPassed = true;

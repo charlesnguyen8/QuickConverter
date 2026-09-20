@@ -27,7 +27,9 @@
     "*://wetriedtls.com/*",
     "*://www.wetriedtls.com/*",
     "*://*.wetriedtls.com/*",
-    "https://api.deepseek.com/*"
+    "https://api.deepseek.com/*",
+    "http://127.0.0.1:*/*",
+    "http://localhost:*/*"
   ],
   "content_scripts": [
     {

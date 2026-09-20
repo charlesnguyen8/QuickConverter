@@ -2,17 +2,101 @@
 // Integrates DeepSeek's OpenAI-compatible completions, models discovery, and balance health endpoints.
 
 (function (global) {
-  const BASE_URL = 'https://api.deepseek.com';
+  const OFFICIAL_BASE_URL = 'https://api.deepseek.com';
+  const LOCAL_BRIDGE_DEFAULT_URL = 'http://127.0.0.1:8000/v1';
+  const DEFAULT_LOCAL_KEY = 'sk-local';
+  const PROVIDER_OFFICIAL = 'official';
+  const PROVIDER_LOCAL_BRIDGE = 'local_bridge';
+  const PROVIDER_CUSTOM = 'custom';
   const DEFAULT_MODEL = 'deepseek-flash';
-  const REQUEST_TIMEOUT_MS = 90000; // 90 seconds for large chapters
+  const REQUEST_TIMEOUT_MS = 90000; // 90 seconds for official API
+  const BRIDGE_TIMEOUT_MS = 180000; // 180 seconds for local bridge with DeepThink R1
 
   // In-memory balance cache for debounce (15 seconds)
   let _balanceCache = null;
   const BALANCE_CACHE_TTL_MS = 15000;
 
   const DeepSeekService = {
-    BASE_URL,
+    BASE_URL: OFFICIAL_BASE_URL,
+    OFFICIAL_BASE_URL,
+    LOCAL_BRIDGE_DEFAULT_URL,
+    DEFAULT_LOCAL_KEY,
+    PROVIDER_OFFICIAL,
+    PROVIDER_LOCAL_BRIDGE,
+    PROVIDER_CUSTOM,
     DEFAULT_MODEL,
+    REQUEST_TIMEOUT_MS,
+    BRIDGE_TIMEOUT_MS,
+
+    /**
+     * Resolves currently active AI provider and endpoint configuration.
+     * @returns {Promise<{ provider: string, baseUrl: string, isLocalBridge: boolean, isCustom: boolean }>}
+     */
+    async getProviderConfig() {
+      let provider = PROVIDER_OFFICIAL;
+      let bridgeUrl = LOCAL_BRIDGE_DEFAULT_URL;
+      let customUrl = '';
+
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        try {
+          const r = await new Promise((resolve) => {
+            chrome.storage.local.get(
+              ['quickconverter_ai_provider', 'quickconverter_ai_bridge_url', 'quickconverter_ai_custom_url'],
+              (res) => resolve(res || {})
+            );
+          });
+          if (r.quickconverter_ai_provider) provider = r.quickconverter_ai_provider;
+          if (r.quickconverter_ai_bridge_url) bridgeUrl = r.quickconverter_ai_bridge_url;
+          if (r.quickconverter_ai_custom_url) customUrl = r.quickconverter_ai_custom_url;
+        } catch (e) {}
+      }
+
+      if (typeof localStorage !== 'undefined') {
+        const storedProv = localStorage.getItem('quickconverter_ai_provider');
+        if (storedProv) provider = storedProv;
+        const storedBridge = localStorage.getItem('quickconverter_ai_bridge_url');
+        if (storedBridge) bridgeUrl = storedBridge;
+        const storedCustom = localStorage.getItem('quickconverter_ai_custom_url');
+        if (storedCustom) customUrl = storedCustom;
+      }
+
+      let baseUrl = OFFICIAL_BASE_URL;
+      if (provider === PROVIDER_LOCAL_BRIDGE) {
+        baseUrl = bridgeUrl || LOCAL_BRIDGE_DEFAULT_URL;
+      } else if (provider === PROVIDER_CUSTOM) {
+        baseUrl = customUrl || bridgeUrl || OFFICIAL_BASE_URL;
+      }
+
+      return {
+        provider,
+        baseUrl: baseUrl.replace(/\/+$/, ''),
+        isLocalBridge: provider === PROVIDER_LOCAL_BRIDGE,
+        isCustom: provider === PROVIDER_CUSTOM
+      };
+    },
+
+    /**
+     * Sets and persists the AI provider configuration.
+     * @param {object} config
+     * @param {string} [config.provider]
+     * @param {string} [config.bridgeUrl]
+     * @param {string} [config.customUrl]
+     */
+    async setProviderConfig({ provider, bridgeUrl, customUrl }) {
+      const updates = {};
+      if (provider) updates.quickconverter_ai_provider = provider;
+      if (bridgeUrl !== undefined) updates.quickconverter_ai_bridge_url = bridgeUrl;
+      if (customUrl !== undefined) updates.quickconverter_ai_custom_url = customUrl;
+
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        await new Promise((resolve) => chrome.storage.local.set(updates, () => resolve()));
+      }
+      if (typeof localStorage !== 'undefined') {
+        if (provider) localStorage.setItem('quickconverter_ai_provider', provider);
+        if (bridgeUrl !== undefined) localStorage.setItem('quickconverter_ai_bridge_url', bridgeUrl);
+        if (customUrl !== undefined) localStorage.setItem('quickconverter_ai_custom_url', customUrl);
+      }
+    },
 
     /**
      * Retrieves account balance for the given DeepSeek API key.
@@ -231,41 +315,61 @@
 
     /**
      * Test API Key, check account balance, and retrieve live models roster.
+     * Supports both official DeepSeek API and local/custom OpenAI-compatible endpoints.
      * @param {string} apiKey 
-     * @returns {Promise<{ success: boolean, models?: string[], balance?: object, error?: string }>}
+     * @param {object} [options]
+     * @param {string} [options.provider]
+     * @param {string} [options.baseUrl]
+     * @returns {Promise<{ success: boolean, models?: string[], balance?: object, isLocalBridge?: boolean, provider?: string, baseUrl?: string, error?: string }>}
      */
-    async testConnection(apiKey) {
-      const cleanKey = (apiKey || '').trim();
-      if (!cleanKey) {
+    async testConnection(apiKey, options = {}) {
+      const provConfig = await this.getProviderConfig();
+      const activeProvider = options.provider || provConfig.provider;
+      const targetBaseUrl = (options.baseUrl || provConfig.baseUrl).replace(/\/+$/, '');
+      const isBridge = activeProvider === PROVIDER_LOCAL_BRIDGE || targetBaseUrl.includes('127.0.0.1:8000') || targetBaseUrl.includes('localhost:8000');
+
+      const cleanKey = (apiKey || (isBridge ? DEFAULT_LOCAL_KEY : '')).trim();
+      if (!cleanKey && !isBridge) {
         return { success: false, error: 'API key is required' };
       }
 
       try {
         const headers = {
-          'Authorization': `Bearer ${cleanKey}`,
+          'Authorization': `Bearer ${cleanKey || DEFAULT_LOCAL_KEY}`,
           'Accept': 'application/json'
         };
 
-        // 1. Fetch available models roster
-        const modelsRes = await fetch(`${BASE_URL}/models`, {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+        // 1. Fetch available models roster (OpenAI-compatible /models endpoint)
+        const modelsRes = await fetch(`${targetBaseUrl}/models`, {
           method: 'GET',
-          headers
+          headers,
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         if (!modelsRes.ok) {
           if (modelsRes.status === 401) {
-            return { success: false, error: 'Invalid DeepSeek API Key (401 Unauthorized)' };
+            return { success: false, error: 'Invalid API Key (401 Unauthorized)' };
           }
           if (modelsRes.status === 402) {
-            return { success: false, error: 'DeepSeek account has insufficient balance / payment required (402)' };
+            return { success: false, error: 'Account has insufficient balance / payment required (402)' };
+          }
+          if (modelsRes.status === 502) {
+            return { success: false, error: 'Local Bridge: Chromium automation browser is disconnected (502)' };
+          }
+          if (modelsRes.status === 503) {
+            return { success: false, error: 'Local Bridge: Cloudflare challenge required in browser (503)' };
           }
           let errMsg = `HTTP error ${modelsRes.status}`;
-          if (typeof modelsRes.json === 'function') {
-            const errData = await modelsRes.json().catch(() => ({}));
+          try {
+            const errData = await modelsRes.json();
             if (errData && errData.error && errData.error.message) {
               errMsg = errData.error.message;
             }
-          }
+          } catch (e) {}
           return { success: false, error: errMsg };
         }
 
@@ -275,7 +379,27 @@
           modelsList = modelsData.data.map((m) => m.id);
         }
 
-        // 2. Fetch user balance via getBalance (force refresh)
+        if (isBridge) {
+          return {
+            success: true,
+            isLocalBridge: true,
+            provider: PROVIDER_LOCAL_BRIDGE,
+            baseUrl: targetBaseUrl,
+            models: modelsList.length > 0 ? modelsList : ['deepseek-chat', 'deepseek-reasoner'],
+            balance: {
+              success: true,
+              totalBalance: 'Available',
+              numericBalance: 999999,
+              currency: 'USD',
+              formatted: 'Free (Local Bridge)',
+              compact: 'Free (Bridge)',
+              isAvailable: true,
+              isLow: false
+            }
+          };
+        }
+
+        // 2. Fetch user balance via getBalance for Official API
         let balanceInfo = null;
         try {
           const bRes = await this.getBalance(cleanKey, { force: true });
@@ -288,42 +412,66 @@
 
         return {
           success: true,
+          isLocalBridge: false,
+          provider: activeProvider,
+          baseUrl: targetBaseUrl,
           models: modelsList.length > 0 ? modelsList : [DEFAULT_MODEL, 'deepseek-chat'],
           balance: balanceInfo
         };
       } catch (err) {
+        let msg = err.name === 'AbortError' ? 'Connection timed out' : (err.message || 'Network request failed');
+        if (isBridge && (msg.includes('Failed to fetch') || msg.includes('ECONNREFUSED'))) {
+          msg = `Could not connect to Local Bridge at ${targetBaseUrl}. Is the bridge server running?`;
+        }
         return {
           success: false,
-          error: err.name === 'AbortError' ? 'Connection timed out' : (err.message || 'Network request failed')
+          error: msg
         };
       }
     },
 
     /**
      * Translates chapter text using DeepSeek completions endpoint.
+     * Supports both official API and local bridge (with reasoning_content extraction).
      * @param {object} params
-     * @param {string} params.apiKey
+     * @param {string} [params.apiKey]
      * @param {string} params.prompt
      * @param {string} params.rawText
      * @param {string} [params.model='deepseek-flash']
      * @param {number} [params.temperature=0.7]
-     * @returns {Promise<{ translatedText: string, modelUsed: string, usage?: object }>}
+     * @param {string} [params.provider]
+     * @param {string} [params.baseUrl]
+     * @returns {Promise<{ translatedText: string, reasoningText?: string, modelUsed: string, usage?: object, costInfo?: object, isLocalBridge: boolean }>}
      */
-    async translateChapter({ apiKey, prompt, rawText, model = DEFAULT_MODEL, temperature = 0.7 }) {
-      const cleanKey = (apiKey || '').trim();
+    async translateChapter({ apiKey, prompt, rawText, model = DEFAULT_MODEL, temperature = 0.7, provider, baseUrl }) {
+      const provConfig = await this.getProviderConfig();
+      const activeProvider = provider || provConfig.provider;
+      const effectiveBaseUrl = (baseUrl || provConfig.baseUrl).replace(/\/+$/, '');
+      const isBridge = activeProvider === PROVIDER_LOCAL_BRIDGE || effectiveBaseUrl.includes('127.0.0.1:8000') || effectiveBaseUrl.includes('localhost:8000');
+
+      let cleanKey = (apiKey || '').trim();
       if (!cleanKey) {
-        throw new Error('DeepSeek API Key is missing. Please enter your API key.');
+        if (isBridge) {
+          cleanKey = DEFAULT_LOCAL_KEY;
+        } else {
+          throw new Error('DeepSeek API Key is missing. Please enter your API key.');
+        }
       }
       if (!rawText || !rawText.trim()) {
         throw new Error('Chapter text to translate is empty.');
       }
 
-      const activeModel = (model || '').trim() || DEFAULT_MODEL;
+      let activeModel = (model || '').trim();
+      if (!activeModel) {
+        activeModel = isBridge ? 'deepseek-chat' : DEFAULT_MODEL;
+      }
+
       const systemPrompt = (prompt || '').trim() ||
         'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
+      const timeoutMs = (isBridge || activeModel.includes('reasoner') || activeModel.includes('r1')) ? BRIDGE_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
         const payload = {
@@ -336,7 +484,7 @@
           temperature: typeof temperature === 'number' ? temperature : 0.7
         };
 
-        const res = await fetch(`${BASE_URL}/chat/completions`, {
+        const res = await fetch(`${effectiveBaseUrl}/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -351,43 +499,67 @@
 
         if (!res.ok) {
           if (res.status === 401) {
-            throw new Error('Invalid DeepSeek API key. Please check your key.');
+            throw new Error('Invalid API key. Please check your key.');
           } else if (res.status === 402) {
-            throw new Error('Insufficient DeepSeek account balance. Please top up your credits.');
+            throw new Error('Insufficient account balance. Please top up your credits.');
           } else if (res.status === 429) {
-            throw new Error('DeepSeek rate limit exceeded. Please wait a moment before trying again.');
+            throw new Error('Rate limit exceeded. Please wait a moment before trying again.');
+          } else if (res.status === 502) {
+            throw new Error('Local Bridge: Chromium automation browser is disconnected (502). Please reopen the bridge browser.');
+          } else if (res.status === 503) {
+            throw new Error('Local Bridge: Cloudflare challenge required in browser (503). Please complete verification in Chromium.');
           }
 
           let errMsg = `HTTP Error ${res.status}`;
-          if (typeof res.json === 'function') {
-            const errData = await res.json().catch(() => ({}));
+          try {
+            const errData = await res.json();
             if (errData && errData.error && errData.error.message) {
               errMsg = errData.error.message;
             }
-          }
-          throw new Error(`DeepSeek API error (${res.status}): ${errMsg}`);
+          } catch (e) {}
+          throw new Error(`AI API error (${res.status}): ${errMsg}`);
         }
 
         const data = await res.json();
         const choice = data.choices && data.choices[0];
         const content = choice && choice.message && choice.message.content;
+        const reasoningContent = choice && choice.message && choice.message.reasoning_content;
 
         if (!content || !content.trim()) {
-          throw new Error('DeepSeek API returned an empty translation response.');
+          throw new Error('AI API returned an empty translation response.');
         }
 
-        const costInfo = this.calculateCost(data.usage, activeModel);
+        let costInfo;
+        if (isBridge) {
+          costInfo = {
+            costUSD: 0,
+            formattedCost: 'Free (Local Bridge)',
+            modelUsed: activeModel,
+            isPeak: false,
+            ratePeriod: 'Local Bridge (Free)',
+            discountPercent: 100,
+            promptTokens: data.usage?.prompt_tokens || 0,
+            completionTokens: data.usage?.completion_tokens || 0,
+            totalTokens: data.usage?.total_tokens || 0,
+            isLocalBridge: true,
+            calculatedAt: Date.now()
+          };
+        } else {
+          costInfo = this.calculateCost(data.usage, activeModel);
+        }
 
         return {
           translatedText: content.trim(),
+          reasoningText: reasoningContent ? reasoningContent.trim() : null,
           modelUsed: activeModel,
           usage: data.usage || null,
-          costInfo
+          costInfo,
+          isLocalBridge: isBridge
         };
       } catch (err) {
         clearTimeout(timeoutId);
         if (err.name === 'AbortError') {
-          throw new Error(`Translation request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds.`);
+          throw new Error(`Translation request timed out after ${timeoutMs / 1000} seconds.`);
         }
         throw err;
       }

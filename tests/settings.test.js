@@ -27,6 +27,12 @@ const requiredSettingsIds = [
   'settings-balance-card',
   'refresh-balance-btn',
   'settings-custom-prompt',
+  'provider-radio-official',
+  'provider-radio-bridge',
+  'bridge-config-panel',
+  'bridge-url-input',
+  'test-bridge-btn',
+  'model-radio-reasoner',
   'reader-font-family',
   'reader-column-width',
   'reader-font-size',
@@ -41,7 +47,7 @@ const requiredSettingsIds = [
 for (const id of requiredSettingsIds) {
   assert(settingsHtml.includes(`id="${id}"`), `Missing required element #${id} in views/settings.html`);
 }
-console.log('✓ views/settings.html contains all 20 required interactive element IDs');
+console.log(`✓ views/settings.html contains all ${requiredSettingsIds.length} required interactive element IDs`);
 
 // Test 3: Settings button presence in views
 const libraryHtml = fs.readFileSync(path.join(repoRoot, 'views', 'library.html'), 'utf8');

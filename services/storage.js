@@ -700,15 +700,23 @@ const StorageService = {
     let modelUsed = null;
     let translationCost = null;
     let translationUsage = null;
+    let reasoningText = null;
 
     // Optional DeepSeek translation pre-download
     if (options && options.translation && options.translation.enabled) {
-      let { apiKey, prompt, model } = options.translation;
+      let { apiKey, prompt, model, provider, baseUrl } = options.translation;
       let cleanKey = (apiKey || '').trim();
 
       const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
         (typeof self !== 'undefined' && self.DeepSeekService) ||
         (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+      const provConfig = (deepseek && typeof deepseek.getProviderConfig === 'function')
+        ? await deepseek.getProviderConfig()
+        : { provider: 'official', baseUrl: 'https://api.deepseek.com', isLocalBridge: false };
+
+      const activeProvider = provider || provConfig.provider;
+      const effectiveBaseUrl = baseUrl || provConfig.baseUrl;
 
       if (!cleanKey && deepseek && typeof deepseek.getApiKey === 'function') {
         try {
@@ -722,7 +730,11 @@ const StorageService = {
       }
 
       if (!cleanKey) {
-        throw new Error('DeepSeek API Key is required when translation is enabled.');
+        if (activeProvider === 'local_bridge' || (effectiveBaseUrl && (effectiveBaseUrl.includes('127.0.0.1') || effectiveBaseUrl.includes('localhost')))) {
+          cleanKey = 'sk-local';
+        } else {
+          throw new Error('DeepSeek API Key is required when translation is enabled.');
+        }
       }
 
       if (!deepseek || typeof deepseek.translateChapter !== 'function') {
@@ -736,10 +748,13 @@ const StorageService = {
         apiKey: cleanKey,
         prompt: effectivePrompt,
         rawText: content.rawText,
-        model: model || 'deepseek-flash'
+        model: model || (activeProvider === 'local_bridge' ? 'deepseek-chat' : 'deepseek-flash'),
+        provider: activeProvider,
+        baseUrl: effectiveBaseUrl
       });
 
       finalText = result.translatedText;
+      reasoningText = result.reasoningText || null;
       isTranslated = true;
       modelUsed = result.modelUsed;
       translationCost = result.costInfo || null;
@@ -753,6 +768,7 @@ const StorageService = {
       url: chapterUrl,
       rawText: finalText,
       originalRawText: content.rawText,
+      reasoningText: reasoningText,
       isTranslated: isTranslated,
       modelUsed: modelUsed,
       translatedAt: isTranslated ? Date.now() : null,

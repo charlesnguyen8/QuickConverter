@@ -116,10 +116,6 @@ async function initDeepSeekSettings() {
 
   const masterToggle = document.getElementById('deepseek-master-toggle');
   const toggleBadge = document.getElementById('deepseek-toggle-badge');
-  const radioFlash = document.getElementById('model-radio-flash');
-  const radioChat = document.getElementById('model-radio-chat');
-  const cardFlash = document.getElementById('model-card-flash');
-  const cardChat = document.getElementById('model-card-chat');
   const apiKeyInput = document.getElementById('settings-api-key');
   const toggleKeyVisibilityBtn = document.getElementById('toggle-key-visibility-btn');
   const testKeyBtn = document.getElementById('test-key-btn');
@@ -130,7 +126,24 @@ async function initDeepSeekSettings() {
   const customPromptEl = document.getElementById('settings-custom-prompt');
   const resetPromptBtn = document.getElementById('reset-prompt-btn');
 
-  // --- A. Master Toggle ---
+  const providerRadioOfficial = document.getElementById('provider-radio-official');
+  const providerRadioBridge = document.getElementById('provider-radio-bridge');
+  const providerCardOfficial = document.getElementById('provider-card-official');
+  const providerCardBridge = document.getElementById('provider-card-bridge');
+  const providerStatusBadge = document.getElementById('provider-status-badge');
+  const bridgeConfigPanel = document.getElementById('bridge-config-panel');
+  const bridgeUrlInput = document.getElementById('bridge-url-input');
+  const testBridgeBtn = document.getElementById('test-bridge-btn');
+  const bridgeStatusFeedback = document.getElementById('bridge-status-feedback');
+
+  const radioFlash = document.getElementById('model-radio-flash');
+  const radioChat = document.getElementById('model-radio-chat');
+  const radioReasoner = document.getElementById('model-radio-reasoner');
+  const cardFlash = document.getElementById('model-card-flash');
+  const cardChat = document.getElementById('model-card-chat');
+  const cardReasoner = document.getElementById('model-card-reasoner');
+
+  // --- Master Toggle ---
   const isEnabled = localStorage.getItem('quickconverter_deepseek_enabled') === 'true';
   if (masterToggle) {
     masterToggle.checked = isEnabled;
@@ -153,9 +166,136 @@ async function initDeepSeekSettings() {
     }
   }
 
+  // --- Provider Configuration Setup ---
+  let activeProviderConfig = {
+    provider: DeepSeekService.PROVIDER_OFFICIAL,
+    baseUrl: DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL
+  };
+
+  try {
+    activeProviderConfig = await DeepSeekService.getProviderConfig();
+  } catch (err) {
+    console.error('Failed to load provider config:', err);
+  }
+
+  function updateProviderUI(config) {
+    const isBridge = config.provider === DeepSeekService.PROVIDER_LOCAL_BRIDGE;
+    if (providerRadioOfficial) providerRadioOfficial.checked = !isBridge;
+    if (providerRadioBridge) providerRadioBridge.checked = isBridge;
+
+    if (providerCardOfficial && providerCardBridge) {
+      if (isBridge) {
+        providerCardBridge.className = 'flex items-start gap-3 p-4 rounded-xl border border-indigo-500/50 bg-indigo-500/10 cursor-pointer transition relative';
+        providerCardOfficial.className = 'flex items-start gap-3 p-4 rounded-xl border border-slate-850 bg-slate-900/40 cursor-pointer transition relative hover:border-slate-700/60';
+      } else {
+        providerCardOfficial.className = 'flex items-start gap-3 p-4 rounded-xl border border-indigo-500/50 bg-indigo-500/10 cursor-pointer transition relative';
+        providerCardBridge.className = 'flex items-start gap-3 p-4 rounded-xl border border-slate-850 bg-slate-900/40 cursor-pointer transition relative hover:border-slate-700/60';
+      }
+    }
+
+    if (bridgeConfigPanel) {
+      if (isBridge) {
+        bridgeConfigPanel.classList.remove('hidden');
+      } else {
+        bridgeConfigPanel.classList.add('hidden');
+      }
+    }
+
+    if (bridgeUrlInput) {
+      bridgeUrlInput.value = config.baseUrl || DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL;
+    }
+
+    if (providerStatusBadge) {
+      if (isBridge) {
+        providerStatusBadge.textContent = 'Free Web Bridge';
+        providerStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/30';
+      } else {
+        providerStatusBadge.textContent = 'Official Cloud API';
+        providerStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+      }
+    }
+  }
+
+  updateProviderUI(activeProviderConfig);
+
+  // Switch Provider Event Listeners
+  if (providerRadioOfficial) {
+    providerRadioOfficial.addEventListener('change', async () => {
+      activeProviderConfig = await DeepSeekService.setProviderConfig({
+        provider: DeepSeekService.PROVIDER_OFFICIAL
+      });
+      updateProviderUI(activeProviderConfig);
+      triggerSaveIndicator('Provider switched to Official DeepSeek API');
+      if (balanceTracker) balanceTracker.refresh(true);
+    });
+  }
+
+  if (providerRadioBridge) {
+    providerRadioBridge.addEventListener('change', async () => {
+      const bridgeUrl = bridgeUrlInput ? bridgeUrlInput.value.trim() : DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL;
+      activeProviderConfig = await DeepSeekService.setProviderConfig({
+        provider: DeepSeekService.PROVIDER_LOCAL_BRIDGE,
+        baseUrl: bridgeUrl || DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL
+      });
+      updateProviderUI(activeProviderConfig);
+      triggerSaveIndicator('Provider switched to Local Web Bridge (Free)');
+    });
+  }
+
+  if (bridgeUrlInput) {
+    bridgeUrlInput.addEventListener('change', async () => {
+      const url = bridgeUrlInput.value.trim() || DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL;
+      activeProviderConfig = await DeepSeekService.setProviderConfig({ baseUrl: url });
+      triggerSaveIndicator('Bridge Base URL updated');
+    });
+  }
+
+  if (testBridgeBtn) {
+    testBridgeBtn.addEventListener('click', async () => {
+      const targetUrl = bridgeUrlInput ? (bridgeUrlInput.value.trim() || DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL) : DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL;
+      testBridgeBtn.disabled = true;
+      testBridgeBtn.textContent = 'Testing...';
+      if (bridgeStatusFeedback) {
+        bridgeStatusFeedback.textContent = 'Connecting to bridge at ' + targetUrl + '...';
+        bridgeStatusFeedback.className = 'text-xs font-medium text-indigo-400';
+      }
+
+      try {
+        const res = await DeepSeekService.testConnection(null, {
+          provider: DeepSeekService.PROVIDER_LOCAL_BRIDGE,
+          baseUrl: targetUrl
+        });
+
+        if (res.success) {
+          if (bridgeStatusFeedback) {
+            bridgeStatusFeedback.textContent = `✓ Connected! Bridge healthy (${res.modelCount || 0} models ready)`;
+            bridgeStatusFeedback.className = 'text-xs font-medium text-emerald-400';
+          }
+          triggerSaveIndicator('Local bridge connection verified!');
+        } else {
+          if (bridgeStatusFeedback) {
+            bridgeStatusFeedback.textContent = `✕ Bridge error: ${res.error}`;
+            bridgeStatusFeedback.className = 'text-xs font-medium text-red-400';
+          }
+        }
+      } catch (err) {
+        if (bridgeStatusFeedback) {
+          bridgeStatusFeedback.textContent = `✕ Connection failed: ${err.message}`;
+          bridgeStatusFeedback.className = 'text-xs font-medium text-red-400';
+        }
+      } finally {
+        testBridgeBtn.disabled = false;
+        testBridgeBtn.textContent = 'Test Bridge';
+      }
+    });
+  }
+
   // --- B. Model Selection ---
   const savedModel = localStorage.getItem('quickconverter_deepseek_model') || 'deepseek-flash';
-  if (savedModel === 'deepseek-chat') {
+  if (savedModel === 'deepseek-reasoner') {
+    if (radioReasoner) radioReasoner.checked = true;
+    updateModelCards('deepseek-reasoner');
+  } else if (savedModel === 'deepseek-chat') {
     if (radioChat) radioChat.checked = true;
     updateModelCards('deepseek-chat');
   } else {
@@ -163,27 +303,27 @@ async function initDeepSeekSettings() {
     updateModelCards('deepseek-flash');
   }
 
-  [radioFlash, radioChat].forEach((radio) => {
+  [radioFlash, radioChat, radioReasoner].forEach((radio) => {
     if (radio) {
       radio.addEventListener('change', () => {
         const val = radio.value;
         localStorage.setItem('quickconverter_deepseek_model', val);
         updateModelCards(val);
-        triggerSaveIndicator(`Default model set to ${val === 'deepseek-flash' ? 'Flash' : 'Chat'}`);
+        let modelLabel = 'Flash';
+        if (val === 'deepseek-chat') modelLabel = 'Chat';
+        if (val === 'deepseek-reasoner') modelLabel = 'Reasoner (R1)';
+        triggerSaveIndicator(`Default model set to ${modelLabel}`);
       });
     }
   });
 
   function updateModelCards(selectedModel) {
-    if (cardFlash && cardChat) {
-      if (selectedModel === 'deepseek-flash') {
-        cardFlash.className = 'flex flex-col gap-2 p-4 rounded-xl border border-indigo-500/50 bg-indigo-500/10 cursor-pointer transition relative';
-        cardChat.className = 'flex flex-col gap-2 p-4 rounded-xl border border-slate-700/60 bg-slate-900/40 cursor-pointer transition relative hover:border-slate-600';
-      } else {
-        cardFlash.className = 'flex flex-col gap-2 p-4 rounded-xl border border-slate-700/60 bg-slate-900/40 cursor-pointer transition relative hover:border-slate-600';
-        cardChat.className = 'flex flex-col gap-2 p-4 rounded-xl border border-indigo-500/50 bg-indigo-500/10 cursor-pointer transition relative';
-      }
-    }
+    const activeClass = 'flex flex-col gap-2 p-4 rounded-xl border border-indigo-500/50 bg-indigo-500/10 cursor-pointer transition relative';
+    const inactiveClass = 'flex flex-col gap-2 p-4 rounded-xl border border-slate-700/60 bg-slate-900/40 cursor-pointer transition relative hover:border-slate-600';
+
+    if (cardFlash) cardFlash.className = selectedModel === 'deepseek-flash' ? activeClass : inactiveClass;
+    if (cardChat) cardChat.className = selectedModel === 'deepseek-chat' ? activeClass : inactiveClass;
+    if (cardReasoner) cardReasoner.className = selectedModel === 'deepseek-reasoner' ? activeClass : inactiveClass;
   }
 
   // --- C. API Key & Storage ---
