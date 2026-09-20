@@ -104,6 +104,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         return 'Verdana, Geneva, "DejaVu Sans", sans-serif';
       case 'trebuchet':
         return '"Trebuchet MS", "Lucida Grande", "Lucida Sans Unicode", sans-serif';
+      case 'unkempt':
+        return "'Unkempt', cursive, sans-serif";
       case 'mono':
         return 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Cascadia Code", "Courier New", monospace';
       case 'sans':
