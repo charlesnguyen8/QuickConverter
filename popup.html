@@ -239,10 +239,19 @@
               <label for="deepseek-model-select" class="text-[11px] font-semibold text-slate-300">
                 Model
               </label>
-              <div class="flex items-center gap-1">
+              <div class="flex items-center gap-1 flex-wrap">
                 <span id="deepseek-pricing-badge" class="text-[9px] font-semibold px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/15 text-emerald-400" title="Live DeepSeek UTC Pricing Schedule">
                   Off-Peak (50% Off)
                 </span>
+                <div id="deepseek-balance-badge" class="hidden items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/15 text-emerald-300 select-none" title="DeepSeek Account Balance">
+                  <span>💳</span>
+                  <span id="deepseek-balance-text">...</span>
+                  <button type="button" id="deepseek-refresh-balance-btn" class="hover:text-white transition ml-0.5 cursor-pointer" title="Refresh balance">
+                    <svg id="deepseek-refresh-balance-icon" class="w-2.5 h-2.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                  </button>
+                </div>
                 <span class="text-[10px] text-slate-400">DeepSeek V4.1</span>
               </div>
             </div>

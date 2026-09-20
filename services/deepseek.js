@@ -6,9 +6,219 @@
   const DEFAULT_MODEL = 'deepseek-flash';
   const REQUEST_TIMEOUT_MS = 90000; // 90 seconds for large chapters
 
+  // In-memory balance cache for debounce (15 seconds)
+  let _balanceCache = null;
+  const BALANCE_CACHE_TTL_MS = 15000;
+
   const DeepSeekService = {
     BASE_URL,
     DEFAULT_MODEL,
+
+    /**
+     * Retrieves account balance for the given DeepSeek API key.
+     * @param {string} apiKey 
+     * @param {object} [options]
+     * @param {boolean} [options.force=false] Bypasses short-term cache
+     * @returns {Promise<{ success: boolean, totalBalance?: string, numericBalance?: number, currency?: string, currencySymbol?: string, formatted?: string, compact?: string, isAvailable?: boolean, isLow?: boolean, error?: string, fromCache?: boolean }>}
+     */
+    async getBalance(apiKey, options = {}) {
+      const cleanKey = (apiKey || '').trim();
+      if (!cleanKey) {
+        return { success: false, error: 'API key is required' };
+      }
+
+      const force = !!options.force;
+      const now = Date.now();
+
+      // Check in-memory cache if not forced
+      if (!force && _balanceCache && _balanceCache.key === cleanKey && (now - _balanceCache.timestamp) < BALANCE_CACHE_TTL_MS) {
+        return { ..._balanceCache.data, fromCache: true };
+      }
+
+      try {
+        const res = await fetch(`${BASE_URL}/user/balance`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${cleanKey}`,
+            'Accept': 'application/json'
+          }
+        });
+
+        if (!res.ok) {
+          if (res.status === 401) {
+            return { success: false, error: 'Invalid DeepSeek API Key (401 Unauthorized)' };
+          }
+          if (res.status === 402) {
+            return { success: false, error: 'Insufficient DeepSeek account balance (402)' };
+          }
+          return { success: false, error: `HTTP error ${res.status}` };
+        }
+
+        const data = await res.json();
+        let totalStr = '0.00';
+        let curr = 'USD';
+        let grantedStr = '0.00';
+        let toppedUpStr = '0.00';
+
+        if (data && Array.isArray(data.balance_infos) && data.balance_infos.length > 0) {
+          // Prefer info with positive balance or take the first
+          const b0 = data.balance_infos.find((b) => parseFloat(b.total_balance || '0') > 0) || data.balance_infos[0];
+          totalStr = b0.total_balance || b0.granted_balance || '0.00';
+          curr = b0.currency || 'USD';
+          grantedStr = b0.granted_balance || '0.00';
+          toppedUpStr = b0.topped_up_balance || '0.00';
+        }
+
+        const numVal = parseFloat(totalStr) || 0;
+        const symbol = (curr.toUpperCase() === 'CNY' || curr.toUpperCase() === 'RMB') ? '¥' : '$';
+        const isAvailable = data ? data.is_available !== false : true;
+        const isLow = numVal < (symbol === '¥' ? 3.5 : 0.50);
+
+        const balanceResult = {
+          success: true,
+          isAvailable,
+          totalBalance: totalStr,
+          numericBalance: numVal,
+          currency: curr.toUpperCase(),
+          currencySymbol: symbol,
+          formatted: `${symbol}${numVal.toFixed(2)} ${curr.toUpperCase()}`,
+          compact: `${symbol}${numVal.toFixed(2)}`,
+          isLow,
+          grantedBalance: grantedStr,
+          toppedUpBalance: toppedUpStr,
+          timestamp: now
+        };
+
+        _balanceCache = {
+          key: cleanKey,
+          data: balanceResult,
+          timestamp: now
+        };
+
+        // Cache in session storage for instant retrieval across views
+        try {
+          if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
+            chrome.storage.session.set({
+              quickconverter_deepseek_balance_cache: {
+                data: balanceResult,
+                timestamp: now,
+                keyLast4: cleanKey.slice(-4)
+              }
+            });
+          }
+        } catch (storageErr) {}
+
+        // Emit custom DOM event for active page
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+          try {
+            window.dispatchEvent(new CustomEvent('deepseek:balance_updated', { detail: balanceResult }));
+          } catch (evErr) {}
+        }
+
+        return balanceResult;
+      } catch (err) {
+        return {
+          success: false,
+          error: err.name === 'AbortError' ? 'Connection timed out' : (err.message || 'Network request failed')
+        };
+      }
+    },
+
+    /**
+     * Sets up automatic balance tracking and synchronization for a view.
+     * Updates frequently on mount, tab focus, visibility change, and periodic heartbeat.
+     * @param {Function} getApiKeyFn Function returning the current API key string (or Promise of it)
+     * @param {Function} onBalanceUpdatedFn Callback (balanceInfo, isUpdating) => void
+     * @returns {{ refresh: (force?: boolean) => Promise<void>, destroy: () => void }}
+     */
+    createBalanceTracker(getApiKeyFn, onBalanceUpdatedFn) {
+      let isDestroyed = false;
+      let intervalId = null;
+
+      const refresh = async (force = true) => {
+        if (isDestroyed) return;
+        try {
+          const keyRaw = typeof getApiKeyFn === 'function' ? await getApiKeyFn() : '';
+          const key = (keyRaw || '').trim();
+          if (!key) {
+            if (typeof onBalanceUpdatedFn === 'function') {
+              onBalanceUpdatedFn(null, false);
+            }
+            return;
+          }
+
+          if (typeof onBalanceUpdatedFn === 'function') {
+            onBalanceUpdatedFn(null, true); // true indicates updating/loading
+          }
+
+          const res = await this.getBalance(key, { force });
+          if (!isDestroyed && typeof onBalanceUpdatedFn === 'function') {
+            onBalanceUpdatedFn(res, false);
+          }
+        } catch (e) {
+          if (!isDestroyed && typeof onBalanceUpdatedFn === 'function') {
+            onBalanceUpdatedFn({ success: false, error: e.message }, false);
+          }
+        }
+      };
+
+      // 1. Initial check (use cache if fresh)
+      refresh(false);
+
+      // 2. On window focus / tab re-entry
+      const handleFocus = () => {
+        refresh(false);
+      };
+      if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        window.addEventListener('focus', handleFocus);
+      }
+
+      // 3. On document visibility change
+      const handleVisibilityChange = () => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          refresh(false);
+        }
+      };
+      if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+      }
+
+      // 4. Periodic heartbeat (every 60s while tab is visible)
+      intervalId = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        refresh(false);
+      }, 60000);
+
+      // 5. Cross-tab sync via chrome.storage.onChanged
+      const handleStorageChange = (changes, areaName) => {
+        if (areaName === 'session' && changes.quickconverter_deepseek_balance_cache) {
+          const newVal = changes.quickconverter_deepseek_balance_cache.newValue;
+          if (newVal && newVal.data && !isDestroyed && typeof onBalanceUpdatedFn === 'function') {
+            onBalanceUpdatedFn(newVal.data, false);
+          }
+        }
+      };
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+        chrome.storage.onChanged.addListener(handleStorageChange);
+      }
+
+      return {
+        refresh,
+        destroy() {
+          isDestroyed = true;
+          if (intervalId) clearInterval(intervalId);
+          if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+            window.removeEventListener('focus', handleFocus);
+          }
+          if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+          }
+          if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+            chrome.storage.onChanged.removeListener(handleStorageChange);
+          }
+        }
+      };
+    },
 
     /**
      * Test API Key, check account balance, and retrieve live models roster.
@@ -56,30 +266,12 @@
           modelsList = modelsData.data.map((m) => m.id);
         }
 
-        // 2. Fetch user balance and availability
+        // 2. Fetch user balance via getBalance (force refresh)
         let balanceInfo = null;
         try {
-          const balanceRes = await fetch(`${BASE_URL}/user/balance`, {
-            method: 'GET',
-            headers
-          });
-
-          if (balanceRes.ok) {
-            const bData = await balanceRes.json();
-            if (bData) {
-              let totalStr = 'Available';
-              let curr = 'USD';
-              if (Array.isArray(bData.balance_infos) && bData.balance_infos.length > 0) {
-                const b0 = bData.balance_infos[0];
-                totalStr = b0.total_balance || b0.granted_balance || '0.00';
-                curr = b0.currency || 'USD';
-              }
-              balanceInfo = {
-                isAvailable: bData.is_available !== false,
-                totalBalance: totalStr,
-                currency: curr
-              };
-            }
+          const bRes = await this.getBalance(cleanKey, { force: true });
+          if (bRes && bRes.success) {
+            balanceInfo = bRes;
           }
         } catch (bErr) {
           console.warn('[DeepSeekService] Balance check non-fatal warning:', bErr);
@@ -403,12 +595,13 @@
     async clearApiKey() {
       if (typeof chrome !== 'undefined' && chrome.storage) {
         if (chrome.storage.session) {
-          await new Promise((resolve) => chrome.storage.session.remove(['quickconverter_deepseek_key'], () => resolve()));
+          await new Promise((resolve) => chrome.storage.session.remove(['quickconverter_deepseek_key', 'quickconverter_deepseek_balance_cache'], () => resolve()));
         }
         if (chrome.storage.local) {
           await new Promise((resolve) => chrome.storage.local.remove(['quickconverter_deepseek_key', 'quickconverter_deepseek_remember'], () => resolve()));
         }
       }
+      _balanceCache = null;
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.removeItem('quickconverter_deepseek_key');
       }

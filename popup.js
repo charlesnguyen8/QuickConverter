@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // --- DeepSeek Translation UI Wiring ---
   let currentActiveNovel = null;
   let updateNovelPromptUI = null;
+  let popupBalanceTracker = null;
 
   function initDeepSeekUI() {
     const toggleEl = document.getElementById('deepseek-toggle');
@@ -50,10 +51,71 @@ document.addEventListener('DOMContentLoaded', async () => {
     const testBtn = document.getElementById('test-deepseek-btn');
     const testStatusEl = document.getElementById('deepseek-test-status');
 
+    // Balance Widget Elements
+    const balanceBadgeEl = document.getElementById('deepseek-balance-badge');
+    const balanceTextEl = document.getElementById('deepseek-balance-text');
+    const refreshBalanceBtn = document.getElementById('deepseek-refresh-balance-btn');
+    const refreshBalanceIcon = document.getElementById('deepseek-refresh-balance-icon');
+
     if (!toggleEl) return;
 
     const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
       (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+    const updateBalanceUI = (balanceInfo, isUpdating) => {
+      if (!balanceBadgeEl) return;
+      if (refreshBalanceIcon) {
+        refreshBalanceIcon.classList.toggle('animate-spin', !!isUpdating);
+      }
+      if (isUpdating && !balanceInfo) {
+        return;
+      }
+      if (!balanceInfo || !balanceInfo.success) {
+        if (!keyEl || !keyEl.value.trim()) {
+          balanceBadgeEl.classList.add('hidden');
+          balanceBadgeEl.classList.remove('inline-flex');
+        } else if (balanceInfo && balanceInfo.error) {
+          balanceBadgeEl.classList.remove('hidden');
+          balanceBadgeEl.classList.add('inline-flex');
+          balanceBadgeEl.className = 'inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded border border-rose-500/30 bg-rose-500/10 text-rose-300 select-none';
+          if (balanceTextEl) balanceTextEl.textContent = 'Auth Error';
+          balanceBadgeEl.title = balanceInfo.error;
+        }
+        return;
+      }
+
+      balanceBadgeEl.classList.remove('hidden');
+      balanceBadgeEl.classList.add('inline-flex');
+
+      if (!balanceInfo.isAvailable || balanceInfo.numericBalance <= 0) {
+        balanceBadgeEl.className = 'inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded border border-rose-500/40 bg-rose-500/15 text-rose-300 select-none';
+        if (balanceTextEl) balanceTextEl.textContent = `${balanceInfo.compact} (No Funds)`;
+        balanceBadgeEl.title = `DeepSeek Account Balance: ${balanceInfo.formatted} • Insufficient credits`;
+      } else if (balanceInfo.isLow) {
+        balanceBadgeEl.className = 'inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/15 text-amber-300 select-none';
+        if (balanceTextEl) balanceTextEl.textContent = `${balanceInfo.compact} (Low)`;
+        balanceBadgeEl.title = `DeepSeek Account Balance: ${balanceInfo.formatted} • Low balance warning`;
+      } else {
+        balanceBadgeEl.className = 'inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/15 text-emerald-300 select-none';
+        if (balanceTextEl) balanceTextEl.textContent = balanceInfo.compact;
+        balanceBadgeEl.title = `DeepSeek Account Balance: ${balanceInfo.formatted} (Click to refresh)`;
+      }
+    };
+
+    if (deepseek && typeof deepseek.createBalanceTracker === 'function') {
+      popupBalanceTracker = deepseek.createBalanceTracker(
+        () => (keyEl ? keyEl.value.trim() : ''),
+        updateBalanceUI
+      );
+    }
+
+    if (refreshBalanceBtn && popupBalanceTracker) {
+      refreshBalanceBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        popupBalanceTracker.refresh(true);
+      });
+    }
 
     const updateClearBtnVisibility = () => {
       const hasKey = !!(keyEl && keyEl.value.trim());
@@ -72,15 +134,27 @@ document.addEventListener('DOMContentLoaded', async () => {
           rememberKeyEl.checked = !!remembered;
         }
         updateClearBtnVisibility();
+        if (popupBalanceTracker && apiKey) {
+          popupBalanceTracker.refresh(false);
+        }
       }).catch((e) => console.warn('[popup.js] Failed to load DeepSeek API key:', e));
     }
 
+    let keyDebounceTimer = null;
     const handleKeyChange = () => {
       updateClearBtnVisibility();
+      const val = keyEl ? keyEl.value.trim() : '';
+      const remember = !!(rememberKeyEl && rememberKeyEl.checked);
       if (deepseek && typeof deepseek.setApiKey === 'function') {
-        const val = keyEl ? keyEl.value.trim() : '';
-        const remember = !!(rememberKeyEl && rememberKeyEl.checked);
         deepseek.setApiKey(val, remember);
+      }
+      if (!val) {
+        updateBalanceUI(null, false);
+      } else {
+        clearTimeout(keyDebounceTimer);
+        keyDebounceTimer = setTimeout(() => {
+          if (popupBalanceTracker) popupBalanceTracker.refresh(true);
+        }, 600);
       }
     };
 
@@ -106,6 +180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (keyEl) keyEl.value = '';
         if (rememberKeyEl) rememberKeyEl.checked = false;
         updateClearBtnVisibility();
+        updateBalanceUI(null, false);
         if (testStatusEl) {
           testStatusEl.className = 'hidden';
           testStatusEl.textContent = '';
@@ -608,6 +683,9 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
             };
             await window.StorageService.downloadChapter(novel.id, chNum, options);
+            if (popupBalanceTracker && isTranslationEnabled) {
+              popupBalanceTracker.refresh(true);
+            }
             await renderPopupChapters(novel);
           } catch (err) {
             console.error('Error downloading chapter:', err);
