@@ -241,6 +241,7 @@ const StorageService = {
       domain: defaultDomain,
       thumbnail: novel.thumbnail || 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp',
       totalChapters: novel.totalChapters || 100,
+      chapterList: Array.isArray(novel.chapterList) ? novel.chapterList : [],
       icon: novel.icon || '📚',
       status: 'Active',
       createdAt: Date.now()
@@ -256,6 +257,12 @@ const StorageService = {
     });
 
     await this._setDbInitialized();
+
+    // Populate chapter catalog in background if slug is present
+    if (newNovel.slug) {
+      this.syncNovelChapters(newNovel.id).catch(() => {});
+    }
+
     return this.getManagedNovels();
   },
 
@@ -348,6 +355,44 @@ const StorageService = {
     }
     return novel;
   },
+
+  async syncNovelChapters(slugOrId) {
+    let novel = await this.getNovelById(slugOrId);
+    if (!novel) {
+      novel = await this.getNovelBySlug(slugOrId);
+    }
+    if (!novel || !novel.slug) return null;
+
+    try {
+      let provider = null;
+      if (typeof ProviderRegistry !== 'undefined') {
+        if (novel.url) {
+          provider = ProviderRegistry.getProviderForUrl(novel.url);
+        }
+        if (!provider && novel.domain) {
+          provider = ProviderRegistry.getProviderForDomain(novel.domain);
+        }
+      }
+
+      if (provider && typeof provider.fetchChapterList === 'function') {
+        const chapters = await provider.fetchChapterList(novel.slug, novel.url);
+        if (Array.isArray(chapters) && chapters.length > 0) {
+          const updates = {
+            chapterList: chapters
+          };
+          if (!novel.totalChapters || chapters.length > novel.totalChapters) {
+            updates.totalChapters = chapters.length;
+          }
+          const updated = await this.updateNovel(novel.id, updates);
+          return updated;
+        }
+      }
+    } catch (e) {
+      console.warn('[QuickConverter] syncNovelChapters error:', e);
+    }
+    return novel;
+  },
+
 
   async deleteNovel(novelIdOrSlug) {
     if (!novelIdOrSlug) return this.getManagedNovels();
@@ -495,6 +540,50 @@ const StorageService = {
       downloadedCount: chapters.length,
       totalChapters: totalChapters
     };
+  },
+
+  async downloadChapter(novelId, chapterNumber) {
+    if (!novelId || chapterNumber === undefined) {
+      throw new Error('novelId and chapterNumber are required to download a chapter');
+    }
+
+    const novel = await this.getNovelById(novelId);
+    if (!novel) {
+      throw new Error(`Novel not found for ID: ${novelId}`);
+    }
+
+    let provider = null;
+    if (typeof ProviderRegistry !== 'undefined') {
+      if (novel.url) provider = ProviderRegistry.getProviderForUrl(novel.url);
+      if (!provider && novel.domain) provider = ProviderRegistry.getProviderForDomain(novel.domain);
+    }
+
+    if (!provider || typeof provider.fetchChapterContent !== 'function') {
+      throw new Error(`No provider available to fetch chapter content for ${novel.title}`);
+    }
+
+    const catalogItem = (novel.chapterList || []).find(
+      (c) => Number(c.chapterNumber) === Number(chapterNumber)
+    );
+    const chapterSlugOrNumber = catalogItem && catalogItem.slug ? catalogItem.slug : chapterNumber;
+
+    const content = await provider.fetchChapterContent(novel.slug, chapterSlugOrNumber);
+    if (!content || !content.rawText) {
+      throw new Error(`Failed to extract chapter content for Chapter ${chapterNumber}`);
+    }
+
+    const chapterTitle = (catalogItem && catalogItem.title) || content.title || `Chapter ${chapterNumber}`;
+    const chapterUrl = (catalogItem && catalogItem.url) || `${novel.url}/chapter-${chapterNumber}`;
+
+    const saved = await this.saveChapter({
+      novelId: novel.id,
+      chapterNumber: Number(chapterNumber),
+      title: chapterTitle,
+      url: chapterUrl,
+      rawText: content.rawText
+    });
+
+    return saved;
   },
 
   async deleteChapter(novelId, chapterNumber) {

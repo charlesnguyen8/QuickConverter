@@ -242,6 +242,104 @@ const WetriedtlsProvider = {
     }
   },
 
+  async fetchChapterList(slug, seriesUrl) {
+    if (!slug) return [];
+    try {
+      const apiUrl = `https://api.wetriedtls.com/chapters/${slug}?page=1&perPage=1000&order=asc`;
+      const resp = await fetch(apiUrl);
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json && Array.isArray(json.data)) {
+          return json.data.map((item) => {
+            const chNum = parseFloat(
+              item.index !== undefined ? item.index : (item.chapter_name ? item.chapter_name.replace(/[^0-9.]/g, '') : 0)
+            );
+            let title = item.chapter_name || `Chapter ${chNum}`;
+            if (item.chapter_title && item.chapter_title.trim()) {
+              title = `${title} - ${item.chapter_title.trim()}`;
+            }
+            const chapterSlug = item.chapter_slug || `chapter-${chNum}`;
+            return {
+              chapterNumber: chNum,
+              title,
+              slug: chapterSlug,
+              url: `https://wetriedtls.com/series/${slug}/${chapterSlug}`
+            };
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[WeTriedTLS Provider] fetchChapterList API error:', e);
+    }
+    return [];
+  },
+
+  async fetchChapterContent(slug, chapterSlugOrNumber) {
+    if (!slug) return null;
+    let chapterSlug = String(chapterSlugOrNumber);
+    if (!chapterSlug.startsWith('chapter-')) {
+      chapterSlug = `chapter-${chapterSlugOrNumber}`;
+    }
+
+    // 1. Fetch directly from API
+    try {
+      const apiUrl = `https://api.wetriedtls.com/chapter/${slug}/${chapterSlug}`;
+      const resp = await fetch(apiUrl);
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json && json.chapter) {
+          const ch = json.chapter;
+          const rawHtml = ch.chapter_content || '';
+          const paragraphs = [];
+          const pRegex = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+          let m;
+          while ((m = pRegex.exec(rawHtml)) !== null) {
+            const text = m[1].replace(/<[^>]+>/g, '').trim();
+            if (text && text !== '&nbsp;') {
+              paragraphs.push(text);
+            }
+          }
+          const rawText = paragraphs.join('\n\n');
+          let title = ch.chapter_name || `Chapter ${ch.index || chapterSlugOrNumber}`;
+          if (ch.chapter_title && ch.chapter_title.trim()) {
+            title = `${title} - ${ch.chapter_title.trim()}`;
+          }
+          return { title, rawText };
+        }
+      }
+    } catch (e) {
+      console.warn('[WeTriedTLS Provider] API fetchChapterContent error, attempting HTML fallback:', e);
+    }
+
+    // 2. Fallback: Fetch chapter web page HTML and extract
+    try {
+      const pageUrl = `https://wetriedtls.com/series/${slug}/${chapterSlug}`;
+      const pageResp = await fetch(pageUrl);
+      if (pageResp.ok) {
+        const html = await pageResp.text();
+        const pMatches = [];
+        const pRegex = /<p\b[^>]*dir=["']auto["'][^>]*>([\s\S]*?)<\/p>/gi;
+        let pm;
+        while ((pm = pRegex.exec(html)) !== null) {
+          const text = pm[1].replace(/<[^>]+>/g, '').trim();
+          if (text && text !== '&nbsp;') {
+            pMatches.push(text);
+          }
+        }
+        if (pMatches.length > 0) {
+          const rawText = pMatches.join('\n\n');
+          const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+          const title = titleMatch ? titleMatch[1].trim() : `Chapter ${chapterSlugOrNumber}`;
+          return { title, rawText };
+        }
+      }
+    } catch (e) {
+      console.warn('[WeTriedTLS Provider] HTML fallback fetchChapterContent error:', e);
+    }
+
+    return null;
+  },
+
   formatTitle(slug, rawTitle) {
     if (rawTitle && rawTitle.trim() && !rawTitle.toLowerCase().includes('wetriedtls')) {
       return rawTitle.trim();

@@ -151,4 +151,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true; // Keep channel open for async response
   }
+
+  if (message.action === 'SYNC_NOVEL_CHAPTERS') {
+    (async () => {
+      try {
+        const { novelId, slug } = message;
+        const updated = await StorageService.syncNovelChapters(novelId || slug);
+        sendResponse({ success: !!updated, novel: updated });
+      } catch (err) {
+        console.error('Error syncing novel chapters:', err);
+        sendResponse({ error: err.message, success: false });
+      }
+    })();
+    return true; // Keep channel open for async response
+  }
+
+  if (message.action === 'DOWNLOAD_CHAPTER') {
+    (async () => {
+      try {
+        const { novelId, chapterNumber } = message;
+        const chapter = await StorageService.downloadChapter(novelId, chapterNumber);
+        sendResponse({ success: true, chapter });
+      } catch (err) {
+        console.error(`Error downloading chapter ${message.chapterNumber}:`, err);
+        sendResponse({ error: err.message, success: false });
+      }
+    })();
+    return true; // Keep channel open for async response
+  }
 });

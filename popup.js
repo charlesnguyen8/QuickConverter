@@ -115,23 +115,54 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function renderPopupChapters(novel) {
-    const chapters = await window.StorageService.getNovelChapters(novel.id);
-    const totalChapters = novel.totalChapters || 100;
+    if (!window.StorageService || !novel) return;
 
-    if (popupNovelStats) {
-      popupNovelStats.textContent = `${chapters.length} / ${totalChapters} chapters downloaded`;
+    let chaptersCatalog = novel.chapterList || [];
+
+    // If chapter catalog is empty but novel has slug/provider, fetch catalog
+    if (chaptersCatalog.length === 0 && novel.slug) {
+      if (popupChapterList) {
+        popupChapterList.innerHTML = `
+          <div class="p-5 rounded-md bg-slate-800/60 border border-slate-700/50 text-center text-xs text-indigo-300 flex items-center justify-center gap-2">
+            <svg class="animate-spin h-4 w-4 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+            <span>Loading chapter catalog...</span>
+          </div>
+        `;
+      }
+      const updated = await window.StorageService.syncNovelChapters(novel.id);
+      if (updated && updated.chapterList && updated.chapterList.length > 0) {
+        novel = updated;
+        chaptersCatalog = novel.chapterList;
+      }
     }
 
+    const downloadedChapters = await window.StorageService.getNovelChapters(novel.id);
+    const downloadedMap = new Map(downloadedChapters.map((c) => [Number(c.chapterNumber), c]));
+
+    const totalChapters = novel.totalChapters || chaptersCatalog.length || 100;
+
+    if (popupNovelStats) {
+      popupNovelStats.textContent = `${downloadedChapters.length} / ${totalChapters} chapters downloaded`;
+    }
+
+    // Display items: use catalog if available; otherwise use downloaded chapters
+    const displayList = chaptersCatalog.length > 0
+      ? chaptersCatalog
+      : downloadedChapters;
+
     if (popupChapterCount) {
-      popupChapterCount.textContent = `${chapters.length} Chapter${chapters.length === 1 ? '' : 's'}`;
+      popupChapterCount.textContent = `${displayList.length} Chapters`;
     }
 
     if (!popupChapterList) return;
 
-    if (chapters.length === 0) {
+    if (displayList.length === 0) {
       popupChapterList.innerHTML = `
         <div class="p-5 rounded-md bg-slate-800/60 border border-slate-700/50 text-center text-xs text-slate-500 italic">
-          No chapters downloaded yet.
+          No chapters discovered yet.
         </div>
       `;
       return;
@@ -139,7 +170,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     popupChapterList.innerHTML = '';
 
-    chapters.forEach((chapter) => {
+    displayList.forEach((chapter) => {
+      const chNum = Number(chapter.chapterNumber);
+      const isDownloaded = downloadedMap.has(chNum);
+
       const row = document.createElement('div');
       row.className = 'flex items-center justify-between p-2 rounded-md bg-slate-800 border border-slate-700/80 hover:border-slate-600 transition group';
 
@@ -149,37 +183,89 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const chBadge = document.createElement('span');
       chBadge.className = 'text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900 text-indigo-300 border border-slate-700/80 flex-shrink-0';
-      chBadge.textContent = `Ch. ${chapter.chapterNumber}`;
+      chBadge.textContent = `Ch. ${chNum}`;
 
       const nameEl = document.createElement('span');
       nameEl.className = 'text-xs font-medium text-slate-200 truncate group-hover:text-indigo-300 transition';
-      nameEl.textContent = chapter.title || `Chapter ${chapter.chapterNumber}`;
+      nameEl.textContent = chapter.title || `Chapter ${chNum}`;
 
       leftSection.appendChild(chBadge);
       leftSection.appendChild(nameEl);
 
-      // Right: Delete chapter button
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'p-1 rounded text-slate-500 hover:text-red-400 hover:bg-slate-700/80 transition focus:outline-none cursor-pointer flex-shrink-0';
-      delBtn.title = `Delete Chapter ${chapter.chapterNumber}`;
-      delBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="3 6 5 6 21 6"></polyline>
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          <line x1="10" y1="11" x2="10" y2="17"></line>
-          <line x1="14" y1="11" x2="14" y2="17"></line>
-        </svg>
-      `;
+      // Right: Action area (Download downward arrow button OR Saved badge + Delete button)
+      const rightSection = document.createElement('div');
+      rightSection.className = 'flex items-center gap-1.5 flex-shrink-0';
 
-      delBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        await window.StorageService.deleteChapter(novel.id, chapter.chapterNumber);
-        await renderPopupChapters(novel);
-      });
+      if (isDownloaded) {
+        const savedBadge = document.createElement('span');
+        savedBadge.className = 'text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20';
+        savedBadge.textContent = 'Saved';
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'p-1 rounded text-slate-500 hover:text-red-400 hover:bg-slate-700/80 transition focus:outline-none cursor-pointer flex-shrink-0';
+        delBtn.title = `Delete Chapter ${chNum}`;
+        delBtn.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            <line x1="10" y1="11" x2="10" y2="17"></line>
+            <line x1="14" y1="11" x2="14" y2="17"></line>
+          </svg>
+        `;
+
+        delBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await window.StorageService.deleteChapter(novel.id, chNum);
+          await renderPopupChapters(novel);
+        });
+
+        rightSection.appendChild(savedBadge);
+        rightSection.appendChild(delBtn);
+      } else {
+        // Download button with downward arrow icon
+        const dlBtn = document.createElement('button');
+        dlBtn.type = 'button';
+        dlBtn.className = 'p-1.5 rounded text-indigo-400 hover:text-white hover:bg-indigo-600/80 bg-slate-700/60 transition focus:outline-none cursor-pointer flex-shrink-0 flex items-center justify-center';
+        dlBtn.title = `Download Chapter ${chNum}`;
+        dlBtn.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <polyline points="19 12 12 19 5 12"></polyline>
+          </svg>
+        `;
+
+        dlBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          dlBtn.disabled = true;
+          dlBtn.innerHTML = `
+            <svg class="animate-spin h-3.5 w-3.5 text-indigo-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+          `;
+
+          try {
+            await window.StorageService.downloadChapter(novel.id, chNum);
+            await renderPopupChapters(novel);
+          } catch (err) {
+            console.error('Error downloading chapter:', err);
+            dlBtn.disabled = false;
+            dlBtn.classList.add('text-red-400');
+            dlBtn.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <polyline points="19 12 12 19 5 12"></polyline>
+              </svg>
+            `;
+          }
+        });
+
+        rightSection.appendChild(dlBtn);
+      }
 
       row.appendChild(leftSection);
-      row.appendChild(delBtn);
+      row.appendChild(rightSection);
       popupChapterList.appendChild(row);
     });
   }
@@ -381,9 +467,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (addBtn) {
           addBtn.addEventListener('click', async () => {
             if (window.StorageService) {
-              const updated = await window.StorageService.addNovel(novelInfo);
+              addBtn.disabled = true;
+              addBtn.innerHTML = `
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                </svg>
+                <span>Populating Chapters...</span>
+              `;
+
+              await window.StorageService.addNovel(novelInfo);
               if (novelInfo.slug) {
-                await window.StorageService.syncNovelMetadata(novelInfo.slug);
+                await Promise.all([
+                  window.StorageService.syncNovelMetadata(novelInfo.slug),
+                  window.StorageService.syncNovelChapters(novelInfo.slug)
+                ]);
               }
               const latest = await window.StorageService.getManagedNovels();
               renderNovels(latest);

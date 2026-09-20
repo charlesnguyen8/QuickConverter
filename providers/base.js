@@ -100,6 +100,26 @@ const BaseProvider = {
   },
 
   /**
+   * Fetches the complete chapter catalog for a series.
+   * @param {string} slug
+   * @param {string} [seriesUrl]
+   * @returns {Promise<Array<{ chapterNumber: number, title: string, slug: string, url: string }>>}
+   */
+  async fetchChapterList(slug, seriesUrl) {
+    return [];
+  },
+
+  /**
+   * Fetches chapter text content by chapter slug or number.
+   * @param {string} slug
+   * @param {string|number} chapterSlugOrNumber
+   * @returns {Promise<{ title: string, rawText: string }|null>}
+   */
+  async fetchChapterContent(slug, chapterSlugOrNumber) {
+    return null;
+  },
+
+  /**
    * Formats a slug into a clean title.
    * @param {string} slug
    * @param {string} [rawTitle]
