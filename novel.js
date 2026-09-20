@@ -219,7 +219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
         linkBtn.addEventListener('click', (e) => e.stopPropagation());
         rightCol.appendChild(linkBtn);
-      }  }
+      }
 
       row.appendChild(leftCol);
       row.appendChild(rightCol);
