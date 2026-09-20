@@ -1,0 +1,19 @@
+{
+  "name": "quickconverter",
+  "version": "1.0.0",
+  "description": "Chrome Extension for QuickConverter",
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/input.css -o ./tailwind.css --minify",
+    "watch:css": "tailwindcss -i ./src/input.css -o ./tailwind.css --watch"
+  },
+  "keywords": [
+    "chrome-extension",
+    "dictionary",
+    "converter"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  }
+}

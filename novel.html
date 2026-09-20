@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QuickConverter - Novel Chapters</title>
+    <link rel="stylesheet" href="tailwind.css" />
+    <style>
+      /* Custom Dark Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0f172a;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+      }
+    </style>
+  </head>
+
+  <body class="bg-slate-900 text-slate-50 min-h-screen font-sans flex flex-col antialiased">
+    <!-- Header with Back Button -->
+    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30 px-6 py-3.5">
+      <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <a
+          href="library.html"
+          class="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white transition px-3 py-1.5 rounded-md hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span>Back to Library</span>
+        </a>
+
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-xs shadow-sm">
+            Q
+          </div>
+          <span class="text-xs font-semibold text-slate-400">QuickConverter</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-5xl mx-auto w-full px-6 py-8 flex-1 flex flex-col gap-8">
+      <!-- Novel Hero Card (Artwork & Title) -->
+      <section id="novel-hero" class="flex flex-col sm:flex-row gap-6 items-start bg-slate-800/60 border border-slate-700/60 rounded-xl p-6 shadow-sm backdrop-blur">
+        <!-- Artwork (Thumbnail) -->
+        <div class="w-44 sm:w-52 aspect-[3/4] rounded-lg overflow-hidden bg-slate-950 border border-slate-700 shadow-md flex-shrink-0 mx-auto sm:mx-0">
+          <img
+            id="novel-artwork"
+            src=""
+            alt="Novel Artwork"
+            class="w-full h-full object-cover"
+          />
+        </div>
+
+        <!-- Novel Info -->
+        <div class="flex flex-col gap-3 flex-1 w-full justify-between self-stretch">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <span id="novel-domain" class="text-xs font-mono font-medium px-2 py-0.5 rounded bg-slate-700/80 text-slate-300 border border-slate-600/50">
+                wetriedtls.com
+              </span>
+              <span id="novel-status" class="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                Active
+              </span>
+            </div>
+
+            <h1
+              id="novel-title"
+              class="text-2xl sm:text-3xl font-extrabold text-slate-100 leading-tight"
+            >
+              Loading Novel...
+            </h1>
+          </div>
+
+          <!-- Chapter Stats Bar -->
+          <div class="bg-slate-900/80 rounded-lg p-4 border border-slate-700/60 flex flex-col gap-2 mt-auto">
+            <div class="flex items-center justify-between text-xs font-medium">
+              <span class="text-slate-400">Downloaded Chapters</span>
+              <span id="chapters-stat" class="text-indigo-300 font-semibold">0 / 0</span>
+            </div>
+            <div class="w-full bg-slate-700/60 rounded-full h-2 overflow-hidden">
+              <div
+                id="chapters-progress-bar"
+                class="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full transition-all duration-500"
+                style="width: 0%;"
+              ></div>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-slate-400">
+              <span id="total-chapters-label">0 Total Chapters</span>
+              <span id="progress-percent" class="text-indigo-400 font-semibold">0%</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chapters List Section -->
+      <section class="flex flex-col gap-4">
+        <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+          <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <span>Chapters</span>
+            <span id="chapters-badge" class="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+              0
+            </span>
+          </h2>
+        </div>
+
+        <!-- Chapters List -->
+        <div
+          id="chapters-list"
+          class="flex flex-col gap-2"
+        >
+          <!-- Populated dynamically by novel.js -->
+        </div>
+      </section>
+    </main>
+
+    <script src="storage.js"></script>
+    <script src="novel.js"></script>
+  </body>
+</html>

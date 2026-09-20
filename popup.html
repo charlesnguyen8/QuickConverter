@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QuickConverter</title>
+    <link rel="stylesheet" href="tailwind.css" />
+    <style>
+      /* Custom Dark Scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #475569;
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
+      }
+    </style>
+  </head>
+
+  <body
+    class="m-0 p-4 font-sans text-slate-50 bg-slate-900 flex flex-col gap-3.5 w-[360px] select-none"
+  >
+    <!-- View 1: Main Menu View -->
+    <div id="view-main" class="flex flex-col gap-3.5">
+      <!-- Header -->
+      <header class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-md bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-sm">
+            Q
+          </div>
+          <h1
+            class="text-xl font-bold leading-tight bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent"
+          >
+            QuickConverter
+          </h1>
+        </div>
+      </header>
+
+      <!-- Main Container -->
+      <main class="flex flex-col gap-3.5">
+        <!-- Status Card -->
+        <section id="status-card" class="flex flex-col gap-2 rounded-md border border-slate-700 bg-slate-800 p-3.5 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span id="badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-700 text-slate-300">
+              Checking site...
+            </span>
+            <span id="site-host" class="text-xs text-slate-400 font-mono truncate max-w-[140px]"></span>
+          </div>
+
+          <div id="status-message" class="text-sm text-slate-300 leading-relaxed">
+            Detecting current page compatibility...
+          </div>
+
+          <div id="status-action" class="hidden pt-1"></div>
+        </section>
+
+        <!-- Managed Novels Section -->
+        <section class="flex flex-col gap-2">
+          <div class="flex items-center justify-between px-0.5">
+            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Managing these novel
+            </h2>
+            <span id="novel-count" class="text-xs text-indigo-400 font-medium bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
+              0 Novels
+            </span>
+          </div>
+
+          <!-- Dynamic Novel List -->
+          <div id="novel-list" class="flex flex-col gap-1.5 overflow-y-auto max-h-[200px]">
+            <!-- Rendered dynamically from storage -->
+          </div>
+        </section>
+
+        <!-- Open Library Button -->
+        <div>
+          <button
+            type="button"
+            id="open-library-btn"
+            class="w-full cursor-pointer rounded-md px-3 py-2 text-sm font-semibold text-white bg-indigo-500 transition hover:bg-indigo-600 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-indigo-500/50 shadow-sm flex items-center justify-center gap-2"
+          >
+            <span>Open Library</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </button>
+        </div>
+      </main>
+    </div>
+
+    <!-- View 2: Novel Detail View (Hidden by default) -->
+    <div id="view-novel" class="hidden flex flex-col gap-3">
+      <!-- Header with Top-Left Back Arrow Button -->
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          id="back-to-main-btn"
+          class="flex items-center justify-center p-1.5 rounded-md text-slate-400 hover:text-slate-50 hover:bg-slate-800 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/50 flex-shrink-0 cursor-pointer"
+          title="Back to Main Menu"
+        >
+          <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            width="20" 
+            height="20" 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor" 
+            stroke-width="2" 
+            stroke-linecap="round" 
+            stroke-linejoin="round"
+          >
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+        </button>
+
+        <h1 class="text-lg font-bold leading-tight bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent truncate">
+          Novel Chapters
+        </h1>
+      </div>
+
+      <!-- Novel Summary Card (Thumbnail, Title, Stats) -->
+      <div class="flex items-center gap-3 p-3 rounded-md bg-slate-800 border border-slate-700 shadow-sm">
+        <div class="w-14 aspect-[3/4] rounded overflow-hidden bg-slate-900 border border-slate-700/80 flex-shrink-0 shadow-sm">
+          <img
+            id="popup-novel-thumb"
+            src=""
+            alt="Thumbnail"
+            class="w-full h-full object-cover"
+          />
+        </div>
+        <div class="flex flex-col gap-1 overflow-hidden flex-1 min-w-0">
+          <h2 id="popup-novel-title" class="text-sm font-bold text-slate-100 truncate">
+            Novel Title
+          </h2>
+          <div class="flex items-center gap-1.5">
+            <span id="popup-novel-domain" class="text-[11px] font-mono text-slate-400 truncate">
+              wetriedtls.com
+            </span>
+          </div>
+          <span id="popup-novel-stats" class="text-xs text-indigo-300 font-medium">
+            0 / 0 chapters downloaded
+          </span>
+        </div>
+      </div>
+
+      <!-- Chapters List Section -->
+      <div class="flex flex-col gap-1.5">
+        <div class="flex items-center justify-between px-0.5">
+          <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            Downloaded Chapters
+          </h3>
+          <span id="popup-chapter-count" class="text-xs text-indigo-400 font-medium bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
+            0 Chapters
+          </span>
+        </div>
+
+        <div id="popup-chapter-list" class="flex flex-col gap-1.5 overflow-y-auto max-h-[220px]">
+          <!-- Populated dynamically by popup.js -->
+        </div>
+      </div>
+    </div>
+
+    <script src="storage.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
