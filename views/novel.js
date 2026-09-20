@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const updateBalanceUI = (balanceInfo, isUpdating) => {
       if (!balanceBadgeEl) return;
-      if (isLocalBridge) {
+      if (providerConfig.provider !== 'official') {
         balanceBadgeEl.classList.add('hidden');
         balanceBadgeEl.classList.remove('inline-flex');
         return;
@@ -283,7 +283,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     };
 
-    if (!isLocalBridge && deepseek && typeof deepseek.createBalanceTracker === 'function') {
+    if (deepseek && typeof deepseek.createBalanceTracker === 'function') {
       novelBalanceTracker = deepseek.createBalanceTracker(
         () => (keyEl ? keyEl.value.trim() : ''),
         updateBalanceUI
@@ -369,12 +369,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
-    const pricingBadgeEl = document.getElementById('deepseek-pricing-badge');
     if (pricingBadgeEl) {
-      if (isLocalBridge) {
-        pricingBadgeEl.textContent = '100% Free (Bridge)';
+      if (providerConfig.provider !== 'official') {
+        pricingBadgeEl.textContent = 'Free / Custom';
         pricingBadgeEl.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded border border-purple-500/30 bg-purple-500/15 text-purple-300';
-        pricingBadgeEl.title = 'Local Web Bridge translation costs zero credits';
+        pricingBadgeEl.title = 'Custom API / Local Bridge endpoint';
       } else if (deepseek && typeof deepseek.getPricingStatus === 'function') {
         const pStatus = deepseek.getPricingStatus();
         pricingBadgeEl.textContent = pStatus.label;
@@ -448,12 +447,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // "Test Key" button click handler
     if (testBtn && testStatusEl) {
-      if (isLocalBridge) {
-        testBtn.textContent = 'Test Bridge';
-      }
       testBtn.addEventListener('click', async () => {
+        const isCustom = providerConfig.provider !== 'official';
         const key = keyEl ? keyEl.value.trim() : '';
-        if (!isLocalBridge && !key) {
+        if (!isCustom && !key) {
           testStatusEl.className = 'text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-md block mt-1';
           testStatusEl.textContent = 'Please enter an API key to test.';
           if (keyEl) keyEl.focus();
@@ -467,7 +464,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
           </svg>
-          <span>Connecting to ${isLocalBridge ? 'local bridge' : 'DeepSeek API'}...</span>
+          <span>Connecting to ${isCustom ? 'Custom API / Bridge' : 'DeepSeek API'}...</span>
         `;
 
         try {
@@ -478,9 +475,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             throw new Error('DeepSeekService not loaded');
           }
 
+          const effectiveUrl = isCustom
+            ? ((customBaseUrlInput && customBaseUrlInput.value.trim()) || providerConfig.customUrl || 'http://127.0.0.1:8000/v1')
+            : undefined;
+
           const res = await deepseek.testConnection(key, {
             provider: providerConfig.provider,
-            baseUrl: providerConfig.baseUrl
+            baseUrl: effectiveUrl
           });
 
           if (res.success) {
@@ -502,7 +503,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               });
             }
 
-            const balStr = isLocalBridge ? ' • 100% Free' : (res.balance ? ` • Balance: ${res.balance.totalBalance === 'Available' ? 'Available' : '$' + res.balance.totalBalance}` : '');
+            const balStr = isCustom ? ' • Free / Custom' : (res.balance ? ` • Balance: ${res.balance.totalBalance === 'Available' ? 'Available' : '$' + res.balance.totalBalance}` : '');
             testStatusEl.className = 'text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5 rounded-md block mt-1';
             testStatusEl.textContent = `✓ Connected (${(res.models || []).length} models ready${balStr})`;
           } else {
