@@ -99,6 +99,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (fontSizeLabel) {
       fontSizeLabel.textContent = `${fontSize}px`;
     }
+    const inReaderFontVal = document.getElementById('in-reader-font-val');
+    if (inReaderFontVal) {
+      inReaderFontVal.textContent = `${fontSize}px`;
+    }
+    const inReaderFontSlider = document.getElementById('in-reader-font-slider');
+    if (inReaderFontSlider) {
+      inReaderFontSlider.value = fontSize;
+    }
 
     // Apply font family
     if (chapterBody) {
@@ -110,6 +118,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         chapterBody.style.fontFamily = 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       }
     }
+    document.querySelectorAll('.in-reader-font-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.fontChoice === fontFamily);
+    });
 
     // Apply line height
     if (chapterBody) {
@@ -121,6 +132,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         chapterBody.style.lineHeight = '1.75';
       }
     }
+    document.querySelectorAll('.in-reader-line-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.lineChoice === lineHeight);
+    });
 
     // Apply column width
     if (readerMainEl) {
@@ -130,9 +144,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       else if (columnWidth === 'full') readerMainEl.classList.add('max-w-5xl');
       else readerMainEl.classList.add('max-w-3xl');
     }
+    document.querySelectorAll('.in-reader-width-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.widthChoice === columnWidth);
+    });
 
     // Apply Theme attribute and colors
     document.body.setAttribute('data-theme', theme);
+
+    // Sync theme buttons in popover
+    document.querySelectorAll('.in-reader-theme-btn').forEach((btn) => {
+      const isSelected = btn.dataset.themeChoice === theme;
+      btn.classList.toggle('active', isSelected);
+      const checkEl = btn.querySelector('.theme-check');
+      if (checkEl) checkEl.style.opacity = isSelected ? '1' : '0';
+    });
 
     if (theme === 'sepia') {
       document.body.style.backgroundColor = '#fbf0d9';
@@ -174,6 +199,137 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // --- In-Reader Typography Popover Controller ---
+  function initInReaderTypography() {
+    const popoverBtn = document.getElementById('toggle-typography-popover-btn');
+    const popoverEl = document.getElementById('reader-typography-popover');
+    const closeBtn = document.getElementById('close-typography-popover-btn');
+    const wrapperEl = document.getElementById('reader-typography-wrapper');
+    const fontSlider = document.getElementById('in-reader-font-slider');
+    const inReaderFontDec = document.getElementById('in-reader-font-dec');
+    const inReaderFontInc = document.getElementById('in-reader-font-inc');
+    const fullSettingsLink = document.getElementById('popover-full-settings-link');
+
+    if (fullSettingsLink && novelId && !isNaN(chapterNumber)) {
+      fullSettingsLink.href = `settings.html?from=reader&id=${encodeURIComponent(novelId)}&ch=${encodeURIComponent(chapterNumber)}`;
+    }
+
+    function openPopover() {
+      if (!popoverEl) return;
+      popoverEl.classList.remove('hidden');
+      if (popoverBtn) popoverBtn.setAttribute('aria-expanded', 'true');
+    }
+
+    function closePopover() {
+      if (!popoverEl) return;
+      popoverEl.classList.add('hidden');
+      if (popoverBtn) popoverBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    function togglePopover() {
+      if (!popoverEl) return;
+      if (popoverEl.classList.contains('hidden')) openPopover();
+      else closePopover();
+    }
+
+    if (popoverBtn) {
+      popoverBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        togglePopover();
+      });
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closePopover();
+      });
+    }
+
+    // Close when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!popoverEl || popoverEl.classList.contains('hidden')) return;
+      if (wrapperEl && !wrapperEl.contains(e.target)) {
+        closePopover();
+      }
+    });
+
+    // Theme preset buttons
+    document.querySelectorAll('.in-reader-theme-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const choice = btn.dataset.themeChoice;
+        if (choice) {
+          localStorage.setItem(THEME_KEY, choice);
+          applyReaderPreferences();
+        }
+      });
+    });
+
+    // Font Family buttons
+    document.querySelectorAll('.in-reader-font-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const choice = btn.dataset.fontChoice;
+        if (choice) {
+          localStorage.setItem(FONT_FAMILY_KEY, choice);
+          applyReaderPreferences();
+        }
+      });
+    });
+
+    // Line Spacing buttons
+    document.querySelectorAll('.in-reader-line-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const choice = btn.dataset.lineChoice;
+        if (choice) {
+          localStorage.setItem(LINE_HEIGHT_KEY, choice);
+          applyReaderPreferences();
+        }
+      });
+    });
+
+    // Column Width buttons
+    document.querySelectorAll('.in-reader-width-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const choice = btn.dataset.widthChoice;
+        if (choice) {
+          localStorage.setItem(WIDTH_KEY, choice);
+          applyReaderPreferences();
+        }
+      });
+    });
+
+    // Font Size Slider
+    if (fontSlider) {
+      fontSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        localStorage.setItem(FONT_KEY, val.toString());
+        applyReaderPreferences();
+      });
+    }
+
+    // Popover Font Steppers
+    if (inReaderFontDec) {
+      inReaderFontDec.addEventListener('click', () => {
+        const cur = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
+        const next = Math.max(14, cur - 1);
+        localStorage.setItem(FONT_KEY, next.toString());
+        applyReaderPreferences();
+      });
+    }
+
+    if (inReaderFontInc) {
+      inReaderFontInc.addEventListener('click', () => {
+        const cur = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
+        const next = Math.min(28, cur + 1);
+        localStorage.setItem(FONT_KEY, next.toString());
+        applyReaderPreferences();
+      });
+    }
+
+    return { openPopover, closePopover, togglePopover };
+  }
+
+  const inReaderTypography = initInReaderTypography();
   applyReaderPreferences();
 
   if (fontDecBtn) {
@@ -508,6 +664,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // If inside an input or textarea
       if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
+
+      // Hotkey: T toggles reader typography popover
+      if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        if (inReaderTypography) inReaderTypography.togglePopover();
+        return;
+      }
+
+      // Hotkey: Escape closes typography popover if open
+      const typographyPopoverEl = document.getElementById('reader-typography-popover');
+      if (e.key === 'Escape' && typographyPopoverEl && !typographyPopoverEl.classList.contains('hidden')) {
+        e.preventDefault();
+        if (inReaderTypography) inReaderTypography.closePopover();
+        return;
+      }
 
       // Hotkey: S toggles original source drawer (if source exists)
       if ((e.key === 's' || e.key === 'S') && currentChapter && currentChapter.originalRawText) {
