@@ -586,6 +586,20 @@ function updateReaderPreview() {
         return '"Trebuchet MS", "Lucida Grande", "Lucida Sans Unicode", sans-serif';
       case 'unkempt':
         return "'Unkempt', cursive, sans-serif";
+      case 'patrick-hand':
+        return "'Patrick Hand', cursive, sans-serif";
+      case 'merienda':
+        return "'Merienda', cursive, serif";
+      case 'pangolin':
+        return "'Pangolin', cursive, sans-serif";
+      case 'playwrite-vn':
+        return "'Playwrite VN', cursive, sans-serif";
+      case 'sedgwick-ave':
+        return "'Sedgwick Ave Display', cursive, sans-serif";
+      case 'mynerve':
+        return "'Mynerve', cursive, sans-serif";
+      case 'fuzzy-bubbles':
+        return "'Fuzzy Bubbles', cursive, sans-serif";
       case 'mono':
         return 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Cascadia Code", "Courier New", monospace';
       case 'sans':
