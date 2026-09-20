@@ -175,10 +175,13 @@
           throw new Error('DeepSeek API returned an empty translation response.');
         }
 
+        const costInfo = this.calculateCost(data.usage, activeModel);
+
         return {
           translatedText: content.trim(),
           modelUsed: activeModel,
-          usage: data.usage || null
+          usage: data.usage || null,
+          costInfo
         };
       } catch (err) {
         clearTimeout(timeoutId);
@@ -187,6 +190,100 @@
         }
         throw err;
       }
+    },
+
+    /**
+     * Determines whether a given timestamp falls within DeepSeek's Peak or Off-Peak billing window.
+     * Peak: Mon-Fri 01:00-04:00 UTC and 06:00-10:00 UTC.
+     * Off-Peak: 50% discount at all other times (weekends 24h, off-peak weekday hours).
+     * @param {Date|number} [date=new Date()]
+     * @returns {{ isPeak: boolean, multiplier: number, discountPercent: number, label: string, badgeClass: string, windowDesc: string }}
+     */
+    getPricingStatus(date = new Date()) {
+      const d = date instanceof Date ? date : new Date(date);
+      const day = d.getUTCDay(); // 0 = Sunday, 6 = Saturday
+      const hour = d.getUTCHours();
+
+      const isWeekday = day >= 1 && day <= 5;
+      const isPeakHour = (hour >= 1 && hour < 4) || (hour >= 6 && hour < 10);
+      const isPeak = isWeekday && isPeakHour;
+
+      return {
+        isPeak,
+        multiplier: isPeak ? 1.0 : 0.5,
+        discountPercent: isPeak ? 0 : 50,
+        label: isPeak ? 'Peak Hours' : 'Off-Peak (50% Off)',
+        badgeClass: isPeak ? 'text-amber-400 bg-amber-500/15 border-amber-500/30' : 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30',
+        windowDesc: isPeak
+          ? 'Peak billing window (UTC 01:00-04:00, 06:00-10:00 Mon-Fri)'
+          : 'Off-Peak discount active (50% off standard rates)'
+      };
+    },
+
+    /**
+     * Calculates the exact request cost in USD based on token usage, model, and Peak/Off-Peak schedule.
+     * Accounts for prompt tokens (system prompt instructions + raw chapter source), completion tokens,
+     * and context cache hits/misses.
+     * @param {object} usage DeepSeek API usage object
+     * @param {string} [model='deepseek-flash']
+     * @param {Date|number} [date=new Date()]
+     * @returns {object|null} Cost breakdown
+     */
+    calculateCost(usage, model = DEFAULT_MODEL, date = new Date()) {
+      if (!usage) {
+        return null;
+      }
+
+      const pricing = this.getPricingStatus(date);
+      const activeModel = model === 'deepseek-chat' ? 'deepseek-chat' : 'deepseek-flash';
+
+      // Base peak rates per 1 token (USD)
+      const baseRates = {
+        'deepseek-flash': {
+          hit: 0.006 / 1000000,
+          miss: 0.30 / 1000000,
+          out: 1.20 / 1000000
+        },
+        'deepseek-chat': {
+          hit: 0.028 / 1000000,
+          miss: 0.27 / 1000000,
+          out: 0.55 / 1000000
+        }
+      }[activeModel];
+
+      const cacheHitTokens = Number(usage.prompt_cache_hit_tokens) || 0;
+      let cacheMissTokens = Number(usage.prompt_cache_miss_tokens);
+      if (isNaN(cacheMissTokens)) {
+        cacheMissTokens = Math.max(0, (Number(usage.prompt_tokens) || 0) - cacheHitTokens);
+      }
+      const promptTokens = Number(usage.prompt_tokens) || (cacheHitTokens + cacheMissTokens);
+      const completionTokens = Number(usage.completion_tokens) || 0;
+      const totalTokens = Number(usage.total_tokens) || (promptTokens + completionTokens);
+
+      const hitCost = cacheHitTokens * baseRates.hit * pricing.multiplier;
+      const missCost = cacheMissTokens * baseRates.miss * pricing.multiplier;
+      const outCost = completionTokens * baseRates.out * pricing.multiplier;
+      const totalCostUSD = hitCost + missCost + outCost;
+
+      let formattedCost = `$${totalCostUSD.toFixed(4)}`;
+      if (totalCostUSD < 0.0001 && totalCostUSD > 0) {
+        formattedCost = `<$0.0001`;
+      }
+
+      return {
+        costUSD: totalCostUSD,
+        formattedCost,
+        modelUsed: activeModel,
+        isPeak: pricing.isPeak,
+        ratePeriod: pricing.label,
+        discountPercent: pricing.discountPercent,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        cacheHitTokens,
+        cacheMissTokens,
+        calculatedAt: date instanceof Date ? date.getTime() : new Date(date).getTime()
+      };
     },
 
     /**

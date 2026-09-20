@@ -609,6 +609,8 @@ const StorageService = {
     let finalText = content.rawText;
     let isTranslated = false;
     let modelUsed = null;
+    let translationCost = null;
+    let translationUsage = null;
 
     // Optional DeepSeek translation pre-download
     if (options && options.translation && options.translation.enabled) {
@@ -651,6 +653,8 @@ const StorageService = {
       finalText = result.translatedText;
       isTranslated = true;
       modelUsed = result.modelUsed;
+      translationCost = result.costInfo || null;
+      translationUsage = result.usage || null;
     }
 
     const saved = await this.saveChapter({
@@ -662,7 +666,9 @@ const StorageService = {
       originalRawText: content.rawText,
       isTranslated: isTranslated,
       modelUsed: modelUsed,
-      translatedAt: isTranslated ? Date.now() : null
+      translatedAt: isTranslated ? Date.now() : null,
+      translationCost: translationCost,
+      translationUsage: translationUsage
     });
 
     return saved;

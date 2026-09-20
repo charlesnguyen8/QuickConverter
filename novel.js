@@ -101,6 +101,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
+    const pricingBadgeEl = document.getElementById('deepseek-pricing-badge');
+    if (pricingBadgeEl && deepseek && typeof deepseek.getPricingStatus === 'function') {
+      const pStatus = deepseek.getPricingStatus();
+      pricingBadgeEl.textContent = pStatus.label;
+      pricingBadgeEl.className = `text-[10px] font-semibold px-1.5 py-0.5 rounded border ${pStatus.badgeClass}`;
+      pricingBadgeEl.title = `${pStatus.windowDesc} • Auto-applied UTC Schedule`;
+    }
+
     const DEFAULT_PROMPT = 'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
     const getStored = (key, fallback) => {
@@ -411,6 +419,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         rightCol.appendChild(readHint);
         rightCol.appendChild(statusBadge);
+
+        const downloadedChapter = downloadedMap.get(chNum);
+        if (downloadedChapter && downloadedChapter.translationCost && downloadedChapter.translationCost.formattedCost) {
+          const costBadge = document.createElement('span');
+          costBadge.className = 'text-[11px] font-mono font-medium px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20';
+          costBadge.textContent = downloadedChapter.translationCost.formattedCost;
+          const promptTok = downloadedChapter.translationCost.promptTokens ? `${downloadedChapter.translationCost.promptTokens.toLocaleString()} in` : '';
+          const outTok = downloadedChapter.translationCost.completionTokens ? `${downloadedChapter.translationCost.completionTokens.toLocaleString()} out` : '';
+          const cacheTok = downloadedChapter.translationCost.cacheHitTokens ? ` • ${downloadedChapter.translationCost.cacheHitTokens.toLocaleString()} cached` : '';
+          costBadge.title = `Translation Cost: ${downloadedChapter.translationCost.formattedCost} USD (${promptTok}, ${outTok}${cacheTok}) • ${downloadedChapter.translationCost.ratePeriod}`;
+          rightCol.appendChild(costBadge);
+        }
+
         rightCol.appendChild(delBtn);
       } else {
         // Download button with downward arrow icon

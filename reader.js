@@ -516,6 +516,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       }
 
+      const pricingBadgeEl = document.getElementById('reader-deepseek-pricing-badge');
+      if (pricingBadgeEl && deepseek && typeof deepseek.getPricingStatus === 'function') {
+        const pStatus = deepseek.getPricingStatus();
+        pricingBadgeEl.textContent = pStatus.label;
+        pricingBadgeEl.className = `text-[10px] font-semibold px-1.5 py-0.5 rounded border ${pStatus.badgeClass}`;
+        pricingBadgeEl.title = `${pStatus.windowDesc} • Auto-applied UTC Schedule`;
+      }
+
       const DEFAULT_PROMPT = 'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
       const getStored = (key, fallback) => {
@@ -745,7 +753,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Show/hide translation & edited badges
         if (chapterTransBadge) {
           if (chapter.isTranslated || chapter.modelUsed) {
-            chapterTransBadge.textContent = chapter.modelUsed ? `Translated (${chapter.modelUsed})` : 'Translated';
+            const costStr = chapter.translationCost && chapter.translationCost.formattedCost ? ` • ${chapter.translationCost.formattedCost}` : '';
+            chapterTransBadge.textContent = `Translated (${chapter.modelUsed || 'deepseek-flash'}${costStr})`;
+            if (chapter.translationCost) {
+              const promptTok = chapter.translationCost.promptTokens ? `${chapter.translationCost.promptTokens.toLocaleString()} in` : '';
+              const outTok = chapter.translationCost.completionTokens ? `${chapter.translationCost.completionTokens.toLocaleString()} out` : '';
+              const cacheTok = chapter.translationCost.cacheHitTokens ? ` • ${chapter.translationCost.cacheHitTokens.toLocaleString()} cached` : '';
+              chapterTransBadge.title = `Translation Request Cost: ${chapter.translationCost.formattedCost} USD (${promptTok}, ${outTok}${cacheTok}) • ${chapter.translationCost.ratePeriod}`;
+            }
             chapterTransBadge.classList.remove('hidden');
           } else {
             chapterTransBadge.classList.add('hidden');
@@ -760,10 +775,45 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
-        // Handle Original Source Drawer setup
-        if (chapter.originalRawText && chapter.originalRawText.trim() !== text.trim()) {
+        // Handle Original Source Drawer setup & cost breakdown
+        const sourceDrawerCostCard = document.getElementById('source-drawer-cost-card');
+        const drawerCostRateBadge = document.getElementById('drawer-cost-rate-badge');
+        const drawerCostPromptTokens = document.getElementById('drawer-cost-prompt-tokens');
+        const drawerCostCacheTokens = document.getElementById('drawer-cost-cache-tokens');
+        const drawerCostOutTokens = document.getElementById('drawer-cost-out-tokens');
+        const drawerCostTotalTokens = document.getElementById('drawer-cost-total-tokens');
+        const drawerCostTotalAmount = document.getElementById('drawer-cost-total-amount');
+
+        if (chapter.translationCost && sourceDrawerCostCard) {
+          sourceDrawerCostCard.classList.remove('hidden');
+          if (drawerCostRateBadge) {
+            drawerCostRateBadge.textContent = chapter.translationCost.ratePeriod || 'Off-Peak';
+            drawerCostRateBadge.className = chapter.translationCost.isPeak
+              ? 'text-[10px] font-semibold px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/15 text-amber-400'
+              : 'text-[10px] font-semibold px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/15 text-emerald-400';
+          }
+          if (drawerCostPromptTokens) {
+            drawerCostPromptTokens.textContent = `${(chapter.translationCost.promptTokens || 0).toLocaleString()} tokens`;
+          }
+          if (drawerCostCacheTokens) {
+            drawerCostCacheTokens.textContent = `${(chapter.translationCost.cacheHitTokens || 0).toLocaleString()} cached (90% off)`;
+          }
+          if (drawerCostOutTokens) {
+            drawerCostOutTokens.textContent = `${(chapter.translationCost.completionTokens || 0).toLocaleString()} tokens`;
+          }
+          if (drawerCostTotalTokens) {
+            drawerCostTotalTokens.textContent = `${(chapter.translationCost.totalTokens || 0).toLocaleString()} total tokens`;
+          }
+          if (drawerCostTotalAmount) {
+            drawerCostTotalAmount.textContent = `${chapter.translationCost.formattedCost} USD`;
+          }
+        } else if (sourceDrawerCostCard) {
+          sourceDrawerCostCard.classList.add('hidden');
+        }
+
+        if ((chapter.originalRawText && chapter.originalRawText.trim() !== text.trim()) || chapter.translationCost) {
           if (toggleSourceDrawerBtn) toggleSourceDrawerBtn.classList.remove('hidden');
-          if (sourceDrawerText) sourceDrawerText.textContent = chapter.originalRawText;
+          if (sourceDrawerText) sourceDrawerText.textContent = chapter.originalRawText || 'No separate raw source text stored.';
         } else {
           if (toggleSourceDrawerBtn) toggleSourceDrawerBtn.classList.add('hidden');
           closeSourceDrawer();

@@ -158,7 +158,12 @@
                 <label for="reader-deepseek-model-select" class="text-xs font-semibold text-slate-300">
                   Model
                 </label>
-                <span class="text-[11px] text-slate-500">DeepSeek V4.1</span>
+                <div class="flex items-center gap-1.5">
+                  <span id="reader-deepseek-pricing-badge" class="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/15 text-emerald-400" title="Live DeepSeek UTC Pricing Schedule">
+                    Off-Peak (50% Off)
+                  </span>
+                  <span class="text-[11px] text-slate-500">DeepSeek V4.1</span>
+                </div>
               </div>
               <select
                 id="reader-deepseek-model-select"
@@ -397,6 +402,35 @@
 
         <!-- Drawer Content -->
         <div class="flex-1 overflow-y-auto p-5 text-slate-300 font-sans text-sm whitespace-pre-wrap leading-relaxed select-text space-y-4">
+          <!-- Translation & Cost Accounting Card -->
+          <div id="source-drawer-cost-card" class="hidden p-3.5 rounded-lg bg-slate-800/90 border border-slate-700/80 text-xs flex flex-col gap-2.5 shadow-sm">
+            <div class="flex items-center justify-between border-b border-slate-700/60 pb-2">
+              <span class="font-bold text-slate-200 flex items-center gap-1.5">
+                <span>💰</span>
+                <span>Translation Request Accounting</span>
+              </span>
+              <span id="drawer-cost-rate-badge" class="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/15 text-emerald-400">
+                Off-Peak (50% Off)
+              </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2.5 text-[11px] text-slate-400">
+              <div class="bg-slate-900/60 p-2 rounded border border-slate-800">
+                <span class="text-slate-400 block text-[10px]">Input (Prompt + Source):</span>
+                <span id="drawer-cost-prompt-tokens" class="font-mono text-slate-200 font-semibold block text-xs">0 tokens</span>
+                <span id="drawer-cost-cache-tokens" class="text-[10px] text-emerald-400 block mt-0.5">0 cached (90% off)</span>
+              </div>
+              <div class="bg-slate-900/60 p-2 rounded border border-slate-800">
+                <span class="text-slate-400 block text-[10px]">Output (Translation):</span>
+                <span id="drawer-cost-out-tokens" class="font-mono text-slate-200 font-semibold block text-xs">0 tokens</span>
+                <span id="drawer-cost-total-tokens" class="text-[10px] text-slate-400 block mt-0.5">0 total tokens</span>
+              </div>
+            </div>
+            <div class="flex items-center justify-between pt-1 border-t border-slate-700/60">
+              <span class="text-slate-400 text-xs">Total Chapter Cost:</span>
+              <span id="drawer-cost-total-amount" class="font-mono font-bold text-sm text-indigo-300">$0.0000 USD</span>
+            </div>
+          </div>
+
           <div id="source-drawer-text">Loading source text...</div>
         </div>
 
