@@ -3,11 +3,12 @@
 
 (function (global) {
   const OFFICIAL_BASE_URL = 'https://api.deepseek.com';
-  const LOCAL_BRIDGE_DEFAULT_URL = 'http://127.0.0.1:8000/v1';
+  const CUSTOM_DEFAULT_URL = 'http://127.0.0.1:8000/v1';
+  const LOCAL_BRIDGE_DEFAULT_URL = CUSTOM_DEFAULT_URL;
   const DEFAULT_LOCAL_KEY = 'sk-local';
   const PROVIDER_OFFICIAL = 'official';
-  const PROVIDER_LOCAL_BRIDGE = 'local_bridge';
   const PROVIDER_CUSTOM = 'custom';
+  const PROVIDER_LOCAL_BRIDGE = 'local_bridge'; // backward-compatible alias
   const DEFAULT_MODEL = 'deepseek-flash';
   const REQUEST_TIMEOUT_MS = 90000; // 90 seconds for official API
   const BRIDGE_TIMEOUT_MS = 180000; // 180 seconds for local bridge with DeepThink R1
@@ -19,59 +20,63 @@
   const DeepSeekService = {
     BASE_URL: OFFICIAL_BASE_URL,
     OFFICIAL_BASE_URL,
+    CUSTOM_DEFAULT_URL,
     LOCAL_BRIDGE_DEFAULT_URL,
     DEFAULT_LOCAL_KEY,
     PROVIDER_OFFICIAL,
-    PROVIDER_LOCAL_BRIDGE,
     PROVIDER_CUSTOM,
+    PROVIDER_LOCAL_BRIDGE,
     DEFAULT_MODEL,
     REQUEST_TIMEOUT_MS,
     BRIDGE_TIMEOUT_MS,
 
     /**
      * Resolves currently active AI provider and endpoint configuration.
-     * @returns {Promise<{ provider: string, baseUrl: string, isLocalBridge: boolean, isCustom: boolean }>}
+     * @returns {Promise<{ provider: string, baseUrl: string, isOfficial: boolean, isCustom: boolean, isLocal: boolean }>}
      */
     async getProviderConfig() {
       let provider = PROVIDER_OFFICIAL;
-      let bridgeUrl = LOCAL_BRIDGE_DEFAULT_URL;
-      let customUrl = '';
+      let customUrl = CUSTOM_DEFAULT_URL;
+      let customApiKey = '';
 
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         try {
           const r = await new Promise((resolve) => {
             chrome.storage.local.get(
-              ['quickconverter_ai_provider', 'quickconverter_ai_bridge_url', 'quickconverter_ai_custom_url'],
+              ['quickconverter_ai_provider', 'quickconverter_ai_custom_url', 'quickconverter_ai_bridge_url', 'quickconverter_custom_api_key'],
               (res) => resolve(res || {})
             );
           });
           if (r.quickconverter_ai_provider) provider = r.quickconverter_ai_provider;
-          if (r.quickconverter_ai_bridge_url) bridgeUrl = r.quickconverter_ai_bridge_url;
           if (r.quickconverter_ai_custom_url) customUrl = r.quickconverter_ai_custom_url;
+          else if (r.quickconverter_ai_bridge_url) customUrl = r.quickconverter_ai_bridge_url;
+          if (r.quickconverter_custom_api_key) customApiKey = r.quickconverter_custom_api_key;
         } catch (e) {}
       }
 
       if (typeof localStorage !== 'undefined') {
         const storedProv = localStorage.getItem('quickconverter_ai_provider');
         if (storedProv) provider = storedProv;
-        const storedBridge = localStorage.getItem('quickconverter_ai_bridge_url');
-        if (storedBridge) bridgeUrl = storedBridge;
-        const storedCustom = localStorage.getItem('quickconverter_ai_custom_url');
+        const storedCustom = localStorage.getItem('quickconverter_ai_custom_url') || localStorage.getItem('quickconverter_ai_bridge_url');
         if (storedCustom) customUrl = storedCustom;
+        const storedKey = localStorage.getItem('quickconverter_custom_api_key');
+        if (storedKey) customApiKey = storedKey;
       }
 
-      let baseUrl = OFFICIAL_BASE_URL;
-      if (provider === PROVIDER_LOCAL_BRIDGE) {
-        baseUrl = bridgeUrl || LOCAL_BRIDGE_DEFAULT_URL;
-      } else if (provider === PROVIDER_CUSTOM) {
-        baseUrl = customUrl || bridgeUrl || OFFICIAL_BASE_URL;
-      }
+      const isOfficial = provider === PROVIDER_OFFICIAL;
+      const isCustom = !isOfficial;
+      const baseUrl = isOfficial ? OFFICIAL_BASE_URL : (customUrl || CUSTOM_DEFAULT_URL);
+      const isLocal = baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost');
 
       return {
-        provider,
+        provider: isOfficial ? PROVIDER_OFFICIAL : PROVIDER_CUSTOM,
         baseUrl: baseUrl.replace(/\/+$/, ''),
-        isLocalBridge: provider === PROVIDER_LOCAL_BRIDGE,
-        isCustom: provider === PROVIDER_CUSTOM
+        customUrl: customUrl.replace(/\/+$/, ''),
+        customApiKey,
+        isOfficial,
+        isCustom,
+        isLocal,
+        isLocalBridge: isLocal // alias for tests
       };
     },
 
@@ -79,23 +84,33 @@
      * Sets and persists the AI provider configuration.
      * @param {object} config
      * @param {string} [config.provider]
-     * @param {string} [config.bridgeUrl]
+     * @param {string} [config.baseUrl]
      * @param {string} [config.customUrl]
+     * @param {string} [config.customApiKey]
      */
-    async setProviderConfig({ provider, bridgeUrl, customUrl }) {
+    async setProviderConfig({ provider, baseUrl, customUrl, customApiKey, bridgeUrl }) {
+      const targetUrl = customUrl || baseUrl || bridgeUrl;
       const updates = {};
       if (provider) updates.quickconverter_ai_provider = provider;
-      if (bridgeUrl !== undefined) updates.quickconverter_ai_bridge_url = bridgeUrl;
-      if (customUrl !== undefined) updates.quickconverter_ai_custom_url = customUrl;
+      if (targetUrl !== undefined) {
+        updates.quickconverter_ai_custom_url = targetUrl;
+        updates.quickconverter_ai_bridge_url = targetUrl; // keep for backward compat
+      }
+      if (customApiKey !== undefined) updates.quickconverter_custom_api_key = customApiKey;
 
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         await new Promise((resolve) => chrome.storage.local.set(updates, () => resolve()));
       }
       if (typeof localStorage !== 'undefined') {
         if (provider) localStorage.setItem('quickconverter_ai_provider', provider);
-        if (bridgeUrl !== undefined) localStorage.setItem('quickconverter_ai_bridge_url', bridgeUrl);
-        if (customUrl !== undefined) localStorage.setItem('quickconverter_ai_custom_url', customUrl);
+        if (targetUrl !== undefined) {
+          localStorage.setItem('quickconverter_ai_custom_url', targetUrl);
+          localStorage.setItem('quickconverter_ai_bridge_url', targetUrl);
+        }
+        if (customApiKey !== undefined) localStorage.setItem('quickconverter_custom_api_key', customApiKey);
       }
+
+      return this.getProviderConfig();
     },
 
     /**
@@ -325,11 +340,12 @@
     async testConnection(apiKey, options = {}) {
       const provConfig = await this.getProviderConfig();
       const activeProvider = options.provider || provConfig.provider;
-      const targetBaseUrl = (options.baseUrl || provConfig.baseUrl).replace(/\/+$/, '');
-      const isBridge = activeProvider === PROVIDER_LOCAL_BRIDGE || targetBaseUrl.includes('127.0.0.1:8000') || targetBaseUrl.includes('localhost:8000');
+      const targetBaseUrl = (options.baseUrl || provConfig.baseUrl || CUSTOM_DEFAULT_URL).replace(/\/+$/, '');
+      const isCustom = activeProvider === PROVIDER_CUSTOM || activeProvider === PROVIDER_LOCAL_BRIDGE || targetBaseUrl !== OFFICIAL_BASE_URL;
+      const isBridge = isCustom && (targetBaseUrl.includes('127.0.0.1') || targetBaseUrl.includes('localhost'));
 
-      const cleanKey = (apiKey || (isBridge ? DEFAULT_LOCAL_KEY : '')).trim();
-      if (!cleanKey && !isBridge) {
+      const cleanKey = (apiKey || (isCustom ? (provConfig.customApiKey || DEFAULT_LOCAL_KEY) : '')).trim();
+      if (!cleanKey && !isCustom) {
         return { success: false, error: 'API key is required' };
       }
 
@@ -373,66 +389,40 @@
           return { success: false, error: errMsg };
         }
 
-        const modelsData = await modelsRes.json();
-        let modelsList = [];
-        if (modelsData && Array.isArray(modelsData.data)) {
-          modelsList = modelsData.data.map((m) => m.id);
-        }
+        const data = await modelsRes.json();
+        const models = (data.data || []).map((m) => m.id);
 
-        if (isBridge) {
-          return {
-            success: true,
-            isLocalBridge: true,
-            provider: PROVIDER_LOCAL_BRIDGE,
-            baseUrl: targetBaseUrl,
-            models: modelsList.length > 0 ? modelsList : ['deepseek-chat', 'deepseek-reasoner'],
-            balance: {
-              success: true,
-              totalBalance: 'Available',
-              numericBalance: 999999,
-              currency: 'USD',
-              formatted: 'Free (Local Bridge)',
-              compact: 'Free (Bridge)',
-              isAvailable: true,
-              isLow: false
-            }
-          };
-        }
-
-        // 2. Fetch user balance via getBalance for Official API
-        let balanceInfo = null;
-        try {
-          const bRes = await this.getBalance(cleanKey, { force: true });
-          if (bRes && bRes.success) {
-            balanceInfo = bRes;
+        // 2. Fetch balance if official provider
+        let balance = null;
+        if (!isCustom) {
+          try {
+            balance = await this.getBalance(cleanKey, { force: true });
+          } catch (e) {
+            console.warn('Balance check failed during test:', e);
           }
-        } catch (bErr) {
-          console.warn('[DeepSeekService] Balance check non-fatal warning:', bErr);
         }
 
         return {
           success: true,
-          isLocalBridge: false,
+          models,
+          balance,
+          isCustom,
+          isLocalBridge: isBridge,
           provider: activeProvider,
           baseUrl: targetBaseUrl,
-          models: modelsList.length > 0 ? modelsList : [DEFAULT_MODEL, 'deepseek-chat'],
-          balance: balanceInfo
+          modelCount: models.length
         };
       } catch (err) {
-        let msg = err.name === 'AbortError' ? 'Connection timed out' : (err.message || 'Network request failed');
-        if (isBridge && (msg.includes('Failed to fetch') || msg.includes('ECONNREFUSED'))) {
-          msg = `Could not connect to Local Bridge at ${targetBaseUrl}. Is the bridge server running?`;
+        if (err.name === 'AbortError') {
+          return { success: false, error: 'Connection timed out (12s)' };
         }
-        return {
-          success: false,
-          error: msg
-        };
+        return { success: false, error: err.message || 'Failed to connect' };
       }
     },
 
     /**
-     * Translates chapter text using DeepSeek completions endpoint.
-     * Supports both official API and local bridge (with reasoning_content extraction).
+     * Translates raw chapter text to formatted English using OpenAI-compatible chat completions.
+     * Supports both official API and custom/local bridge (with reasoning_content extraction).
      * @param {object} params
      * @param {string} [params.apiKey]
      * @param {string} params.prompt
@@ -441,18 +431,19 @@
      * @param {number} [params.temperature=0.7]
      * @param {string} [params.provider]
      * @param {string} [params.baseUrl]
-     * @returns {Promise<{ translatedText: string, reasoningText?: string, modelUsed: string, usage?: object, costInfo?: object, isLocalBridge: boolean }>}
+     * @returns {Promise<{ translatedText: string, reasoningText?: string, modelUsed: string, usage?: object, costInfo?: object, isLocalBridge: boolean, isCustom: boolean }>}
      */
     async translateChapter({ apiKey, prompt, rawText, model = DEFAULT_MODEL, temperature = 0.7, provider, baseUrl }) {
       const provConfig = await this.getProviderConfig();
       const activeProvider = provider || provConfig.provider;
-      const effectiveBaseUrl = (baseUrl || provConfig.baseUrl).replace(/\/+$/, '');
-      const isBridge = activeProvider === PROVIDER_LOCAL_BRIDGE || effectiveBaseUrl.includes('127.0.0.1:8000') || effectiveBaseUrl.includes('localhost:8000');
+      const isCustom = activeProvider === PROVIDER_CUSTOM || activeProvider === PROVIDER_LOCAL_BRIDGE;
+      const effectiveBaseUrl = (baseUrl || provConfig.baseUrl || (isCustom ? CUSTOM_DEFAULT_URL : OFFICIAL_BASE_URL)).replace(/\/+$/, '');
+      const isBridge = isCustom && (effectiveBaseUrl.includes('127.0.0.1') || effectiveBaseUrl.includes('localhost'));
 
       let cleanKey = (apiKey || '').trim();
       if (!cleanKey) {
-        if (isBridge) {
-          cleanKey = DEFAULT_LOCAL_KEY;
+        if (isCustom) {
+          cleanKey = provConfig.customApiKey || DEFAULT_LOCAL_KEY;
         } else {
           throw new Error('DeepSeek API Key is missing. Please enter your API key.');
         }
@@ -463,13 +454,13 @@
 
       let activeModel = (model || '').trim();
       if (!activeModel) {
-        activeModel = isBridge ? 'deepseek-chat' : DEFAULT_MODEL;
+        activeModel = isCustom ? 'deepseek-chat' : DEFAULT_MODEL;
       }
 
       const systemPrompt = (prompt || '').trim() ||
         'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
-      const timeoutMs = (isBridge || activeModel.includes('reasoner') || activeModel.includes('r1')) ? BRIDGE_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+      const timeoutMs = (isCustom || activeModel.includes('reasoner') || activeModel.includes('r1')) ? BRIDGE_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -505,9 +496,9 @@
           } else if (res.status === 429) {
             throw new Error('Rate limit exceeded. Please wait a moment before trying again.');
           } else if (res.status === 502) {
-            throw new Error('Local Bridge: Chromium automation browser is disconnected (502). Please reopen the bridge browser.');
+            throw new Error('Custom / Local Bridge: Service or automation browser is disconnected (502).');
           } else if (res.status === 503) {
-            throw new Error('Local Bridge: Cloudflare challenge required in browser (503). Please complete verification in Chromium.');
+            throw new Error('Custom / Local Bridge: Service challenge or temporarily unavailable (503).');
           }
 
           let errMsg = `HTTP Error ${res.status}`;
@@ -530,18 +521,19 @@
         }
 
         let costInfo;
-        if (isBridge) {
+        if (isCustom) {
           costInfo = {
             costUSD: 0,
-            formattedCost: 'Free (Local Bridge)',
+            formattedCost: isBridge ? 'Free (Local Bridge)' : 'Custom API',
             modelUsed: activeModel,
             isPeak: false,
-            ratePeriod: 'Local Bridge (Free)',
+            ratePeriod: isBridge ? 'Local Bridge (Free)' : 'Custom Endpoint',
             discountPercent: 100,
             promptTokens: data.usage?.prompt_tokens || 0,
             completionTokens: data.usage?.completion_tokens || 0,
             totalTokens: data.usage?.total_tokens || 0,
-            isLocalBridge: true,
+            isCustom: true,
+            isLocalBridge: isBridge,
             calculatedAt: Date.now()
           };
         } else {
@@ -554,6 +546,7 @@
           modelUsed: activeModel,
           usage: data.usage || null,
           costInfo,
+          isCustom,
           isLocalBridge: isBridge
         };
       } catch (err) {

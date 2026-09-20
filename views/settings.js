@@ -166,10 +166,13 @@ async function initDeepSeekSettings() {
     }
   }
 
+  const bridgePresetBtn = document.getElementById('bridge-preset-btn');
+
   // --- Provider Configuration Setup ---
   let activeProviderConfig = {
     provider: DeepSeekService.PROVIDER_OFFICIAL,
-    baseUrl: DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL
+    baseUrl: DeepSeekService.OFFICIAL_BASE_URL,
+    customUrl: DeepSeekService.CUSTOM_DEFAULT_URL
   };
 
   try {
@@ -179,22 +182,22 @@ async function initDeepSeekSettings() {
   }
 
   function updateProviderUI(config) {
-    const isBridge = config.provider === DeepSeekService.PROVIDER_LOCAL_BRIDGE;
-    if (providerRadioOfficial) providerRadioOfficial.checked = !isBridge;
-    if (providerRadioBridge) providerRadioBridge.checked = isBridge;
+    const isCustom = config.provider !== DeepSeekService.PROVIDER_OFFICIAL;
+    if (providerRadioOfficial) providerRadioOfficial.checked = !isCustom;
+    if (providerRadioBridge) providerRadioBridge.checked = isCustom;
 
     if (providerCardOfficial && providerCardBridge) {
-      if (isBridge) {
-        providerCardBridge.className = 'flex items-start gap-3 p-4 rounded-xl border border-indigo-500/50 bg-indigo-500/10 cursor-pointer transition relative';
-        providerCardOfficial.className = 'flex items-start gap-3 p-4 rounded-xl border border-slate-850 bg-slate-900/40 cursor-pointer transition relative hover:border-slate-700/60';
+      if (isCustom) {
+        providerCardBridge.className = 'flex flex-col gap-2 p-3.5 rounded-xl border border-indigo-500/50 bg-indigo-500/10 cursor-pointer transition relative';
+        providerCardOfficial.className = 'flex flex-col gap-2 p-3.5 rounded-xl border border-slate-700/60 bg-slate-900/40 cursor-pointer transition relative hover:border-slate-600';
       } else {
-        providerCardOfficial.className = 'flex items-start gap-3 p-4 rounded-xl border border-indigo-500/50 bg-indigo-500/10 cursor-pointer transition relative';
-        providerCardBridge.className = 'flex items-start gap-3 p-4 rounded-xl border border-slate-850 bg-slate-900/40 cursor-pointer transition relative hover:border-slate-700/60';
+        providerCardOfficial.className = 'flex flex-col gap-2 p-3.5 rounded-xl border border-indigo-500/50 bg-indigo-500/10 cursor-pointer transition relative';
+        providerCardBridge.className = 'flex flex-col gap-2 p-3.5 rounded-xl border border-slate-700/60 bg-slate-900/40 cursor-pointer transition relative hover:border-slate-600';
       }
     }
 
     if (bridgeConfigPanel) {
-      if (isBridge) {
+      if (isCustom) {
         bridgeConfigPanel.classList.remove('hidden');
       } else {
         bridgeConfigPanel.classList.add('hidden');
@@ -202,12 +205,12 @@ async function initDeepSeekSettings() {
     }
 
     if (bridgeUrlInput) {
-      bridgeUrlInput.value = config.baseUrl || DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL;
+      bridgeUrlInput.value = config.customUrl || config.baseUrl || DeepSeekService.CUSTOM_DEFAULT_URL;
     }
 
     if (providerStatusBadge) {
-      if (isBridge) {
-        providerStatusBadge.textContent = 'Free Web Bridge';
+      if (isCustom) {
+        providerStatusBadge.textContent = 'Custom API / Local Bridge';
         providerStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/30';
       } else {
         providerStatusBadge.textContent = 'Official Cloud API';
@@ -232,49 +235,62 @@ async function initDeepSeekSettings() {
 
   if (providerRadioBridge) {
     providerRadioBridge.addEventListener('change', async () => {
-      const bridgeUrl = bridgeUrlInput ? bridgeUrlInput.value.trim() : DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL;
+      const bridgeUrl = bridgeUrlInput ? bridgeUrlInput.value.trim() : DeepSeekService.CUSTOM_DEFAULT_URL;
       activeProviderConfig = await DeepSeekService.setProviderConfig({
-        provider: DeepSeekService.PROVIDER_LOCAL_BRIDGE,
-        baseUrl: bridgeUrl || DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL
+        provider: DeepSeekService.PROVIDER_CUSTOM,
+        customUrl: bridgeUrl || DeepSeekService.CUSTOM_DEFAULT_URL
       });
       updateProviderUI(activeProviderConfig);
-      triggerSaveIndicator('Provider switched to Local Web Bridge (Free)');
+      triggerSaveIndicator('Provider switched to Custom API / Local Bridge');
+    });
+  }
+
+  if (bridgePresetBtn && bridgeUrlInput) {
+    bridgePresetBtn.addEventListener('click', async () => {
+      bridgeUrlInput.value = DeepSeekService.CUSTOM_DEFAULT_URL;
+      activeProviderConfig = await DeepSeekService.setProviderConfig({
+        customUrl: DeepSeekService.CUSTOM_DEFAULT_URL
+      });
+      triggerSaveIndicator('Reset to Local Bridge preset URL');
     });
   }
 
   if (bridgeUrlInput) {
     bridgeUrlInput.addEventListener('change', async () => {
-      const url = bridgeUrlInput.value.trim() || DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL;
-      activeProviderConfig = await DeepSeekService.setProviderConfig({ baseUrl: url });
-      triggerSaveIndicator('Bridge Base URL updated');
+      const url = bridgeUrlInput.value.trim() || DeepSeekService.CUSTOM_DEFAULT_URL;
+      activeProviderConfig = await DeepSeekService.setProviderConfig({
+        customUrl: url,
+        baseUrl: url
+      });
+      triggerSaveIndicator('Custom API Base URL updated');
     });
   }
 
   if (testBridgeBtn) {
     testBridgeBtn.addEventListener('click', async () => {
-      const targetUrl = bridgeUrlInput ? (bridgeUrlInput.value.trim() || DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL) : DeepSeekService.LOCAL_BRIDGE_DEFAULT_URL;
+      const targetUrl = bridgeUrlInput ? (bridgeUrlInput.value.trim() || DeepSeekService.CUSTOM_DEFAULT_URL) : DeepSeekService.CUSTOM_DEFAULT_URL;
       testBridgeBtn.disabled = true;
       testBridgeBtn.textContent = 'Testing...';
       if (bridgeStatusFeedback) {
-        bridgeStatusFeedback.textContent = 'Connecting to bridge at ' + targetUrl + '...';
+        bridgeStatusFeedback.textContent = 'Connecting to endpoint at ' + targetUrl + '...';
         bridgeStatusFeedback.className = 'text-xs font-medium text-indigo-400';
       }
 
       try {
         const res = await DeepSeekService.testConnection(null, {
-          provider: DeepSeekService.PROVIDER_LOCAL_BRIDGE,
+          provider: DeepSeekService.PROVIDER_CUSTOM,
           baseUrl: targetUrl
         });
 
         if (res.success) {
           if (bridgeStatusFeedback) {
-            bridgeStatusFeedback.textContent = `✓ Connected! Bridge healthy (${res.modelCount || 0} models ready)`;
+            bridgeStatusFeedback.textContent = `✓ Connected! Endpoint healthy (${(res.models || []).length || res.modelCount || 0} models ready)`;
             bridgeStatusFeedback.className = 'text-xs font-medium text-emerald-400';
           }
-          triggerSaveIndicator('Local bridge connection verified!');
+          triggerSaveIndicator('Custom endpoint verified!');
         } else {
           if (bridgeStatusFeedback) {
-            bridgeStatusFeedback.textContent = `✕ Bridge error: ${res.error}`;
+            bridgeStatusFeedback.textContent = `✕ Error: ${res.error}`;
             bridgeStatusFeedback.className = 'text-xs font-medium text-red-400';
           }
         }
@@ -285,7 +301,7 @@ async function initDeepSeekSettings() {
         }
       } finally {
         testBridgeBtn.disabled = false;
-        testBridgeBtn.textContent = 'Test Bridge';
+        testBridgeBtn.textContent = 'Test Base URL';
       }
     });
   }

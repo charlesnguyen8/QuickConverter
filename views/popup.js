@@ -59,6 +59,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const testBtn = document.getElementById('test-deepseek-btn');
     const testStatusEl = document.getElementById('deepseek-test-status');
 
+    // Provider Selector Elements
+    const providerBtnOfficial = document.getElementById('popup-provider-btn-official');
+    const providerBtnCustom = document.getElementById('popup-provider-btn-custom');
+    const providerBadgeEl = document.getElementById('popup-provider-badge');
+    const customApiRow = document.getElementById('popup-custom-api-row');
+    const customBaseUrlInput = document.getElementById('popup-custom-base-url');
+    const bridgePresetBtn = document.getElementById('popup-bridge-preset-btn');
+    const testCustomBtn = document.getElementById('popup-test-custom-btn');
+    const customTestStatusEl = document.getElementById('popup-custom-test-status');
+    const apiKeyLabelEl = document.getElementById('popup-api-key-label');
+
     // Balance Widget Elements
     const balanceBadgeEl = document.getElementById('deepseek-balance-badge');
     const balanceTextEl = document.getElementById('deepseek-balance-text');
@@ -70,8 +81,167 @@ document.addEventListener('DOMContentLoaded', async () => {
     const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
       (typeof DeepSeekService !== 'undefined' && DeepSeekService);
 
+    let providerConfig = { provider: 'official', customUrl: 'http://127.0.0.1:8000/v1' };
+    if (deepseek && typeof deepseek.getProviderConfig === 'function') {
+      deepseek.getProviderConfig().then((cfg) => {
+        providerConfig = cfg;
+        applyProviderUI(cfg.provider, cfg.customUrl);
+      }).catch((e) => console.warn('[popup.js] Failed to load provider config:', e));
+    }
+
+    function applyProviderUI(provider, customUrl) {
+      const isCustom = provider !== 'official';
+      if (providerBtnOfficial && providerBtnCustom) {
+        if (isCustom) {
+          providerBtnCustom.className = 'px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer bg-purple-600 text-white shadow-sm';
+          providerBtnOfficial.className = 'px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer text-slate-400 hover:text-slate-200';
+        } else {
+          providerBtnOfficial.className = 'px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer bg-indigo-600 text-white shadow-sm';
+          providerBtnCustom.className = 'px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer text-slate-400 hover:text-slate-200';
+        }
+      }
+      if (providerBadgeEl) {
+        if (isCustom) {
+          providerBadgeEl.textContent = 'Custom API / Free';
+          providerBadgeEl.className = 'text-[9px] font-semibold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30';
+        } else {
+          providerBadgeEl.textContent = 'Official Cloud';
+          providerBadgeEl.className = 'text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        }
+      }
+      if (customApiRow) {
+        if (isCustom) {
+          customApiRow.classList.remove('hidden');
+          customApiRow.classList.add('flex');
+        } else {
+          customApiRow.classList.add('hidden');
+          customApiRow.classList.remove('flex');
+        }
+      }
+      if (customBaseUrlInput && customUrl) {
+        customBaseUrlInput.value = customUrl;
+      }
+      if (apiKeyLabelEl) {
+        apiKeyLabelEl.textContent = isCustom ? '1. API Key (Optional for local)' : '1. DeepSeek API Key';
+      }
+      if (keyEl) {
+        keyEl.placeholder = isCustom ? 'Optional (e.g. sk-... or leave blank for local)' : 'sk-...';
+      }
+      if (balanceBadgeEl && isCustom) {
+        balanceBadgeEl.classList.add('hidden');
+        balanceBadgeEl.classList.remove('inline-flex');
+      }
+      const pricingBadge = document.getElementById('deepseek-pricing-badge');
+      if (pricingBadge) {
+        if (isCustom) {
+          pricingBadge.textContent = 'Free • Custom API';
+          pricingBadge.className = 'text-[9px] font-semibold px-1.5 py-0.5 rounded border border-purple-500/30 bg-purple-500/15 text-purple-300';
+          pricingBadge.title = 'Custom API / Local Bridge: No token fees charged to QuickConverter';
+        } else if (deepseek && typeof deepseek.getPricingStatus === 'function') {
+          const pStatus = deepseek.getPricingStatus();
+          pricingBadge.textContent = pStatus.label;
+          pricingBadge.className = `text-[9px] font-semibold px-1.5 py-0.5 rounded border ${pStatus.badgeClass}`;
+          pricingBadge.title = `${pStatus.windowDesc} • Auto-applied UTC Schedule`;
+        }
+      }
+    }
+
+    if (providerBtnOfficial) {
+      providerBtnOfficial.addEventListener('click', async () => {
+        if (deepseek && typeof deepseek.setProviderConfig === 'function') {
+          providerConfig = await deepseek.setProviderConfig({ provider: 'official' });
+        }
+        applyProviderUI('official', providerConfig.customUrl);
+        if (popupBalanceTracker) popupBalanceTracker.refresh(true);
+      });
+    }
+
+    if (providerBtnCustom) {
+      providerBtnCustom.addEventListener('click', async () => {
+        const customUrlVal = customBaseUrlInput ? (customBaseUrlInput.value.trim() || 'http://127.0.0.1:8000/v1') : 'http://127.0.0.1:8000/v1';
+        if (deepseek && typeof deepseek.setProviderConfig === 'function') {
+          providerConfig = await deepseek.setProviderConfig({ provider: 'custom', customUrl: customUrlVal });
+        }
+        applyProviderUI('custom', customUrlVal);
+      });
+    }
+
+    if (customBaseUrlInput) {
+      customBaseUrlInput.addEventListener('change', async () => {
+        const val = customBaseUrlInput.value.trim() || 'http://127.0.0.1:8000/v1';
+        if (deepseek && typeof deepseek.setProviderConfig === 'function') {
+          providerConfig = await deepseek.setProviderConfig({ customUrl: val });
+        }
+        applyProviderUI(providerConfig.provider, val);
+      });
+    }
+
+    if (bridgePresetBtn && customBaseUrlInput) {
+      bridgePresetBtn.addEventListener('click', async () => {
+        customBaseUrlInput.value = 'http://127.0.0.1:8000/v1';
+        if (deepseek && typeof deepseek.setProviderConfig === 'function') {
+          providerConfig = await deepseek.setProviderConfig({ customUrl: 'http://127.0.0.1:8000/v1' });
+        }
+        applyProviderUI(providerConfig.provider, 'http://127.0.0.1:8000/v1');
+      });
+    }
+
+    if (testCustomBtn && customBaseUrlInput && customTestStatusEl) {
+      testCustomBtn.addEventListener('click', async () => {
+        const targetUrl = customBaseUrlInput.value.trim() || 'http://127.0.0.1:8000/v1';
+        testCustomBtn.disabled = true;
+        testCustomBtn.textContent = 'Testing...';
+        customTestStatusEl.className = 'text-[10px] text-purple-300 bg-purple-500/10 border border-purple-500/20 px-2 py-1 rounded flex items-center gap-1.5 block mt-1';
+        customTestStatusEl.innerHTML = `
+          <svg class="animate-spin h-3 w-3 text-purple-400" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          <span>Pinging ${targetUrl}/models...</span>
+        `;
+
+        try {
+          const key = keyEl ? keyEl.value.trim() : '';
+          const res = await deepseek.testConnection(key, { provider: 'custom', baseUrl: targetUrl });
+          if (res.success) {
+            customTestStatusEl.className = 'text-[10px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded block mt-1';
+            customTestStatusEl.textContent = `✓ Custom API connected! (${(res.models || []).length} models ready)`;
+            if (modelSelectEl && Array.isArray(res.models) && res.models.length > 0) {
+              const curModel = modelSelectEl.value;
+              modelSelectEl.innerHTML = '';
+              res.models.forEach((mId) => {
+                const opt = document.createElement('option');
+                opt.value = mId;
+                let label = mId;
+                if (mId === 'deepseek-flash') label += ' (V4.1-Flash • Fast)';
+                else if (mId === 'deepseek-chat') label += ' (V3 • Standard)';
+                else if (mId === 'deepseek-reasoner') label += ' (R1 • DeepThink)';
+                opt.textContent = label;
+                if (mId === curModel) opt.selected = true;
+                modelSelectEl.appendChild(opt);
+              });
+            }
+          } else {
+            customTestStatusEl.className = 'text-[10px] text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded block mt-1';
+            customTestStatusEl.textContent = `✗ ${res.error || 'Connection failed'}`;
+          }
+        } catch (err) {
+          customTestStatusEl.className = 'text-[10px] text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded block mt-1';
+          customTestStatusEl.textContent = `✗ Connection failed: ${err.message}`;
+        } finally {
+          testCustomBtn.disabled = false;
+          testCustomBtn.textContent = 'Ping';
+        }
+      });
+    }
+
     const updateBalanceUI = (balanceInfo, isUpdating) => {
       if (!balanceBadgeEl) return;
+      if (providerConfig.provider !== 'official') {
+        balanceBadgeEl.classList.add('hidden');
+        balanceBadgeEl.classList.remove('inline-flex');
+        return;
+      }
       if (refreshBalanceIcon) {
         refreshBalanceIcon.classList.toggle('animate-spin', !!isUpdating);
       }
@@ -645,10 +815,23 @@ document.addEventListener('DOMContentLoaded', async () => {
           let apiKey = keyEl ? keyEl.value.trim() : '';
           const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
 
+          const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+            (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+          let curProvConfig = { provider: 'official', customUrl: 'http://127.0.0.1:8000/v1' };
+          if (deepseek && typeof deepseek.getProviderConfig === 'function') {
+            try {
+              curProvConfig = await deepseek.getProviderConfig();
+            } catch (e) {}
+          }
+          const isCustomMode = curProvConfig.provider !== 'official';
+          const customUrlInputEl = document.getElementById('popup-custom-base-url');
+          const effectiveCustomUrl = customUrlInputEl ? (customUrlInputEl.value.trim() || curProvConfig.customUrl || 'http://127.0.0.1:8000/v1') : (curProvConfig.customUrl || 'http://127.0.0.1:8000/v1');
+
           if (isTranslationEnabled && !apiKey) {
-            const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
-              (typeof DeepSeekService !== 'undefined' && DeepSeekService);
-            if (deepseek && typeof deepseek.getApiKey === 'function') {
+            if (isCustomMode) {
+              apiKey = 'sk-local';
+            } else if (deepseek && typeof deepseek.getApiKey === 'function') {
               try {
                 const stored = await deepseek.getApiKey();
                 if (stored && stored.apiKey) {
@@ -661,7 +844,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           }
 
-          if (isTranslationEnabled && !apiKey) {
+          if (isTranslationEnabled && !apiKey && !isCustomMode) {
             if (keyEl) {
               keyEl.focus();
               keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');
@@ -685,13 +868,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             const options = {
               translation: {
                 enabled: isTranslationEnabled,
-                apiKey: apiKey,
+                apiKey: apiKey || (isCustomMode ? 'sk-local' : ''),
                 prompt: promptEl ? promptEl.value : '',
-                model: selectedModel
+                model: selectedModel,
+                provider: curProvConfig.provider,
+                baseUrl: isCustomMode ? effectiveCustomUrl : undefined
               }
             };
             await window.StorageService.downloadChapter(novel.id, chNum, options);
-            if (popupBalanceTracker && isTranslationEnabled) {
+            if (popupBalanceTracker && isTranslationEnabled && !isCustomMode) {
               popupBalanceTracker.refresh(true);
             }
             await renderPopupChapters(novel);

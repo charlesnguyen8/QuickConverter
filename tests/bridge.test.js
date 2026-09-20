@@ -16,13 +16,14 @@ console.log('✓ manifest.json host_permissions properly permit local bridge con
 // Test 2: Verify DeepSeekService service exports & constants
 const deepseekCode = fs.readFileSync(path.join(repoRoot, 'services', 'deepseek.js'), 'utf8');
 assert(deepseekCode.includes('PROVIDER_OFFICIAL'), 'DeepSeekService must define PROVIDER_OFFICIAL');
+assert(deepseekCode.includes('PROVIDER_CUSTOM'), 'DeepSeekService must define PROVIDER_CUSTOM');
 assert(deepseekCode.includes('PROVIDER_LOCAL_BRIDGE'), 'DeepSeekService must define PROVIDER_LOCAL_BRIDGE');
-assert(deepseekCode.includes('LOCAL_BRIDGE_DEFAULT_URL'), 'DeepSeekService must define LOCAL_BRIDGE_DEFAULT_URL');
+assert(deepseekCode.includes('CUSTOM_DEFAULT_URL'), 'DeepSeekService must define CUSTOM_DEFAULT_URL');
 assert(deepseekCode.includes('getProviderConfig'), 'DeepSeekService must define getProviderConfig');
 assert(deepseekCode.includes('setProviderConfig'), 'DeepSeekService must define setProviderConfig');
 assert(deepseekCode.includes('reasoning_content'), 'DeepSeekService must process reasoning_content');
 assert(deepseekCode.includes('reasoningText'), 'DeepSeekService must return reasoningText');
-console.log('✓ services/deepseek.js defines provider constants and reasoning extraction logic');
+console.log('✓ services/deepseek.js defines provider constants (Official, Custom) and reasoning extraction logic');
 
 // Test 3: Verify storage service handles reasoningText in schema and downloadChapter
 const storageCode = fs.readFileSync(path.join(repoRoot, 'services', 'storage.js'), 'utf8');
@@ -30,19 +31,50 @@ assert(storageCode.includes('reasoningText'), 'StorageService must support reaso
 assert(storageCode.includes('cleanKey = \'sk-local\''), 'StorageService must default cleanKey to sk-local for local bridge');
 console.log('✓ services/storage.js supports reasoningText and local bridge authentication default');
 
-// Test 4: Verify views/reader.html and views/novel.html have provider badges and reasoner model option
+// Test 4: Verify Translation on Download cards have Official vs Custom API switcher across all views
 const readerHtml = fs.readFileSync(path.join(repoRoot, 'views', 'reader.html'), 'utf8');
 const novelHtml = fs.readFileSync(path.join(repoRoot, 'views', 'novel.html'), 'utf8');
+const popupHtml = fs.readFileSync(path.join(repoRoot, 'views', 'popup.html'), 'utf8');
+const settingsHtml = fs.readFileSync(path.join(repoRoot, 'views', 'settings.html'), 'utf8');
 
-assert(readerHtml.includes('id="reader-provider-badge"'), 'views/reader.html must have #reader-provider-badge');
+// Reader View
+assert(readerHtml.includes('id="reader-provider-btn-official"'), 'views/reader.html must have #reader-provider-btn-official');
+assert(readerHtml.includes('id="reader-provider-btn-custom"'), 'views/reader.html must have #reader-provider-btn-custom');
+assert(readerHtml.includes('id="reader-custom-base-url"'), 'views/reader.html must have #reader-custom-base-url');
+assert(readerHtml.includes('id="reader-bridge-preset-btn"'), 'views/reader.html must have #reader-bridge-preset-btn');
+assert(readerHtml.includes('id="reader-test-custom-btn"'), 'views/reader.html must have #reader-test-custom-btn');
+assert(readerHtml.includes('id="reader-api-key-label"'), 'views/reader.html must have #reader-api-key-label');
 assert(readerHtml.includes('value="deepseek-reasoner"'), 'views/reader.html must have deepseek-reasoner in model select');
 assert(readerHtml.includes('id="source-reasoning-container"'), 'views/reader.html must have #source-reasoning-container in source drawer');
 assert(readerHtml.includes('id="source-reasoning-content"'), 'views/reader.html must have #source-reasoning-content in source drawer');
-console.log('✓ views/reader.html contains provider badge, reasoner option, and DeepThink drawer section');
+console.log('✓ views/reader.html contains provider switcher buttons, custom URL input, and DeepThink drawer section');
 
-assert(novelHtml.includes('id="novel-provider-badge"'), 'views/novel.html must have #novel-provider-badge');
+// Novel View
+assert(novelHtml.includes('id="novel-provider-btn-official"'), 'views/novel.html must have #novel-provider-btn-official');
+assert(novelHtml.includes('id="novel-provider-btn-custom"'), 'views/novel.html must have #novel-provider-btn-custom');
+assert(novelHtml.includes('id="novel-custom-base-url"'), 'views/novel.html must have #novel-custom-base-url');
+assert(novelHtml.includes('id="novel-bridge-preset-btn"'), 'views/novel.html must have #novel-bridge-preset-btn');
+assert(novelHtml.includes('id="novel-test-custom-btn"'), 'views/novel.html must have #novel-test-custom-btn');
+assert(novelHtml.includes('id="novel-api-key-label"'), 'views/novel.html must have #novel-api-key-label');
 assert(novelHtml.includes('value="deepseek-reasoner"'), 'views/novel.html must have deepseek-reasoner in model select');
-console.log('✓ views/novel.html contains novel provider badge and reasoner model option');
+console.log('✓ views/novel.html contains provider switcher buttons, custom URL input, and reasoner model option');
+
+// Popup View
+assert(popupHtml.includes('id="popup-provider-btn-official"'), 'views/popup.html must have #popup-provider-btn-official');
+assert(popupHtml.includes('id="popup-provider-btn-custom"'), 'views/popup.html must have #popup-provider-btn-custom');
+assert(popupHtml.includes('id="popup-custom-base-url"'), 'views/popup.html must have #popup-custom-base-url');
+assert(popupHtml.includes('id="popup-bridge-preset-btn"'), 'views/popup.html must have #popup-bridge-preset-btn');
+assert(popupHtml.includes('id="popup-test-custom-btn"'), 'views/popup.html must have #popup-test-custom-btn');
+assert(popupHtml.includes('id="popup-api-key-label"'), 'views/popup.html must have #popup-api-key-label');
+console.log('✓ views/popup.html contains provider switcher buttons, custom URL input, and preset button');
+
+// Settings View
+assert(settingsHtml.includes('id="provider-radio-official"'), 'views/settings.html must have #provider-radio-official');
+assert(settingsHtml.includes('id="provider-radio-bridge"'), 'views/settings.html must have #provider-radio-bridge');
+assert(settingsHtml.includes('id="bridge-preset-btn"'), 'views/settings.html must have #bridge-preset-btn');
+assert(settingsHtml.includes('id="bridge-url-input"'), 'views/settings.html must have #bridge-url-input');
+assert(settingsHtml.includes('id="test-bridge-btn"'), 'views/settings.html must have #test-bridge-btn');
+console.log('✓ views/settings.html contains AI provider radio choices, preset button, and test connection button');
 
 // Test 5: Verify live local bridge endpoint if running
 async function testLiveBridge() {

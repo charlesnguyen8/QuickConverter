@@ -847,8 +847,66 @@
             </label>
           </div>
 
+          <!-- Provider Selection (Official vs Custom API) -->
+          <div class="flex items-center justify-between pt-3 border-t border-slate-700/60">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold text-slate-300">AI Provider:</span>
+              <span id="reader-provider-badge" class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                Official API
+              </span>
+            </div>
+            <div class="inline-flex rounded-lg bg-slate-900/90 p-1 border border-slate-700/70 gap-1 text-xs">
+              <button
+                type="button"
+                id="reader-provider-btn-official"
+                class="px-3 py-1 rounded-md font-semibold text-xs transition cursor-pointer bg-indigo-600 text-white shadow-sm"
+              >
+                Official DeepSeek API
+              </button>
+              <button
+                type="button"
+                id="reader-provider-btn-custom"
+                class="px-3 py-1 rounded-md font-medium text-xs transition cursor-pointer text-slate-400 hover:text-slate-200"
+              >
+                Custom API
+              </button>
+            </div>
+          </div>
+
+          <!-- Custom API Base URL Row (hidden when Official is active) -->
+          <div id="reader-custom-api-row" class="hidden flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 rounded-lg bg-slate-900/60 border border-purple-500/30">
+            <div class="flex-1 flex flex-col gap-1">
+              <div class="flex items-center justify-between">
+                <label for="reader-custom-base-url" class="text-xs font-semibold text-purple-300">
+                  Custom Base URL
+                </label>
+                <button
+                  type="button"
+                  id="reader-bridge-preset-btn"
+                  class="text-[11px] font-mono text-purple-400 hover:text-purple-200 transition underline cursor-pointer"
+                  title="Click to fill local web bridge default URL"
+                >
+                  Use Local Bridge (127.0.0.1:8000/v1)
+                </button>
+              </div>
+              <input
+                type="text"
+                id="reader-custom-base-url"
+                placeholder="http://127.0.0.1:8000/v1"
+                class="w-full px-3 py-1.5 text-xs bg-slate-950 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/50 transition font-mono"
+              />
+            </div>
+            <button
+              type="button"
+              id="reader-test-custom-btn"
+              class="self-end sm:self-auto mt-2 sm:mt-4 px-3 py-1.5 rounded-lg text-xs font-semibold text-purple-300 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 transition cursor-pointer"
+            >
+              Test Connection
+            </button>
+          </div>
+
           <!-- Configuration Inputs (Model, API Key & Prompt) -->
-          <div id="reader-deepseek-config-fields" class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-slate-700/60">
+          <div id="reader-deepseek-config-fields" class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
             <!-- Col 1: Model Selection & Health Check -->
             <div class="flex flex-col gap-1.5">
               <div class="flex items-center justify-between">
@@ -885,7 +943,7 @@
             <!-- Col 2: API Key -->
             <div class="flex flex-col gap-1.5">
               <div class="flex items-center justify-between">
-                <label for="reader-deepseek-api-key" class="text-xs font-semibold text-slate-300">
+                <label for="reader-deepseek-api-key" id="reader-api-key-label" class="text-xs font-semibold text-slate-300">
                   1. DeepSeek API Key
                 </label>
                 <div class="flex items-center gap-2">
