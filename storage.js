@@ -478,13 +478,15 @@ const StorageService = {
 
   // --- High-Volume Chapter Operations ---
 
-  async saveChapter({ novelId, chapterNumber, title, url, rawText, convertedText }) {
+  async saveChapter(chapterData) {
+    const { novelId, chapterNumber, title, url, rawText, convertedText, ...rest } = chapterData || {};
     if (!novelId || chapterNumber === undefined) {
       throw new Error('novelId and chapterNumber are required to save a chapter');
     }
 
     const chapterId = `${novelId}_ch${chapterNumber}`;
     const chapterRecord = {
+      ...rest,
       id: chapterId,
       novelId,
       chapterNumber: Number(chapterNumber),
@@ -501,6 +503,35 @@ const StorageService = {
       const store = tx.objectStore('chapters');
       store.put(chapterRecord);
       tx.oncomplete = () => resolve(chapterRecord);
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async updateChapter(novelId, chapterNumber, updates) {
+    if (!novelId || chapterNumber === undefined || !updates) {
+      throw new Error('novelId, chapterNumber, and updates are required to update a chapter');
+    }
+
+    const existing = await this.getChapter(novelId, chapterNumber);
+    if (!existing) {
+      throw new Error(`Chapter ${chapterNumber} not found for novel ${novelId}`);
+    }
+
+    const updatedRecord = {
+      ...existing,
+      ...updates,
+      id: existing.id,
+      novelId: existing.novelId,
+      chapterNumber: Number(existing.chapterNumber),
+      updatedAt: Date.now()
+    };
+
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('chapters', 'readwrite');
+      const store = tx.objectStore('chapters');
+      store.put(updatedRecord);
+      tx.oncomplete = () => resolve(updatedRecord);
       tx.onerror = () => reject(tx.error);
     });
   },
