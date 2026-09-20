@@ -175,18 +175,38 @@ document.addEventListener('DOMContentLoaded', async () => {
       const isDownloaded = downloadedMap.has(chNum);
 
       const row = document.createElement('div');
-      row.className = 'flex items-center justify-between p-2 rounded-md bg-slate-800 border border-slate-700/80 hover:border-slate-600 transition group';
+      row.className = isDownloaded
+        ? 'flex items-center justify-between p-2 rounded-md bg-slate-800 border border-slate-700/80 hover:border-indigo-500/60 transition group cursor-pointer'
+        : 'flex items-center justify-between p-2 rounded-md bg-slate-800 border border-slate-700/80 hover:border-slate-600 transition group';
+
+      if (isDownloaded) {
+        row.title = `Click to read ${chapter.title || 'Chapter ' + chNum}`;
+        row.addEventListener('click', () => {
+          const readerUrl = chrome.runtime && chrome.runtime.getURL
+            ? chrome.runtime.getURL(`reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(chNum)}`)
+            : `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(chNum)}`;
+          if (chrome.tabs && chrome.tabs.create) {
+            chrome.tabs.create({ url: readerUrl });
+          } else {
+            window.open(readerUrl, '_blank');
+          }
+        });
+      }
 
       // Left: Chapter number badge and chapter title/name
       const leftSection = document.createElement('div');
       leftSection.className = 'flex items-center gap-2 overflow-hidden flex-1 min-w-0 pr-2';
 
       const chBadge = document.createElement('span');
-      chBadge.className = 'text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900 text-indigo-300 border border-slate-700/80 flex-shrink-0';
+      chBadge.className = isDownloaded
+        ? 'text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900 text-indigo-300 border border-indigo-500/30 flex-shrink-0'
+        : 'text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-700/80 flex-shrink-0';
       chBadge.textContent = `Ch. ${chNum}`;
 
       const nameEl = document.createElement('span');
-      nameEl.className = 'text-xs font-medium text-slate-200 truncate group-hover:text-indigo-300 transition';
+      nameEl.className = isDownloaded
+        ? 'text-xs font-medium text-slate-100 truncate group-hover:text-indigo-300 transition'
+        : 'text-xs font-medium text-slate-300 truncate group-hover:text-slate-200 transition';
       nameEl.textContent = chapter.title || `Chapter ${chNum}`;
 
       leftSection.appendChild(chBadge);
@@ -197,6 +217,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       rightSection.className = 'flex items-center gap-1.5 flex-shrink-0';
 
       if (isDownloaded) {
+        const readHint = document.createElement('span');
+        readHint.className = 'text-[10px] font-semibold text-indigo-400 group-hover:text-indigo-300 transition';
+        readHint.textContent = 'Read';
+
         const savedBadge = document.createElement('span');
         savedBadge.className = 'text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20';
         savedBadge.textContent = 'Saved';
@@ -220,6 +244,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           await renderPopupChapters(novel);
         });
 
+        rightSection.appendChild(readHint);
         rightSection.appendChild(savedBadge);
         rightSection.appendChild(delBtn);
       } else {

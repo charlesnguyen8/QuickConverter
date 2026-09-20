@@ -85,18 +85,31 @@ document.addEventListener('DOMContentLoaded', async () => {
       const isDownloaded = downloadedMap.has(chNum);
 
       const row = document.createElement('div');
-      row.className = 'flex items-center justify-between p-3.5 rounded-lg bg-slate-800/80 border border-slate-700/60 hover:border-slate-600 transition group';
+      row.className = isDownloaded
+        ? 'flex items-center justify-between p-3.5 rounded-lg bg-slate-800/80 border border-slate-700/60 hover:border-indigo-500/60 hover:bg-slate-800 transition group cursor-pointer'
+        : 'flex items-center justify-between p-3.5 rounded-lg bg-slate-800/60 border border-slate-700/50 hover:border-slate-600 transition group';
+
+      if (isDownloaded) {
+        row.title = `Click to read ${chapter.title || 'Chapter ' + chNum}`;
+        row.addEventListener('click', () => {
+          window.location.href = `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(chNum)}`;
+        });
+      }
 
       // Left: Chapter number badge + Chapter title
       const leftCol = document.createElement('div');
       leftCol.className = 'flex items-center gap-3 overflow-hidden flex-1 min-w-0 pr-3';
 
       const chBadge = document.createElement('span');
-      chBadge.className = 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-900 text-indigo-300 border border-slate-700/80 flex-shrink-0';
+      chBadge.className = isDownloaded
+        ? 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-900 text-indigo-300 border border-indigo-500/30 flex-shrink-0'
+        : 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-900 text-slate-400 border border-slate-700/80 flex-shrink-0';
       chBadge.textContent = `Ch. ${chNum}`;
 
       const nameEl = document.createElement('span');
-      nameEl.className = 'text-sm font-semibold text-slate-200 truncate group-hover:text-indigo-300 transition';
+      nameEl.className = isDownloaded
+        ? 'text-sm font-semibold text-slate-100 truncate group-hover:text-indigo-300 transition'
+        : 'text-sm font-medium text-slate-300 truncate group-hover:text-slate-200 transition';
       nameEl.textContent = chapter.title || `Chapter ${chNum}`;
 
       leftCol.appendChild(chBadge);
@@ -104,11 +117,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Right: Actions (Download button OR Saved badge + Delete button)
       const rightCol = document.createElement('div');
-      rightCol.className = 'flex items-center gap-2 flex-shrink-0';
+      rightCol.className = 'flex items-center gap-2.5 flex-shrink-0';
 
       if (isDownloaded) {
+        const readHint = document.createElement('span');
+        readHint.className = 'inline-flex items-center gap-1 text-xs font-semibold text-indigo-400 group-hover:text-indigo-300 group-hover:translate-x-0.5 transition-all';
+        readHint.innerHTML = `
+          <span>Read</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        `;
+
         const statusBadge = document.createElement('span');
-        statusBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20';
+        statusBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20';
         statusBadge.innerHTML = `
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
           Saved
@@ -116,7 +138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const delBtn = document.createElement('button');
         delBtn.type = 'button';
-        delBtn.className = 'p-1.5 rounded text-slate-400 hover:text-red-400 hover:bg-slate-700 transition cursor-pointer';
+        delBtn.className = 'p-1.5 rounded text-slate-400 hover:text-red-400 hover:bg-slate-700/80 transition cursor-pointer';
         delBtn.title = `Delete Chapter ${chNum}`;
         delBtn.innerHTML = `
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -127,11 +149,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           </svg>
         `;
 
-        delBtn.addEventListener('click', async () => {
+        delBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
           await window.StorageService.deleteChapter(novel.id, chNum);
           await renderChapters(currentNovel);
         });
 
+        rightCol.appendChild(readHint);
         rightCol.appendChild(statusBadge);
         rightCol.appendChild(delBtn);
       } else {
@@ -148,7 +172,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           <span>Download</span>
         `;
 
-        dlBtn.addEventListener('click', async () => {
+        dlBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
           dlBtn.disabled = true;
           dlBtn.innerHTML = `
             <svg class="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -183,7 +208,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         linkBtn.href = chapter.url;
         linkBtn.target = '_blank';
         linkBtn.rel = 'noreferrer';
-        linkBtn.className = 'p-1.5 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition ml-1';
+        linkBtn.className = 'p-1.5 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition ml-0.5';
         linkBtn.title = 'Open chapter on web';
         linkBtn.innerHTML = `
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -192,8 +217,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             <line x1="10" y1="14" x2="21" y2="3"></line>
           </svg>
         `;
+        linkBtn.addEventListener('click', (e) => e.stopPropagation());
         rightCol.appendChild(linkBtn);
-      }
+      }  }
 
       row.appendChild(leftCol);
       row.appendChild(rightCol);

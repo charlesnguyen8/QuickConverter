@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chapter Reader - QuickConverter</title>
+    <link rel="stylesheet" href="tailwind.css" />
+    <style>
+      /* Custom Dark Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0f172a;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+      }
+    </style>
+  </head>
+
+  <body class="bg-slate-900 text-slate-50 min-h-screen font-sans flex flex-col antialiased selection:bg-indigo-500/30 selection:text-indigo-200">
+    <!-- Top Reading Scroll Progress Bar -->
+    <div
+      id="reading-progress-bar"
+      class="fixed top-0 left-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 z-50 transition-all duration-75"
+      style="width: 0%;"
+    ></div>
+
+    <!-- Sticky Navigation Header -->
+    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40 px-4 sm:px-8 py-3">
+      <div class="max-w-4xl mx-auto flex items-center justify-between gap-3">
+        <!-- Left: Back to Novel Button -->
+        <a
+          id="back-to-novel-btn"
+          href="library.html"
+          class="inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white transition px-2.5 py-1.5 rounded-md hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 flex-shrink-0"
+          title="Return to Novel Chapters"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span class="hidden sm:inline">Back to Novel</span>
+        </a>
+
+        <!-- Center: Novel Title & Chapter Info (Truncated) -->
+        <div class="flex flex-col items-center text-center overflow-hidden min-w-0 flex-1 px-2">
+          <span id="header-novel-title" class="text-[11px] text-slate-400 truncate max-w-[200px] sm:max-w-sm">
+            QuickConverter Reader
+          </span>
+          <span id="header-chapter-title" class="text-xs sm:text-sm font-bold text-slate-200 truncate max-w-[240px] sm:max-w-md">
+            Loading chapter...
+          </span>
+        </div>
+
+        <!-- Right: Font Size Controls -->
+        <div class="flex items-center gap-1 bg-slate-800/80 border border-slate-700/60 rounded-md p-0.5 flex-shrink-0">
+          <button
+            type="button"
+            id="font-dec-btn"
+            class="px-2 py-1 rounded text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-700 transition focus:outline-none cursor-pointer"
+            title="Decrease Font Size"
+          >
+            A-
+          </button>
+          <span id="font-size-label" class="text-[11px] font-mono font-medium text-indigo-300 px-1 select-none">
+            18px
+          </span>
+          <button
+            type="button"
+            id="font-inc-btn"
+            class="px-2 py-1 rounded text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-700 transition focus:outline-none cursor-pointer"
+            title="Increase Font Size"
+          >
+            A+
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Reading Content Container -->
+    <main class="max-w-3xl mx-auto w-full px-5 sm:px-8 py-8 sm:py-12 flex-1 flex flex-col gap-8">
+      <!-- Loading State -->
+      <div id="reader-loading" class="flex flex-col items-center justify-center py-24 gap-3 text-center">
+        <svg class="animate-spin h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <span class="text-sm text-slate-400 font-medium">Loading chapter text...</span>
+      </div>
+
+      <!-- Unsaved / Missing Content State -->
+      <div id="reader-not-saved" class="hidden flex flex-col items-center justify-center py-20 text-center gap-4 bg-slate-800/40 border border-slate-700/60 rounded-xl p-8 shadow-sm">
+        <div class="w-14 h-14 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-2xl text-indigo-400">
+          📥
+        </div>
+        <div class="flex flex-col gap-1">
+          <h2 class="text-lg font-bold text-slate-100">Chapter Not Downloaded Yet</h2>
+          <p class="text-sm text-slate-400 max-w-md">
+            This chapter hasn't been saved to your local storage yet. Click below to download it directly.
+          </p>
+        </div>
+        <button
+          type="button"
+          id="reader-download-btn"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition shadow-sm cursor-pointer active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <polyline points="19 12 12 19 5 12"></polyline>
+          </svg>
+          <span>Download Chapter</span>
+        </button>
+      </div>
+
+      <!-- Chapter Reader Article View -->
+      <article id="reader-content-view" class="hidden flex flex-col gap-8">
+        <!-- Chapter Header -->
+        <header class="flex flex-col gap-2 pb-6 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <span id="novel-badge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 truncate max-w-xs">
+              Novel Name
+            </span>
+            <span id="chapter-badge" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+              Ch. 1
+            </span>
+          </div>
+          <h1 id="chapter-main-title" class="text-2xl sm:text-3xl font-extrabold text-slate-100 leading-tight">
+            Chapter Title
+          </h1>
+          <div class="flex items-center gap-3 text-xs text-slate-400 pt-1">
+            <span id="chapter-char-count">0 characters</span>
+            <span>&bull;</span>
+            <span id="chapter-reading-time">~1 min read</span>
+          </div>
+        </header>
+
+        <!-- Chapter Formatted Paragraphs -->
+        <div
+          id="chapter-body"
+          class="text-slate-200 leading-relaxed tracking-normal font-normal space-y-6"
+          style="font-size: 18px;"
+        >
+          <!-- Paragraphs injected by reader.js -->
+        </div>
+
+        <!-- Bottom Chapter Navigation -->
+        <nav class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-8 pb-4 border-t border-slate-800 mt-6">
+          <!-- Previous Chapter Button -->
+          <button
+            type="button"
+            id="prev-chapter-btn"
+            class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition cursor-pointer disabled:opacity-30 disabled:pointer-events-none focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+            <span>Previous Chapter</span>
+          </button>
+
+          <!-- Back to Chapters List -->
+          <a
+            id="bottom-novel-btn"
+            href="library.html"
+            class="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 transition text-center"
+          >
+            Chapter List
+          </a>
+
+          <!-- Next Chapter Button -->
+          <button
+            type="button"
+            id="next-chapter-btn"
+            class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition shadow-sm cursor-pointer disabled:opacity-30 disabled:pointer-events-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+          >
+            <span>Next Chapter</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </button>
+        </nav>
+      </article>
+    </main>
+
+    <!-- Scripts -->
+    <script src="providers/wetriedtls.js"></script>
+    <script src="providers/registry.js"></script>
+    <script src="storage.js"></script>
+    <script src="reader.js"></script>
+  </body>
+</html>
