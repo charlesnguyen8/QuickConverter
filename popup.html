@@ -231,21 +231,48 @@
           </label>
         </div>
 
-        <!-- Configuration Inputs (API Key & Prompt) -->
+        <!-- Configuration Inputs (Model, API Key & Prompt) -->
         <div id="deepseek-config-fields" class="flex flex-col gap-2 pt-2 border-t border-slate-700/60">
+          <!-- Model Selector -->
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center justify-between">
+              <label for="deepseek-model-select" class="text-[11px] font-semibold text-slate-300">
+                Model
+              </label>
+              <span class="text-[10px] text-slate-400">DeepSeek V4.1</span>
+            </div>
+            <select
+              id="deepseek-model-select"
+              class="w-full px-2 py-1.5 text-xs bg-slate-900/90 border border-slate-700 rounded-md text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition cursor-pointer"
+            >
+              <option value="deepseek-flash" selected>deepseek-flash (V4.1-Flash • Fast)</option>
+              <option value="deepseek-chat">deepseek-chat (V3 • Standard)</option>
+            </select>
+          </div>
+
           <!-- Box 1: API Key -->
           <div class="flex flex-col gap-1">
             <div class="flex items-center justify-between">
               <label for="deepseek-api-key" class="text-[11px] font-semibold text-slate-300">
                 1. DeepSeek API Key
               </label>
-              <button
-                type="button"
-                id="toggle-key-visibility"
-                class="text-[10px] text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
-              >
-                Show
-              </button>
+              <div class="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  id="test-deepseek-btn"
+                  class="text-[10px] font-medium text-emerald-400 hover:text-emerald-300 transition cursor-pointer px-1.5 py-0.5 rounded hover:bg-slate-700/60"
+                  title="Test key and fetch live models"
+                >
+                  Test Key
+                </button>
+                <button
+                  type="button"
+                  id="toggle-key-visibility"
+                  class="text-[10px] text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
+                >
+                  Show
+                </button>
+              </div>
             </div>
             <input
               type="password"
@@ -257,6 +284,7 @@
               placeholder="sk-... (session only)"
               class="w-full px-2.5 py-1.5 text-xs bg-slate-900/90 border border-slate-700 rounded-md text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition font-mono"
             />
+            <div id="deepseek-test-status" class="hidden text-[10px] px-2 py-1 rounded border"></div>
             <span class="text-[9px] text-slate-500">In-memory session only (never saved to disk).</span>
           </div>
 
@@ -304,6 +332,7 @@
 
     <script src="providers/wetriedtls.js"></script>
     <script src="providers/registry.js"></script>
+    <script src="services/deepseek.js"></script>
     <script src="storage.js"></script>
     <script src="popup.js"></script>
   </body>

@@ -32,6 +32,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const visibilityBtn = document.getElementById('toggle-key-visibility');
     const fieldsEl = document.getElementById('deepseek-config-fields');
     const editPromptBtn = document.getElementById('edit-prompt-btn');
+    const modelSelectEl = document.getElementById('deepseek-model-select');
+    const testBtn = document.getElementById('test-deepseek-btn');
+    const testStatusEl = document.getElementById('deepseek-test-status');
 
     if (!toggleEl) return;
 
@@ -66,6 +69,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isEnabled = getStored('quickconverter_deepseek_enabled', 'false') === 'true';
     toggleEl.checked = isEnabled;
 
+    const savedModel = getStored('quickconverter_deepseek_model', 'deepseek-flash');
+    if (modelSelectEl) {
+      modelSelectEl.value = savedModel;
+      modelSelectEl.addEventListener('change', () => {
+        setStored('quickconverter_deepseek_model', modelSelectEl.value);
+      });
+    }
+
     function updateState(checked) {
       if (badgeEl) {
         if (checked) {
@@ -77,9 +88,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
       if (fieldsEl) {
-        fieldsEl.className = checked
-          ? 'grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-indigo-500/30 transition-all opacity-100'
-          : 'grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-700/60 transition-all opacity-60';
+        fieldsEl.classList.toggle('opacity-100', checked);
+        fieldsEl.classList.toggle('opacity-60', !checked);
       }
     }
 
@@ -98,6 +108,67 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isPassword = keyEl.type === 'password';
         keyEl.type = isPassword ? 'text' : 'password';
         visibilityBtn.textContent = isPassword ? 'Hide Key' : 'Show Key';
+      });
+    }
+
+    // "Test Key" button click handler
+    if (testBtn && keyEl && testStatusEl) {
+      testBtn.addEventListener('click', async () => {
+        const key = keyEl.value.trim();
+        if (!key) {
+          testStatusEl.className = 'text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-md block mt-1';
+          testStatusEl.textContent = 'Please enter an API key to test.';
+          keyEl.focus();
+          return;
+        }
+
+        testBtn.disabled = true;
+        testStatusEl.className = 'text-[11px] text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1.5 rounded-md flex items-center gap-1.5 block mt-1';
+        testStatusEl.innerHTML = `
+          <svg class="animate-spin h-3.5 w-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          <span>Testing connection & fetching models...</span>
+        `;
+
+        try {
+          const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+            (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+          if (!deepseek || typeof deepseek.testConnection !== 'function') {
+            throw new Error('DeepSeekService not loaded');
+          }
+
+          const res = await deepseek.testConnection(key);
+          if (res.success) {
+            const currentSelected = (modelSelectEl && modelSelectEl.value) || savedModel;
+            if (modelSelectEl && Array.isArray(res.models) && res.models.length > 0) {
+              modelSelectEl.innerHTML = '';
+              res.models.forEach((mId) => {
+                const opt = document.createElement('option');
+                opt.value = mId;
+                opt.textContent = mId + (mId === 'deepseek-flash' ? ' (V4.1-Flash • Fast)' : (mId === 'deepseek-chat' ? ' (V3 • Standard)' : ''));
+                if (mId === currentSelected || (!currentSelected && mId === 'deepseek-flash')) {
+                  opt.selected = true;
+                }
+                modelSelectEl.appendChild(opt);
+              });
+            }
+
+            const balStr = res.balance ? ` • Balance: ${res.balance.totalBalance === 'Available' ? 'Available' : '$' + res.balance.totalBalance}` : '';
+            testStatusEl.className = 'text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5 rounded-md block mt-1';
+            testStatusEl.textContent = `✓ Connected (${(res.models || []).length} models ready${balStr})`;
+          } else {
+            testStatusEl.className = 'text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1.5 rounded-md block mt-1';
+            testStatusEl.textContent = `✗ ${res.error || 'Connection failed'}`;
+          }
+        } catch (e) {
+          testStatusEl.className = 'text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1.5 rounded-md block mt-1';
+          testStatusEl.textContent = `✗ ${e.message || 'Error testing connection'}`;
+        } finally {
+          testBtn.disabled = false;
+        }
       });
     }
 
@@ -304,22 +375,53 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         dlBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
+
+          const toggleEl = document.getElementById('deepseek-toggle');
+          const keyEl = document.getElementById('deepseek-api-key');
+          const promptEl = document.getElementById('deepseek-prompt');
+          const modelSelectEl = document.getElementById('deepseek-model-select');
+
+          const isTranslationEnabled = !!(toggleEl && toggleEl.checked);
+          const apiKey = keyEl ? keyEl.value.trim() : '';
+          const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
+
+          if (isTranslationEnabled && !apiKey) {
+            if (keyEl) {
+              keyEl.focus();
+              keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');
+              setTimeout(() => {
+                keyEl.classList.remove('border-rose-500', 'ring-1', 'ring-rose-500/50');
+              }, 2500);
+            }
+            alert('Please enter your DeepSeek API Key before translating.');
+            return;
+          }
+
           dlBtn.disabled = true;
           dlBtn.innerHTML = `
             <svg class="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
             </svg>
-            <span>Downloading...</span>
+            <span>${isTranslationEnabled ? 'Translating (' + selectedModel + ')...' : 'Downloading...'}</span>
           `;
 
           try {
-            await window.StorageService.downloadChapter(novel.id, chNum);
+            const options = {
+              translation: {
+                enabled: isTranslationEnabled,
+                apiKey: apiKey,
+                prompt: promptEl ? promptEl.value : '',
+                model: selectedModel
+              }
+            };
+            await window.StorageService.downloadChapter(novel.id, chNum, options);
             await renderChapters(currentNovel);
           } catch (err) {
             console.error('Error downloading chapter:', err);
             dlBtn.disabled = false;
             dlBtn.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-red-500/80 hover:bg-red-500 transition shadow-sm cursor-pointer';
+            dlBtn.title = err.message || 'Error downloading chapter';
             dlBtn.innerHTML = `
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"></line>

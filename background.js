@@ -1,7 +1,7 @@
 // QuickConverter Background Service Worker
 // Coordinates tab listeners, automated popup triggering via providers, and IndexedDB message bus.
 
-importScripts('providers/wetriedtls.js', 'providers/registry.js', 'storage.js');
+importScripts('providers/wetriedtls.js', 'providers/registry.js', 'services/deepseek.js', 'storage.js');
 
 function shouldOpenPopup(urlStr) {
   if (!urlStr) return false;
@@ -169,8 +169,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'DOWNLOAD_CHAPTER') {
     (async () => {
       try {
-        const { novelId, chapterNumber } = message;
-        const chapter = await StorageService.downloadChapter(novelId, chapterNumber);
+        const { novelId, chapterNumber, options, translation } = message;
+        const opt = options || (translation ? { translation } : {});
+        const chapter = await StorageService.downloadChapter(novelId, chapterNumber, opt);
         sendResponse({ success: true, chapter });
       } catch (err) {
         console.error(`Error downloading chapter ${message.chapterNumber}:`, err);

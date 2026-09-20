@@ -22,7 +22,8 @@
   "host_permissions": [
     "*://wetriedtls.com/*",
     "*://www.wetriedtls.com/*",
-    "*://*.wetriedtls.com/*"
+    "*://*.wetriedtls.com/*",
+    "https://api.deepseek.com/*"
   ],
   "content_scripts": [
     {

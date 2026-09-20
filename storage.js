@@ -542,7 +542,7 @@ const StorageService = {
     };
   },
 
-  async downloadChapter(novelId, chapterNumber) {
+  async downloadChapter(novelId, chapterNumber, options = {}) {
     if (!novelId || chapterNumber === undefined) {
       throw new Error('novelId and chapterNumber are required to download a chapter');
     }
@@ -575,12 +575,50 @@ const StorageService = {
     const chapterTitle = (catalogItem && catalogItem.title) || content.title || `Chapter ${chapterNumber}`;
     const chapterUrl = (catalogItem && catalogItem.url) || `${novel.url}/chapter-${chapterNumber}`;
 
+    let finalText = content.rawText;
+    let isTranslated = false;
+    let modelUsed = null;
+
+    // Optional DeepSeek translation pre-download
+    if (options && options.translation && options.translation.enabled) {
+      const { apiKey, prompt, model } = options.translation;
+      if (!apiKey || !apiKey.trim()) {
+        throw new Error('DeepSeek API Key is required when translation is enabled.');
+      }
+
+      const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+        (typeof self !== 'undefined' && self.DeepSeekService) ||
+        (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+      if (!deepseek || typeof deepseek.translateChapter !== 'function') {
+        throw new Error('DeepSeek translation service is not loaded.');
+      }
+
+      const effectivePrompt = prompt || novel.translationPrompt ||
+        'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
+
+      const result = await deepseek.translateChapter({
+        apiKey: apiKey.trim(),
+        prompt: effectivePrompt,
+        rawText: content.rawText,
+        model: model || 'deepseek-flash'
+      });
+
+      finalText = result.translatedText;
+      isTranslated = true;
+      modelUsed = result.modelUsed;
+    }
+
     const saved = await this.saveChapter({
       novelId: novel.id,
       chapterNumber: Number(chapterNumber),
       title: chapterTitle,
       url: chapterUrl,
-      rawText: content.rawText
+      rawText: finalText,
+      originalRawText: content.rawText,
+      isTranslated: isTranslated,
+      modelUsed: modelUsed,
+      translatedAt: isTranslated ? Date.now() : null
     });
 
     return saved;
@@ -601,4 +639,13 @@ const StorageService = {
 
 if (typeof window !== 'undefined') {
   window.StorageService = StorageService;
+}
+if (typeof self !== 'undefined') {
+  self.StorageService = StorageService;
+}
+if (typeof global !== 'undefined') {
+  global.StorageService = StorageService;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.StorageService = StorageService;
 }
