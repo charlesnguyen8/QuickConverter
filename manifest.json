@@ -29,7 +29,11 @@
         "*://wetriedtls.com/series/*",
         "*://www.wetriedtls.com/series/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "providers/wetriedtls.js",
+        "providers/registry.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],

@@ -35,45 +35,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   function extractNovelInfo(urlStr, pageTitle) {
     if (!urlStr) return null;
     try {
-      const url = new URL(urlStr);
-      const isDomain = url.hostname === 'wetriedtls.com' || url.hostname === 'www.wetriedtls.com';
-      if (!isDomain) return null;
+      if (typeof ProviderRegistry === 'undefined') return null;
+      const provider = ProviderRegistry.getProviderForUrl(urlStr);
+      if (!provider) return null;
 
-      let slug = '';
-      let chapterNumber = null;
+      const parsed = provider.parseUrl(urlStr);
+      if (!parsed || !parsed.slug) return null;
 
-      const chapterMatch = url.pathname.match(/^\/series\/([^/]+)\/chapter-([0-9.]+)/i);
-      if (chapterMatch) {
-        slug = chapterMatch[1];
-        chapterNumber = parseFloat(chapterMatch[2]);
-      } else {
-        const seriesMatch = url.pathname.match(/^\/series\/([^/]+)/i);
-        if (seriesMatch) {
-          slug = seriesMatch[1];
+      let title = '';
+      if (pageTitle && typeof pageTitle === 'string') {
+        const parts = pageTitle.split('-');
+        if (parts.length > 0 && !parts[0].toLowerCase().includes('just a moment')) {
+          title = parts[0].trim();
         }
       }
+      title = provider.formatTitle(parsed.slug, title);
 
-      if (slug) {
-        let title = '';
-        if (pageTitle && typeof pageTitle === 'string') {
-          const parts = pageTitle.split('-');
-          if (parts.length > 0 && !parts[0].toLowerCase().includes('just a moment')) {
-            title = parts[0].trim();
-          }
-        }
-        if (!title || title.toLowerCase().includes('wetriedtls') || title.length < 3) {
-          title = formatSlugToTitle(slug);
-        }
-
-        return {
-          slug,
-          title,
-          chapterNumber,
-          url: `https://wetriedtls.com/series/${slug}`,
-          domain: 'wetriedtls.com',
-          icon: '📚'
-        };
-      }
+      return {
+        slug: parsed.slug,
+        title: title || formatSlugToTitle(parsed.slug),
+        chapterNumber: parsed.chapterNumber,
+        url: parsed.seriesUrl || urlStr,
+        domain: provider.domains ? provider.domains[0] : (new URL(urlStr).hostname),
+        icon: '📚',
+        providerName: provider.name
+      };
     } catch (e) {
       console.warn('Error parsing novel URL:', e);
     }
@@ -302,7 +288,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const novelInfo = extractNovelInfo(currentUrl, tabTitle);
 
     if (novelInfo) {
-      siteHostEl.textContent = 'wetriedtls.com';
+      siteHostEl.textContent = novelInfo.domain || 'wetriedtls.com';
       const novel = window.StorageService
         ? await window.StorageService.getNovelBySlug(novelInfo.slug)
         : null;
@@ -409,15 +395,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Check if on wetriedtls homepage
-    let isDomain = false;
+    // Check if on a supported provider homepage or domain
+    let matchedProvider = null;
     let hostname = '';
     if (currentUrl) {
       try {
         const parsed = new URL(currentUrl);
         hostname = parsed.hostname;
-        if (hostname === 'wetriedtls.com' || hostname === 'www.wetriedtls.com') {
-          isDomain = true;
+        if (typeof ProviderRegistry !== 'undefined') {
+          matchedProvider = ProviderRegistry.getProviderForUrl(currentUrl);
+          if (!matchedProvider) {
+            matchedProvider = ProviderRegistry.getProviderForDomain(hostname);
+          }
         }
       } catch (e) {}
     }
@@ -425,24 +414,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusActionEl.innerHTML = '';
     statusActionEl.classList.add('hidden');
 
-    if (isDomain) {
+    if (matchedProvider) {
       badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
       badgeEl.innerHTML = `
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
         Supported Site
       `;
-      siteHostEl.textContent = 'wetriedtls.com';
+      siteHostEl.textContent = matchedProvider.domains[0] || hostname;
       statusMsgEl.innerHTML = `
-        <p class="font-medium text-slate-100">QuickConverter supports <span class="text-indigo-300 font-semibold">wetriedtls.com</span>.</p>
+        <p class="font-medium text-slate-100">QuickConverter supports <span class="text-indigo-300 font-semibold">${matchedProvider.name}</span>.</p>
         <p class="text-xs text-slate-400 mt-1">Open any novel series to manage it.</p>
       `;
     } else {
       badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-700/60 text-slate-400 border border-slate-600/40';
       badgeEl.textContent = 'Standard Mode';
       siteHostEl.textContent = hostname || 'Browser Tab';
+      const supportedSites = (typeof ProviderRegistry !== 'undefined') 
+        ? ProviderRegistry.getAllProviders().map((p) => p.name).join(', ')
+        : 'We Tried TLS';
       statusMsgEl.innerHTML = `
-        <p class="text-slate-300">QuickConverter supports <span class="text-indigo-300 font-medium">wetriedtls.com</span>.</p>
-        <p class="text-xs text-slate-500 mt-1">Visit a novel series to add it.</p>
+        <p class="text-slate-300">QuickConverter supports <span class="text-indigo-300 font-medium">${supportedSites}</span>.</p>
+        <p class="text-xs text-slate-500 mt-1">Visit a supported novel series to add it.</p>
       `;
     }
   }

@@ -1,17 +1,18 @@
-importScripts('storage.js');
+// QuickConverter Background Service Worker
+// Coordinates tab listeners, automated popup triggering via providers, and IndexedDB message bus.
+
+importScripts('providers/wetriedtls.js', 'providers/registry.js', 'storage.js');
 
 function shouldOpenPopup(urlStr) {
   if (!urlStr) return false;
   try {
-    const url = new URL(urlStr);
-    const isDomain = url.hostname === 'wetriedtls.com' || url.hostname === 'www.wetriedtls.com';
-    if (!isDomain) return false;
-
-    const isHomepage = url.pathname === '/' || url.pathname === '';
-    // Only open popup automatically on homepage or series overview page, not on chapter reading pages
-    const isSeriesLanding = url.pathname.startsWith('/series/') && !url.pathname.includes('/chapter');
-
-    return isHomepage || isSeriesLanding;
+    if (typeof ProviderRegistry !== 'undefined') {
+      const provider = ProviderRegistry.getProviderForUrl(urlStr);
+      if (provider && typeof provider.shouldAutoOpenPopup === 'function') {
+        return provider.shouldAutoOpenPopup(urlStr);
+      }
+    }
+    return false;
   } catch (e) {
     return false;
   }
@@ -22,23 +23,12 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (chrome.action && typeof chrome.action.openPopup === 'function') {
       chrome.action.openPopup({ windowId: tab.windowId }, () => {
         if (chrome.runtime.lastError) {
-          console.log("Could not open popup automatically:", chrome.runtime.lastError.message);
+          console.log('Could not open popup automatically:', chrome.runtime.lastError.message);
         }
       });
     }
   }
 });
-
-// Helper to format slug to title
-function formatSlugToTitle(slug) {
-  if (!slug) return 'Unknown Novel';
-  return slug
-    .split('-')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
-    .replace(/\bRegressors\b/i, "Regressor’s")
-    .replace(/\bAcademys\b/i, "Academy’s");
-}
 
 // Runtime message listener for content script requests
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -73,12 +63,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'SAVE_CHAPTER') {
     (async () => {
       try {
-        const { slug, chapterNumber, title, url, rawText, novelTitle } = message;
+        const { slug, chapterNumber, title, url, rawText, novelTitle, domain } = message;
 
         let novel = await StorageService.getNovelBySlug(slug);
         if (!novel) {
           console.log(`[QuickConverter] Cannot save chapter for unmanaged novel: ${slug}`);
           return sendResponse({ success: false, error: 'Novel is not managed' });
+        }
+
+        if (domain && !novel.domain) {
+          await StorageService.updateNovel(novel.id, { domain });
         }
 
         const savedChapter = await StorageService.saveChapter({
@@ -109,7 +103,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'UPDATE_NOVEL_METADATA') {
     (async () => {
       try {
-        const { slug, totalChapters, thumbnail, title } = message;
+        const { slug, totalChapters, thumbnail, title, domain } = message;
         if (!slug) {
           return sendResponse({ success: false, error: 'Slug is required' });
         }
@@ -124,6 +118,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         if (title) {
           updates.title = title;
+        }
+        if (domain && (!novel || !novel.domain)) {
+          updates.domain = domain;
         }
 
         if (novel) {

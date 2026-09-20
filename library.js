@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
         <h2 class="text-lg font-bold text-slate-200">Your Library is Empty</h2>
         <p class="text-sm text-slate-400 max-w-sm mt-1">
-          Visit any supported novel series on wetriedtls.com and add it to your library.
+          Visit any supported novel series and add it to your library.
         </p>
       `;
       return;

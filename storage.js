@@ -224,12 +224,21 @@ const StorageService = {
       return this.getManagedNovels();
     }
 
+    let defaultDomain = 'unknown';
+    if (novel.domain) {
+      defaultDomain = novel.domain;
+    } else if (novel.url) {
+      try {
+        defaultDomain = new URL(novel.url).hostname;
+      } catch (e) {}
+    }
+
     const newNovel = {
       id: novel.id || `novel-${Date.now()}`,
       title: novel.title,
       slug: novel.slug || '',
       url: novel.url || '',
-      domain: novel.domain || 'wetriedtls.com',
+      domain: defaultDomain,
       thumbnail: novel.thumbnail || 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp',
       totalChapters: novel.totalChapters || 100,
       icon: novel.icon || '📚',
@@ -291,28 +300,48 @@ const StorageService = {
     if (!novel || !novel.slug) return null;
 
     try {
-      const url = `https://wetriedtls.com/series/${novel.slug}`;
-      const resp = await fetch(url);
-      if (!resp.ok) return novel;
-
-      const html = await resp.text();
-      const match = html.match(/Total chapters<\/span>\s*<span[^>]*>\s*(\d+)\s*<\/span>/i)
-                 || html.match(/Total chapters[\s\S]*?>\s*(\d+)\s*<\//i);
-      const totalChapters = match ? parseInt(match[1], 10) : null;
-
-      const ogImgMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
-      const thumbnail = ogImgMatch ? ogImgMatch[1] : null;
-
-      const updates = {};
-      if (totalChapters && totalChapters > 0) {
-        updates.totalChapters = totalChapters;
-      }
-      if (thumbnail) {
-        updates.thumbnail = thumbnail;
+      let provider = null;
+      if (typeof ProviderRegistry !== 'undefined') {
+        if (novel.url) {
+          provider = ProviderRegistry.getProviderForUrl(novel.url);
+        }
+        if (!provider && novel.domain) {
+          provider = ProviderRegistry.getProviderForDomain(novel.domain);
+        }
       }
 
-      if (Object.keys(updates).length > 0) {
-        return await this.updateNovel(novel.id, updates);
+      let metadata = null;
+      if (provider && typeof provider.fetchSeriesMetadata === 'function') {
+        metadata = await provider.fetchSeriesMetadata(novel.slug, novel.url);
+      } else {
+        const url = novel.url || `https://wetriedtls.com/series/${novel.slug}`;
+        const resp = await fetch(url);
+        if (resp.ok) {
+          const html = await resp.text();
+          const match = html.match(/Total chapters<\/span>\s*<span[^>]*>\s*(\d+)\s*<\/span>/i)
+                     || html.match(/Total chapters[\s\S]*?>\s*(\d+)\s*<\//i);
+          const totalChapters = match ? parseInt(match[1], 10) : null;
+          const ogImgMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
+          const thumbnail = ogImgMatch ? ogImgMatch[1] : null;
+          metadata = { totalChapters, thumbnail };
+        }
+      }
+
+      if (metadata) {
+        const updates = {};
+        if (metadata.totalChapters && metadata.totalChapters > 0) {
+          updates.totalChapters = metadata.totalChapters;
+        }
+        if (metadata.thumbnail) {
+          updates.thumbnail = metadata.thumbnail;
+        }
+        if (metadata.title && (!novel.title || novel.title.toLowerCase().includes('unknown'))) {
+          updates.title = metadata.title;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          return await this.updateNovel(novel.id, updates);
+        }
       }
     } catch (e) {
       console.warn('[QuickConverter] syncNovelMetadata error:', e);
