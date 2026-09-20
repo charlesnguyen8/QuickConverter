@@ -565,14 +565,35 @@ function updateReaderPreview() {
     container.style.borderColor = '#334155';
   }
 
-  // Apply Font Family
-  if (font === 'serif') {
-    textEl.style.fontFamily = 'Georgia, Cambria, "Times New Roman", Times, serif';
-  } else if (font === 'mono') {
-    textEl.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-  } else {
-    textEl.style.fontFamily = 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  function resolveFontFamilyCss(fontKey) {
+    switch (fontKey) {
+      case 'serif':
+      case 'georgia':
+        return 'Georgia, Cambria, "Times New Roman", Times, serif';
+      case 'garamond':
+        return 'Garamond, "EB Garamond", "Baskerville", "Times New Roman", serif';
+      case 'palatino':
+        return '"Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", Georgia, serif';
+      case 'charter':
+        return 'Charter, "Bitstream Charter", "Sitka Text", Cambria, serif';
+      case 'baskerville':
+        return 'Baskerville, "Baskerville Old Face", "Hoefler Text", Garamond, serif';
+      case 'times':
+        return '"Times New Roman", Times, Georgia, serif';
+      case 'verdana':
+        return 'Verdana, Geneva, "DejaVu Sans", sans-serif';
+      case 'trebuchet':
+        return '"Trebuchet MS", "Lucida Grande", "Lucida Sans Unicode", sans-serif';
+      case 'mono':
+        return 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Cascadia Code", "Courier New", monospace';
+      case 'sans':
+      default:
+        return 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+    }
   }
+
+  // Apply Font Family
+  textEl.style.fontFamily = resolveFontFamilyCss(font);
 
   // Apply Font Size
   textEl.style.fontSize = `${size}px`;

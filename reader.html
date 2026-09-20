@@ -168,6 +168,15 @@
         color: #f8fafc !important;
         box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(51, 65, 85, 0.6) !important;
       }
+      #reader-typography-popover #in-reader-font-family {
+        background-color: #020617 !important;
+        border-color: #334155 !important;
+        color: #f1f5f9 !important;
+      }
+      #reader-typography-popover #in-reader-font-family option {
+        background-color: #0f172a !important;
+        color: #f1f5f9 !important;
+      }
       .in-reader-theme-btn.active {
         border-color: #6366f1 !important;
       }
@@ -241,6 +250,15 @@
       body[data-theme="sepia"] #reader-typography-popover .in-reader-theme-btn.active {
         border-color: #8c531b !important;
       }
+      body[data-theme="sepia"] #reader-typography-popover #in-reader-font-family {
+        background-color: #ede0cb !important;
+        border-color: #d8c4ab !important;
+        color: #2d231b !important;
+      }
+      body[data-theme="sepia"] #reader-typography-popover #in-reader-font-family option {
+        background-color: #fbf0d9 !important;
+        color: #2d231b !important;
+      }
 
       /* OLED Popover */
       body[data-theme="oled"] #toggle-typography-popover-btn {
@@ -291,6 +309,15 @@
       }
       body[data-theme="oled"] #reader-typography-popover .in-reader-theme-btn.active {
         border-color: #e4e4e7 !important;
+      }
+      body[data-theme="oled"] #reader-typography-popover #in-reader-font-family {
+        background-color: #18181b !important;
+        border-color: #27272a !important;
+        color: #f4f4f5 !important;
+      }
+      body[data-theme="oled"] #reader-typography-popover #in-reader-font-family option {
+        background-color: #09090b !important;
+        color: #f4f4f5 !important;
       }
 
       /* Forest Popover */
@@ -346,6 +373,15 @@
       }
       body[data-theme="forest"] #reader-typography-popover .in-reader-theme-btn.active {
         border-color: #10b981 !important;
+      }
+      body[data-theme="forest"] #reader-typography-popover #in-reader-font-family {
+        background-color: #14241c !important;
+        border-color: #1f3d2c !important;
+        color: #e2f2e9 !important;
+      }
+      body[data-theme="forest"] #reader-typography-popover #in-reader-font-family option {
+        background-color: #0f1d16 !important;
+        color: #e2f2e9 !important;
       }
     </style>
   </head>
@@ -546,32 +582,24 @@
                 </div>
               </div>
 
-              <!-- Font Family -->
+              <!-- Font Selection -->
               <div class="flex flex-col gap-1.5">
-                <span class="text-[11px] font-semibold uppercase tracking-wider popover-subtext text-slate-400">Typeface</span>
-                <div class="popover-btn-group flex rounded-lg bg-slate-950/60 p-1 border border-slate-800 gap-1">
-                  <button
-                    type="button"
-                    data-font-choice="sans"
-                    class="in-reader-font-btn popover-segment-btn flex-1 py-1.5 px-2 rounded-md text-xs font-medium text-slate-400 hover:text-slate-200 transition text-center cursor-pointer font-sans"
-                  >
-                    Sans
-                  </button>
-                  <button
-                    type="button"
-                    data-font-choice="serif"
-                    class="in-reader-font-btn popover-segment-btn flex-1 py-1.5 px-2 rounded-md text-xs font-medium text-slate-400 hover:text-slate-200 transition text-center cursor-pointer font-serif"
-                  >
-                    Serif
-                  </button>
-                  <button
-                    type="button"
-                    data-font-choice="mono"
-                    class="in-reader-font-btn popover-segment-btn flex-1 py-1.5 px-2 rounded-md text-xs font-medium text-slate-400 hover:text-slate-200 transition text-center cursor-pointer font-mono text-[11px]"
-                  >
-                    Mono
-                  </button>
-                </div>
+                <span class="text-[11px] font-semibold uppercase tracking-wider popover-subtext text-slate-400">Font</span>
+                <select
+                  id="in-reader-font-family"
+                  class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-medium text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer transition"
+                >
+                  <option value="sans" style="font-family: ui-sans-serif, system-ui, sans-serif;">System Sans (Modern UI)</option>
+                  <option value="serif" style="font-family: Georgia, serif;">Georgia (Classic Literary)</option>
+                  <option value="garamond" style="font-family: Garamond, serif;">Garamond (Book Publisher)</option>
+                  <option value="palatino" style="font-family: 'Palatino Linotype', Palatino, serif;">Palatino (Warm Editorial)</option>
+                  <option value="charter" style="font-family: Charter, Cambria, serif;">Charter (Clean Novel Print)</option>
+                  <option value="baskerville" style="font-family: Baskerville, Georgia, serif;">Baskerville (Refined Serif)</option>
+                  <option value="times" style="font-family: 'Times New Roman', Times, serif;">Times New Roman (Traditional)</option>
+                  <option value="verdana" style="font-family: Verdana, sans-serif;">Verdana (Spacious Legibility)</option>
+                  <option value="trebuchet" style="font-family: 'Trebuchet MS', sans-serif;">Trebuchet MS (Humanist Sans)</option>
+                  <option value="mono" style="font-family: ui-monospace, Consolas, monospace;">Monospace (Clean Tech)</option>
+                </select>
               </div>
 
               <!-- Line Height & Column Width -->

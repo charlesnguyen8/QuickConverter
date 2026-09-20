@@ -85,6 +85,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   const readerMainEl = document.querySelector('main');
   const readerHeaderEl = document.querySelector('header');
 
+  function resolveFontFamilyCss(fontKey) {
+    switch (fontKey) {
+      case 'serif':
+      case 'georgia':
+        return 'Georgia, Cambria, "Times New Roman", Times, serif';
+      case 'garamond':
+        return 'Garamond, "EB Garamond", "Baskerville", "Times New Roman", serif';
+      case 'palatino':
+        return '"Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", Georgia, serif';
+      case 'charter':
+        return 'Charter, "Bitstream Charter", "Sitka Text", Cambria, serif';
+      case 'baskerville':
+        return 'Baskerville, "Baskerville Old Face", "Hoefler Text", Garamond, serif';
+      case 'times':
+        return '"Times New Roman", Times, Georgia, serif';
+      case 'verdana':
+        return 'Verdana, Geneva, "DejaVu Sans", sans-serif';
+      case 'trebuchet':
+        return '"Trebuchet MS", "Lucida Grande", "Lucida Sans Unicode", sans-serif';
+      case 'mono':
+        return 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Cascadia Code", "Courier New", monospace';
+      case 'sans':
+      default:
+        return 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+    }
+  }
+
   function applyReaderPreferences() {
     const fontSize = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
     const fontFamily = localStorage.getItem(FONT_FAMILY_KEY) || 'sans';
@@ -110,17 +137,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Apply font family
     if (chapterBody) {
-      if (fontFamily === 'serif') {
-        chapterBody.style.fontFamily = 'Georgia, Cambria, "Times New Roman", Times, serif';
-      } else if (fontFamily === 'mono') {
-        chapterBody.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      } else {
-        chapterBody.style.fontFamily = 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      }
+      chapterBody.style.fontFamily = resolveFontFamilyCss(fontFamily);
     }
-    document.querySelectorAll('.in-reader-font-btn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.fontChoice === fontFamily);
-    });
+    const inReaderFontSelect = document.getElementById('in-reader-font-family');
+    if (inReaderFontSelect) {
+      inReaderFontSelect.value = fontFamily;
+    }
 
     // Apply line height
     if (chapterBody) {
@@ -265,16 +287,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     });
 
-    // Font Family buttons
-    document.querySelectorAll('.in-reader-font-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const choice = btn.dataset.fontChoice;
+    // Font Family dropdown select
+    const fontSelect = document.getElementById('in-reader-font-family');
+    if (fontSelect) {
+      fontSelect.addEventListener('change', (e) => {
+        const choice = e.target.value;
         if (choice) {
           localStorage.setItem(FONT_FAMILY_KEY, choice);
           applyReaderPreferences();
         }
       });
-    });
+    }
 
     // Line Spacing buttons
     document.querySelectorAll('.in-reader-line-btn').forEach((btn) => {

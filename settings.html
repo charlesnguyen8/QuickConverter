@@ -378,16 +378,23 @@
 
           <!-- Controls Grid -->
           <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <!-- Font Family -->
+            <!-- Font -->
             <div class="flex flex-col gap-2">
-              <label class="text-xs font-semibold text-slate-300">Font Family</label>
+              <label class="text-xs font-semibold text-slate-300">Font</label>
               <select
                 id="reader-font-family"
                 class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
               >
-                <option value="sans">Sans-Serif (Modern Clean UI)</option>
-                <option value="serif">Literary Serif (Classic Book)</option>
-                <option value="mono">Monospace (Clean Tech)</option>
+                <option value="sans" style="font-family: ui-sans-serif, system-ui, sans-serif;">System Sans (Modern UI)</option>
+                <option value="serif" style="font-family: Georgia, serif;">Georgia (Classic Literary)</option>
+                <option value="garamond" style="font-family: Garamond, serif;">Garamond (Book Publisher)</option>
+                <option value="palatino" style="font-family: 'Palatino Linotype', Palatino, serif;">Palatino (Warm Editorial)</option>
+                <option value="charter" style="font-family: Charter, Cambria, serif;">Charter (Clean Novel Print)</option>
+                <option value="baskerville" style="font-family: Baskerville, Georgia, serif;">Baskerville (Refined Serif)</option>
+                <option value="times" style="font-family: 'Times New Roman', Times, serif;">Times New Roman (Traditional)</option>
+                <option value="verdana" style="font-family: Verdana, sans-serif;">Verdana (Spacious Legibility)</option>
+                <option value="trebuchet" style="font-family: 'Trebuchet MS', sans-serif;">Trebuchet MS (Humanist Sans)</option>
+                <option value="mono" style="font-family: ui-monospace, Consolas, monospace;">Monospace (Clean Tech)</option>
               </select>
             </div>
 
