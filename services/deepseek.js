@@ -125,6 +125,15 @@
     },
 
     /**
+     * Alias for getBalance for backward compatibility and alternate naming.
+     * @param {string} apiKey
+     * @param {object} [options]
+     */
+    async fetchBalance(apiKey, options = {}) {
+      return this.getBalance(apiKey, options);
+    },
+
+    /**
      * Sets up automatic balance tracking and synchronization for a view.
      * Updates frequently on mount, tab focus, visibility change, and periodic heartbeat.
      * @param {Function} getApiKeyFn Function returning the current API key string (or Promise of it)

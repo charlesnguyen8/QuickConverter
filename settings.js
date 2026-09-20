@@ -193,13 +193,19 @@ async function initDeepSeekSettings() {
   }
 
   try {
-    const existingKey = await DeepSeekService.getApiKey();
+    const keyData = await DeepSeekService.getApiKey();
+    const existingKey = typeof keyData === 'object' ? keyData.apiKey : keyData;
+    const isRemembered = typeof keyData === 'object' ? keyData.remembered : false;
+
     if (existingKey && apiKeyInput) {
       apiKeyInput.value = existingKey;
       if (keyStatusEl) {
         keyStatusEl.textContent = '● Key configured';
         keyStatusEl.className = 'text-xs font-medium text-emerald-400';
       }
+    }
+    if (rememberKeyCheckbox && typeof isRemembered === 'boolean') {
+      rememberKeyCheckbox.checked = isRemembered;
     }
   } catch (err) {
     console.error('Failed to load DeepSeek API key:', err);
@@ -235,7 +241,7 @@ async function initDeepSeekSettings() {
       if (val) {
         await DeepSeekService.setApiKey(val, shouldRemember);
         triggerSaveIndicator('API Key updated');
-        if (balanceTracker) balanceTracker.refresh();
+        if (balanceTracker) balanceTracker.refresh(true);
       }
     };
     apiKeyInput.addEventListener('change', saveKeyNow);
@@ -250,7 +256,7 @@ async function initDeepSeekSettings() {
         keyStatusEl.textContent = 'Key removed';
         keyStatusEl.className = 'text-xs font-medium text-slate-400';
       }
-      updateBalanceDisplay({ is_available: false });
+      updateBalanceDisplay({ success: false, isAvailable: false });
       triggerSaveIndicator('API Key cleared');
     });
   }
@@ -275,13 +281,17 @@ async function initDeepSeekSettings() {
       }
 
       try {
-        const balanceData = await DeepSeekService.fetchBalance(key);
+        const balanceData = await DeepSeekService.getBalance(key, { force: true });
+        if (!balanceData || !balanceData.success) {
+          throw new Error(balanceData ? balanceData.error : 'Verification failed');
+        }
+
         // Save the verified key
         const shouldRemember = rememberKeyCheckbox ? rememberKeyCheckbox.checked : true;
         await DeepSeekService.setApiKey(key, shouldRemember);
 
         if (keyStatusEl) {
-          keyStatusEl.textContent = '✓ Verified & Active';
+          keyStatusEl.textContent = `✓ Verified (${balanceData.compact})`;
           keyStatusEl.className = 'text-xs font-medium text-emerald-400';
         }
         updateBalanceDisplay(balanceData);
@@ -300,30 +310,28 @@ async function initDeepSeekSettings() {
   }
 
   // --- D. Balance Polling & Refresh ---
-  balanceTracker = DeepSeekService.createBalanceTracker({
-    intervalMs: 60000,
-    onBalance: (data) => {
-      updateBalanceDisplay(data);
-    },
-    onError: (err) => {
-      console.warn('DeepSeek balance tracker poll error:', err);
+  balanceTracker = DeepSeekService.createBalanceTracker(
+    () => (apiKeyInput ? apiKeyInput.value.trim() : ''),
+    (balanceInfo, isUpdating) => {
+      const refreshIcon = document.getElementById('refresh-icon');
+      if (refreshIcon) {
+        refreshIcon.classList.toggle('animate-spin', !!isUpdating);
+      }
+      if (balanceInfo) {
+        updateBalanceDisplay(balanceInfo);
+      }
     }
-  });
-  balanceTracker.start();
+  );
+
+  if (apiKeyInput && apiKeyInput.value.trim()) {
+    balanceTracker.refresh(true);
+  }
 
   if (refreshBalanceBtn) {
     refreshBalanceBtn.addEventListener('click', async () => {
-      const icon = document.getElementById('refresh-icon');
-      if (icon) icon.classList.add('animate-spin');
-      try {
-        await balanceTracker.refresh();
+      if (balanceTracker) {
+        await balanceTracker.refresh(true);
         triggerSaveIndicator('Balance refreshed');
-      } catch (err) {
-        console.error('Refresh balance failed:', err);
-      } finally {
-        if (icon) {
-          setTimeout(() => icon.classList.remove('animate-spin'), 600);
-        }
       }
     });
   }
@@ -353,31 +361,38 @@ function updateBalanceDisplay(data) {
   const headerBadge = document.getElementById('deepseek-header-balance');
   const headerVal = document.getElementById('deepseek-header-balance-val');
 
-  if (!data || !data.is_available) {
-    if (balanceText) balanceText.textContent = 'No Balance Available';
-    if (grantedText) grantedText.textContent = '(Key not set or invalid)';
+  if (!data || !data.success || !data.isAvailable) {
+    if (balanceText) {
+      if (data && data.success && !data.isAvailable) {
+        balanceText.textContent = `${data.compact || '$0.00'} (No Funds)`;
+      } else {
+        balanceText.textContent = 'No Balance Available';
+      }
+    }
+    if (grantedText) {
+      grantedText.textContent = data && data.error ? `(${data.error})` : '(Key not set or invalid)';
+    }
     if (headerVal) headerVal.textContent = 'Unconfigured';
     return;
   }
 
-  const primary = data.balance_infos && data.balance_infos[0];
-  if (primary) {
-    const total = parseFloat(primary.total_balance || 0).toFixed(2);
-    const granted = parseFloat(primary.granted_balance || 0).toFixed(2);
-    const currency = primary.currency || 'USD';
+  const total = parseFloat(data.totalBalance || '0').toFixed(2);
+  const granted = parseFloat(data.grantedBalance || '0').toFixed(2);
+  const currency = data.currency || 'USD';
+  const symbol = data.currencySymbol || '$';
 
-    if (balanceText) {
-      balanceText.textContent = `${currency === 'USD' ? '$' : '¥'}${total} ${currency}`;
-    }
-    if (grantedText) {
-      grantedText.textContent = `(Includes ${currency === 'USD' ? '$' : '¥'}${granted} granted)`;
-    }
-    if (headerVal) {
-      headerVal.textContent = `${currency === 'USD' ? '$' : '¥'}${total}`;
-    }
-    if (headerBadge) {
-      headerBadge.classList.remove('hidden');
-    }
+  if (balanceText) {
+    balanceText.textContent = `${symbol}${total} ${currency}`;
+  }
+  if (grantedText) {
+    grantedText.textContent = `(Includes ${symbol}${granted} granted)`;
+  }
+  if (headerVal) {
+    headerVal.textContent = `${symbol}${total}`;
+  }
+  if (headerBadge) {
+    headerBadge.classList.remove('hidden');
+    headerBadge.classList.add('inline-flex');
   }
 }
 
