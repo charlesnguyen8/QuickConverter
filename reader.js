@@ -1,6 +1,6 @@
 // QuickConverter Chapter Reader Controller
 // Renders clean distraction-free reading typography, font resizing, scroll progress, adjacent chapter navigation,
-// and intuitive in-place translation and chapter text editing with IndexedDB persistence.
+// and seamless zero-friction in-place paragraph editing with background auto-save to IndexedDB.
 
 document.addEventListener('DOMContentLoaded', async () => {
   const urlParams = new URLSearchParams(window.location.search);
@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const backToNovelBtn = document.getElementById('back-to-novel-btn');
   const headerNovelTitle = document.getElementById('header-novel-title');
   const headerChapterTitle = document.getElementById('header-chapter-title');
-  const headerEditBtn = document.getElementById('header-edit-btn');
+  const toggleSourceDrawerBtn = document.getElementById('toggle-source-drawer-btn');
   const fontDecBtn = document.getElementById('font-dec-btn');
   const fontIncBtn = document.getElementById('font-inc-btn');
   const fontSizeLabel = document.getElementById('font-size-label');
@@ -27,8 +27,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const chapterBadge = document.getElementById('chapter-badge');
   const chapterTransBadge = document.getElementById('chapter-trans-badge');
   const chapterEditedBadge = document.getElementById('chapter-edited-badge');
-  const contentEditBtn = document.getElementById('content-edit-btn');
   const chapterMainTitle = document.getElementById('chapter-main-title');
+  const editTitleBtn = document.getElementById('edit-title-btn');
   const chapterCharCount = document.getElementById('chapter-char-count');
   const chapterReadingTime = document.getElementById('chapter-reading-time');
   const chapterBody = document.getElementById('chapter-body');
@@ -38,23 +38,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const nextChapterBtn = document.getElementById('next-chapter-btn');
   const bottomNovelBtn = document.getElementById('bottom-novel-btn');
 
-  // Editor Elements
-  const readerEditView = document.getElementById('reader-edit-view');
-  const editModeBadge = document.getElementById('edit-mode-badge');
-  const editChapterTitle = document.getElementById('edit-chapter-title');
-  const editChapterTextarea = document.getElementById('edit-chapter-textarea');
-  const editCharCount = document.getElementById('edit-char-count');
-  const editWordCount = document.getElementById('edit-word-count');
-  const toggleRawRefBtn = document.getElementById('toggle-raw-reference-btn');
-  const toggleRawRefLabel = document.getElementById('toggle-raw-reference-label');
-  const revertEditBtn = document.getElementById('revert-edit-btn');
-  const cancelEditBtn = document.getElementById('cancel-edit-btn');
-  const saveEditBtn = document.getElementById('save-edit-btn');
-  const bottomCancelEditBtn = document.getElementById('bottom-cancel-edit-btn');
-  const bottomSaveEditBtn = document.getElementById('bottom-save-edit-btn');
-  const rawRefPanel = document.getElementById('raw-reference-panel');
-  const rawRefText = document.getElementById('raw-reference-text');
-  const closeRawPanelBtn = document.getElementById('close-raw-panel-btn');
+  // Source Drawer Elements
+  const sourceDrawer = document.getElementById('source-drawer');
+  const closeSourceDrawerBtn = document.getElementById('close-source-drawer-btn');
+  const copySourceBtn = document.getElementById('copy-source-btn');
+  const sourceDrawerText = document.getElementById('source-drawer-text');
 
   // Toast Element
   const saveToast = document.getElementById('save-toast');
@@ -67,9 +55,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // State
   let currentChapter = null;
-  let isEditing = false;
-  let initialTitleBeforeEdit = '';
-  let initialTextBeforeEdit = '';
+  let novel = null;
   let toastTimer = null;
 
   function showToast(msg) {
@@ -81,7 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     toastTimer = setTimeout(() => {
       saveToast.classList.remove('translate-y-0', 'opacity-100');
       saveToast.classList.add('translate-y-12', 'opacity-0', 'pointer-events-none');
-    }, 3000);
+    }, 2500);
   }
 
   // --- Font Size Adjustment State ---
@@ -93,9 +79,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     localStorage.setItem(FONT_KEY, currentFontSize);
     if (chapterBody) {
       chapterBody.style.fontSize = `${currentFontSize}px`;
-    }
-    if (editChapterTextarea) {
-      editChapterTextarea.style.fontSize = `${currentFontSize}px`;
     }
     if (fontSizeLabel) {
       fontSizeLabel.textContent = `${currentFontSize}px`;
@@ -134,18 +117,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     return div.innerHTML;
   }
 
-  function updateEditorStats() {
-    if (!editChapterTextarea) return;
-    const text = editChapterTextarea.value || '';
-    const charCount = text.length;
-    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-    if (editCharCount) editCharCount.textContent = `${charCount.toLocaleString()} characters`;
-    if (editWordCount) editWordCount.textContent = `${words.toLocaleString()} words`;
+  function updateMetricsFromDom() {
+    if (!chapterBody) return;
+    const allParagraphs = Array.from(chapterBody.querySelectorAll('.paragraph-text'))
+      .map((el) => el.innerText.trim())
+      .filter((t) => t.length > 0);
+    const fullText = allParagraphs.join('\n\n');
+
+    const charCount = fullText.length;
+    if (chapterCharCount) chapterCharCount.textContent = `${charCount.toLocaleString()} characters`;
+    if (chapterReadingTime) {
+      const words = fullText.split(/\s+/).length;
+      const mins = Math.max(1, Math.round(words / 220));
+      chapterReadingTime.textContent = `~${mins} min read`;
+    }
   }
 
   // --- Load Novel and Chapter Data ---
   try {
-    const novel = await window.StorageService.getNovelById(novelId);
+    novel = await window.StorageService.getNovelById(novelId);
     if (!novel) {
       if (readerLoading) readerLoading.innerHTML = '<p class="text-red-400">Novel not found in your library.</p>';
       return;
@@ -166,7 +156,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (headerChapterTitle) headerChapterTitle.textContent = fallbackTitle;
     if (chapterMainTitle) chapterMainTitle.textContent = fallbackTitle;
     if (chapterBadge) chapterBadge.textContent = `Ch. ${chapterNumber}`;
-    if (editModeBadge) editModeBadge.textContent = `Ch. ${chapterNumber}`;
 
     // --- Configure Adjacent Chapter Navigation ---
     const catalog = (novel.chapterList || []).slice().sort((a, b) => a.chapterNumber - b.chapterNumber);
@@ -209,202 +198,239 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    // --- Edit Mode Controller Methods ---
-    function enterEditMode() {
-      if (!currentChapter) return;
-      isEditing = true;
+    // --- In-Place Paragraph Editing System ---
+    function startEditingParagraph(pBlock) {
+      const pEl = pBlock.querySelector('.paragraph-text');
+      if (!pEl || pEl.getAttribute('contenteditable') === 'true') return;
 
-      const titleVal = currentChapter.title || headerChapterTitle.textContent || `Chapter ${chapterNumber}`;
-      const textVal = currentChapter.rawText || currentChapter.convertedText || '';
+      const currentText = pEl.innerText.trim();
+      pEl.dataset.origText = currentText;
 
-      if (editChapterTitle) editChapterTitle.value = titleVal;
-      if (editChapterTextarea) {
-        editChapterTextarea.value = textVal;
-        editChapterTextarea.style.fontSize = `${currentFontSize}px`;
-      }
+      pEl.setAttribute('contenteditable', 'true');
+      pEl.classList.add('ring-1', 'ring-indigo-500/60', 'bg-slate-800/90', 'px-2', 'py-1', 'shadow-inner');
+      pEl.focus();
 
-      initialTitleBeforeEdit = titleVal;
-      initialTextBeforeEdit = textVal;
-
-      updateEditorStats();
-
-      // Show/Hide Original Source Reference option
-      if (currentChapter.originalRawText && currentChapter.originalRawText.trim() !== textVal.trim()) {
-        if (toggleRawRefBtn) toggleRawRefBtn.classList.remove('hidden');
-        if (rawRefText) rawRefText.textContent = currentChapter.originalRawText;
-        if (revertEditBtn) revertEditBtn.classList.remove('hidden');
-      } else {
-        if (toggleRawRefBtn) toggleRawRefBtn.classList.add('hidden');
-        if (rawRefPanel) rawRefPanel.classList.add('hidden');
-        if (revertEditBtn) revertEditBtn.classList.add('hidden');
-      }
-
-      if (readerContentView) readerContentView.classList.add('hidden');
-      if (readerEditView) readerEditView.classList.remove('hidden');
-
-      // Scroll to editor top
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      if (editChapterTextarea) {
-        setTimeout(() => editChapterTextarea.focus(), 100);
-      }
+      // Place caret at end or selection
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(pEl);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
     }
 
-    function exitEditMode(saved = false) {
-      isEditing = false;
-      if (readerEditView) readerEditView.classList.add('hidden');
-      if (readerContentView) readerContentView.classList.remove('hidden');
+    async function finishEditingParagraph(pBlock, save = true) {
+      const pEl = pBlock.querySelector('.paragraph-text');
+      const savePill = pBlock.querySelector('.save-pill');
+      if (!pEl || pEl.getAttribute('contenteditable') !== 'true') return;
 
-      if (saved) {
-        loadChapterContent();
+      const origText = pEl.dataset.origText || '';
+      const newText = pEl.innerText.trim();
+
+      pEl.setAttribute('contenteditable', 'false');
+      pEl.classList.remove('ring-1', 'ring-indigo-500/60', 'bg-slate-800/90', 'px-2', 'py-1', 'shadow-inner');
+
+      if (!save) {
+        pEl.innerText = origText;
+        return;
       }
-    }
 
-    function handleCancelEdit() {
-      if (!isEditing) return;
-      const curTitle = (editChapterTitle && editChapterTitle.value) || '';
-      const curText = (editChapterTextarea && editChapterTextarea.value) || '';
+      if (newText !== origText && newText.length > 0) {
+        // Collect all paragraphs in the document
+        const allParagraphs = Array.from(chapterBody.querySelectorAll('.paragraph-text'))
+          .map((el) => el.innerText.trim())
+          .filter((t) => t.length > 0);
+        const fullText = allParagraphs.join('\n\n');
 
-      if (curTitle !== initialTitleBeforeEdit || curText !== initialTextBeforeEdit) {
-        if (!confirm('Discard your unsaved edits?')) {
-          return;
+        try {
+          await window.StorageService.updateChapter(novel.id, chapterNumber, {
+            rawText: fullText,
+            convertedText: '',
+            isUserEdited: true,
+            editedAt: Date.now()
+          });
+
+          if (currentChapter) {
+            currentChapter.rawText = fullText;
+            currentChapter.isUserEdited = true;
+          }
+
+          if (chapterEditedBadge) {
+            chapterEditedBadge.classList.remove('hidden');
+          }
+
+          // Show subtle inline Saved pill
+          if (savePill) {
+            savePill.classList.remove('hidden');
+            setTimeout(() => {
+              savePill.classList.add('hidden');
+            }, 1800);
+          }
+
+          updateMetricsFromDom();
+        } catch (err) {
+          console.error('Failed to auto-save paragraph edit:', err);
+          showToast('Failed to save edit: ' + err.message);
         }
       }
-      exitEditMode(false);
     }
 
-    async function handleSaveEdit() {
-      if (!currentChapter || !novel) return;
+    // --- Inline Chapter Title Editing System ---
+    function startEditingTitle() {
+      if (!chapterMainTitle || chapterMainTitle.getAttribute('contenteditable') === 'true') return;
 
-      const newTitle = (editChapterTitle && editChapterTitle.value.trim()) || `Chapter ${chapterNumber}`;
-      const newText = (editChapterTextarea && editChapterTextarea.value) || '';
+      const orig = chapterMainTitle.innerText.trim();
+      chapterMainTitle.dataset.origTitle = orig;
 
-      // Visual saving state
-      const setButtonsBusy = (busy) => {
-        [saveEditBtn, bottomSaveEditBtn].forEach((btn) => {
-          if (!btn) return;
-          btn.disabled = busy;
-          btn.innerHTML = busy
-            ? `
-              <svg class="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-              </svg>
-              <span>Saving...</span>
-            `
-            : `
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-                <polyline points="17 21 17 13 7 13 7 21"></polyline>
-                <polyline points="7 3 7 8 15 8"></polyline>
-              </svg>
-              <span>Save Changes</span>
-            `;
-        });
-      };
+      chapterMainTitle.setAttribute('contenteditable', 'true');
+      chapterMainTitle.classList.add('ring-1', 'ring-indigo-500/60', 'bg-slate-800/90', 'px-2', 'py-0.5');
+      chapterMainTitle.focus();
 
-      try {
-        setButtonsBusy(true);
+      // Select all text in title
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(chapterMainTitle);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
 
-        const updates = {
-          title: newTitle,
-          rawText: newText,
-          convertedText: '', // Clear converted text to prioritize edited rawText
-          isUserEdited: true,
-          editedAt: Date.now()
-        };
+    async function finishEditingTitle(save = true) {
+      if (!chapterMainTitle || chapterMainTitle.getAttribute('contenteditable') !== 'true') return;
 
-        const updated = await window.StorageService.updateChapter(novel.id, chapterNumber, updates);
-        currentChapter = updated;
+      const orig = chapterMainTitle.dataset.origTitle || '';
+      const newTitle = chapterMainTitle.innerText.trim();
 
-        setButtonsBusy(false);
-        showToast('Chapter changes saved successfully!');
-        exitEditMode(true);
-      } catch (err) {
-        console.error('Failed to save chapter edits:', err);
-        setButtonsBusy(false);
-        alert(`Failed to save changes: ${err.message || err}`);
+      chapterMainTitle.setAttribute('contenteditable', 'false');
+      chapterMainTitle.classList.remove('ring-1', 'ring-indigo-500/60', 'bg-slate-800/90', 'px-2', 'py-0.5');
+
+      if (!save) {
+        chapterMainTitle.innerText = orig;
+        return;
+      }
+
+      if (newTitle && newTitle !== orig) {
+        try {
+          await window.StorageService.updateChapter(novel.id, chapterNumber, {
+            title: newTitle,
+            isUserEdited: true,
+            editedAt: Date.now()
+          });
+
+          if (currentChapter) currentChapter.title = newTitle;
+          if (headerChapterTitle) headerChapterTitle.textContent = newTitle;
+          document.title = `${novel.title} - ${newTitle}`;
+
+          if (chapterEditedBadge) {
+            chapterEditedBadge.classList.remove('hidden');
+          }
+
+          showToast('Title updated ✓');
+        } catch (err) {
+          console.error('Failed to save chapter title:', err);
+          showToast('Failed to save title: ' + err.message);
+        }
       }
     }
 
-    // Wire Edit triggers
-    if (headerEditBtn) headerEditBtn.addEventListener('click', enterEditMode);
-    if (contentEditBtn) contentEditBtn.addEventListener('click', enterEditMode);
-
-    if (cancelEditBtn) cancelEditBtn.addEventListener('click', handleCancelEdit);
-    if (bottomCancelEditBtn) bottomCancelEditBtn.addEventListener('click', handleCancelEdit);
-
-    if (saveEditBtn) saveEditBtn.addEventListener('click', handleSaveEdit);
-    if (bottomSaveEditBtn) bottomSaveEditBtn.addEventListener('click', handleSaveEdit);
-
-    if (editChapterTextarea) {
-      editChapterTextarea.addEventListener('input', updateEditorStats);
-    }
-
-    // Toggle Original Reference Panel
-    if (toggleRawRefBtn && rawRefPanel) {
-      toggleRawRefBtn.addEventListener('click', () => {
-        const isHidden = rawRefPanel.classList.contains('hidden');
-        if (isHidden) {
-          rawRefPanel.classList.remove('hidden');
-          if (toggleRawRefLabel) toggleRawRefLabel.textContent = 'Hide Original Source';
-        } else {
-          rawRefPanel.classList.add('hidden');
-          if (toggleRawRefLabel) toggleRawRefLabel.textContent = 'View Original Source';
+    if (chapterMainTitle) {
+      chapterMainTitle.addEventListener('dblclick', startEditingTitle);
+      chapterMainTitle.addEventListener('blur', () => finishEditingTitle(true));
+      chapterMainTitle.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finishEditingTitle(true);
+          chapterMainTitle.blur();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          finishEditingTitle(false);
+          chapterMainTitle.blur();
         }
       });
     }
 
-    if (closeRawPanelBtn && rawRefPanel) {
-      closeRawPanelBtn.addEventListener('click', () => {
-        rawRefPanel.classList.add('hidden');
-        if (toggleRawRefLabel) toggleRawRefLabel.textContent = 'View Original Source';
+    if (editTitleBtn) {
+      editTitleBtn.addEventListener('click', startEditingTitle);
+    }
+
+    // --- Source Reference Drawer Controller ---
+    function openSourceDrawer() {
+      if (!sourceDrawer) return;
+      sourceDrawer.classList.remove('translate-x-full');
+    }
+
+    function closeSourceDrawer() {
+      if (!sourceDrawer) return;
+      sourceDrawer.classList.add('translate-x-full');
+    }
+
+    if (toggleSourceDrawerBtn) {
+      toggleSourceDrawerBtn.addEventListener('click', () => {
+        const isClosed = sourceDrawer.classList.contains('translate-x-full');
+        if (isClosed) openSourceDrawer();
+        else closeSourceDrawer();
       });
     }
 
-    // Revert to Original Source/Initial Text
-    if (revertEditBtn) {
-      revertEditBtn.addEventListener('click', () => {
-        if (!currentChapter) return;
-        const targetText = currentChapter.originalRawText || initialTextBeforeEdit;
-        if (!targetText) return;
+    if (closeSourceDrawerBtn) {
+      closeSourceDrawerBtn.addEventListener('click', closeSourceDrawer);
+    }
 
-        if (confirm('Revert content back to the original source text? This will overwrite your current edits in the box.')) {
-          if (editChapterTextarea) {
-            editChapterTextarea.value = targetText;
-            updateEditorStats();
+    if (copySourceBtn) {
+      copySourceBtn.addEventListener('click', () => {
+        if (currentChapter && currentChapter.originalRawText) {
+          navigator.clipboard.writeText(currentChapter.originalRawText).then(() => {
+            copySourceBtn.textContent = 'Copied! ✓';
+            setTimeout(() => {
+              copySourceBtn.textContent = 'Copy';
+            }, 2000);
+          });
+        }
+      });
+    }
+
+    // Global Keydown Handler (Navigation, Hotkeys & Active ContentEditable overrides)
+    window.addEventListener('keydown', (e) => {
+      // If currently editing inside a contenteditable paragraph
+      const activeEl = document.activeElement;
+      if (activeEl && activeEl.getAttribute('contenteditable') === 'true') {
+        const pBlock = activeEl.closest('.paragraph-block');
+        if (pBlock) {
+          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            finishEditingParagraph(pBlock, true);
+            activeEl.blur();
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            finishEditingParagraph(pBlock, false);
+            activeEl.blur();
+            return;
           }
         }
-      });
-    }
-
-    // Keyboard Shortcuts
-    window.addEventListener('keydown', (e) => {
-      // While editing: Ctrl+S / Cmd+S to save, Escape to cancel
-      if (isEditing) {
-        if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
-          e.preventDefault();
-          handleSaveEdit();
-          return;
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          handleCancelEdit();
-          return;
-        }
-        return;
+        return; // Don't trigger navigation keys while editing text
       }
 
-      // Not editing: ignore if typing in any other input/textarea
-      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+      // If inside an input or textarea
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
 
-      // E or e triggers edit mode
-      if ((e.key === 'e' || e.key === 'E') && currentChapter) {
+      // Hotkey: S toggles original source drawer (if source exists)
+      if ((e.key === 's' || e.key === 'S') && currentChapter && currentChapter.originalRawText) {
         e.preventDefault();
-        enterEditMode();
+        const isClosed = sourceDrawer.classList.contains('translate-x-full');
+        if (isClosed) openSourceDrawer();
+        else closeSourceDrawer();
         return;
       }
 
-      // Navigation shortcuts
+      // Hotkey: Escape closes source drawer if open
+      if (e.key === 'Escape' && sourceDrawer && !sourceDrawer.classList.contains('translate-x-full')) {
+        e.preventDefault();
+        closeSourceDrawer();
+        return;
+      }
+
+      // Navigation Shortcuts (Left / Right Arrow)
       if ((e.key === 'ArrowLeft' || e.key === '[') && prevCh !== null) {
         window.location.href = `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(prevCh)}`;
       } else if ((e.key === 'ArrowRight' || e.key === ']') && nextCh !== null) {
@@ -425,7 +451,45 @@ document.addEventListener('DOMContentLoaded', async () => {
           .filter((p) => p.length > 0 && p !== '&nbsp;');
 
         if (chapterBody) {
-          chapterBody.innerHTML = paragraphs.map((p) => `<p class="leading-relaxed">${escapeHtml(p)}</p>`).join('');
+          chapterBody.innerHTML = paragraphs
+            .map(
+              (p, idx) => `
+              <div class="paragraph-block relative group rounded-md transition-all -mx-2 px-2 py-0.5 hover:bg-slate-800/30" data-idx="${idx}">
+                <p
+                  class="paragraph-text leading-relaxed outline-none rounded transition-all cursor-text select-text"
+                  tabindex="0"
+                  title="Double-click to edit this paragraph"
+                >${escapeHtml(p)}</p>
+                <div class="paragraph-actions absolute right-2 -top-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none select-none">
+                  <span class="save-pill hidden text-[10px] font-medium text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 px-1.5 py-0.5 rounded shadow-sm">
+                    Saved ✓
+                  </span>
+                  <button
+                    type="button"
+                    class="edit-p-btn pointer-events-auto p-1 text-slate-500 hover:text-indigo-300 hover:bg-slate-800 transition rounded cursor-pointer"
+                    title="Edit paragraph"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            `
+            )
+            .join('');
+
+          // Wire paragraph events
+          chapterBody.querySelectorAll('.paragraph-block').forEach((pBlock) => {
+            const pEl = pBlock.querySelector('.paragraph-text');
+            const editBtn = pBlock.querySelector('.edit-p-btn');
+
+            pEl.addEventListener('dblclick', () => startEditingParagraph(pBlock));
+            if (editBtn) editBtn.addEventListener('click', () => startEditingParagraph(pBlock));
+
+            pEl.addEventListener('blur', () => finishEditingParagraph(pBlock, true));
+          });
         }
 
         const charCount = text.length;
@@ -459,14 +523,21 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
-        if (headerEditBtn) headerEditBtn.classList.remove('hidden');
+        // Handle Original Source Drawer setup
+        if (chapter.originalRawText && chapter.originalRawText.trim() !== text.trim()) {
+          if (toggleSourceDrawerBtn) toggleSourceDrawerBtn.classList.remove('hidden');
+          if (sourceDrawerText) sourceDrawerText.textContent = chapter.originalRawText;
+        } else {
+          if (toggleSourceDrawerBtn) toggleSourceDrawerBtn.classList.add('hidden');
+          closeSourceDrawer();
+        }
 
         if (readerLoading) readerLoading.classList.add('hidden');
         if (readerNotSaved) readerNotSaved.classList.add('hidden');
         if (readerContentView) readerContentView.classList.remove('hidden');
       } else {
         // Not saved yet
-        if (headerEditBtn) headerEditBtn.classList.add('hidden');
+        if (toggleSourceDrawerBtn) toggleSourceDrawerBtn.classList.add('hidden');
         if (readerLoading) readerLoading.classList.add('hidden');
         if (readerContentView) readerContentView.classList.add('hidden');
         if (readerNotSaved) readerNotSaved.classList.remove('hidden');
