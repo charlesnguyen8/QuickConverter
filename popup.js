@@ -23,11 +23,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingsBtn = document.getElementById('settings-btn');
   const novelSettingsBtn = document.getElementById('novel-settings-btn');
 
-  // Settings button handlers (reserved for future functionality)
+  // Settings button handlers
   [settingsBtn, novelSettingsBtn].forEach((btn) => {
     if (btn) {
       btn.addEventListener('click', () => {
-        // Reserved for future settings view/modal
+        const settingsUrl =
+          typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
+            ? chrome.runtime.getURL('settings.html')
+            : 'settings.html';
+        if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
+          chrome.tabs.create({ url: settingsUrl });
+        } else {
+          window.open(settingsUrl, '_blank');
+        }
       });
     }
   });

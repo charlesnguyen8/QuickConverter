@@ -21,6 +21,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let currentNovel = null;
 
+  const novelSettingsBtn = document.getElementById('novel-settings-btn');
+  if (novelSettingsBtn && novelId) {
+    novelSettingsBtn.href = `settings.html?from=novel&id=${encodeURIComponent(novelId)}`;
+  }
+
   // --- DeepSeek Translation UI Wiring ---
   let updateNovelPromptUI = null;
   let novelBalanceTracker = null;

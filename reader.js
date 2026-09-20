@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const fontDecBtn = document.getElementById('font-dec-btn');
   const fontIncBtn = document.getElementById('font-inc-btn');
   const fontSizeLabel = document.getElementById('font-size-label');
+  const readerSettingsBtn = document.getElementById('reader-settings-btn');
 
   // Article / Reader Elements
   const readerLoading = document.getElementById('reader-loading');
@@ -70,32 +71,104 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 2500);
   }
 
-  // --- Font Size Adjustment State ---
-  const FONT_KEY = 'quickconverter_reader_font_size';
-  let currentFontSize = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
+  if (readerSettingsBtn && novelId && !isNaN(chapterNumber)) {
+    readerSettingsBtn.href = `settings.html?from=reader&id=${encodeURIComponent(novelId)}&ch=${encodeURIComponent(chapterNumber)}`;
+  }
 
-  function applyFontSize(size) {
-    currentFontSize = Math.min(26, Math.max(14, size));
-    localStorage.setItem(FONT_KEY, currentFontSize);
+  // --- Reader Typography, Appearance & Theme Preferences ---
+  const FONT_KEY = 'quickconverter_reader_font_size';
+  const FONT_FAMILY_KEY = 'quickconverter_reader_font_family';
+  const LINE_HEIGHT_KEY = 'quickconverter_reader_line_height';
+  const WIDTH_KEY = 'quickconverter_reader_column_width';
+  const THEME_KEY = 'quickconverter_reader_theme';
+
+  const readerMainEl = document.querySelector('main');
+  const readerHeaderEl = document.querySelector('header');
+
+  function applyReaderPreferences() {
+    const fontSize = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
+    const fontFamily = localStorage.getItem(FONT_FAMILY_KEY) || 'sans';
+    const lineHeight = localStorage.getItem(LINE_HEIGHT_KEY) || 'relaxed';
+    const columnWidth = localStorage.getItem(WIDTH_KEY) || 'standard';
+    const theme = localStorage.getItem(THEME_KEY) || 'slate';
+
+    // Apply font size
     if (chapterBody) {
-      chapterBody.style.fontSize = `${currentFontSize}px`;
+      chapterBody.style.fontSize = `${fontSize}px`;
     }
     if (fontSizeLabel) {
-      fontSizeLabel.textContent = `${currentFontSize}px`;
+      fontSizeLabel.textContent = `${fontSize}px`;
+    }
+
+    // Apply font family
+    if (chapterBody) {
+      if (fontFamily === 'serif') {
+        chapterBody.style.fontFamily = 'Georgia, Cambria, "Times New Roman", Times, serif';
+      } else if (fontFamily === 'mono') {
+        chapterBody.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      } else {
+        chapterBody.style.fontFamily = 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      }
+    }
+
+    // Apply line height
+    if (chapterBody) {
+      if (lineHeight === 'compact') {
+        chapterBody.style.lineHeight = '1.5';
+      } else if (lineHeight === 'spacious') {
+        chapterBody.style.lineHeight = '2.0';
+      } else {
+        chapterBody.style.lineHeight = '1.75';
+      }
+    }
+
+    // Apply column width
+    if (readerMainEl) {
+      readerMainEl.classList.remove('max-w-2xl', 'max-w-3xl', 'max-w-4xl', 'max-w-5xl');
+      if (columnWidth === 'compact') readerMainEl.classList.add('max-w-2xl');
+      else if (columnWidth === 'wide') readerMainEl.classList.add('max-w-4xl');
+      else if (columnWidth === 'full') readerMainEl.classList.add('max-w-5xl');
+      else readerMainEl.classList.add('max-w-3xl');
+    }
+
+    // Apply Theme
+    if (theme === 'oled') {
+      document.body.style.backgroundColor = '#000000';
+      document.body.style.color = '#f4f4f5';
+      if (readerHeaderEl) readerHeaderEl.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
+    } else if (theme === 'sepia') {
+      document.body.style.backgroundColor = '#fbf0d9';
+      document.body.style.color = '#382a1d';
+      if (readerHeaderEl) readerHeaderEl.style.backgroundColor = 'rgba(251, 240, 217, 0.95)';
+    } else if (theme === 'forest') {
+      document.body.style.backgroundColor = '#0d1712';
+      document.body.style.color = '#e2f2e9';
+      if (readerHeaderEl) readerHeaderEl.style.backgroundColor = 'rgba(13, 23, 18, 0.95)';
+    } else {
+      // Default slate
+      document.body.style.backgroundColor = '';
+      document.body.style.color = '';
+      if (readerHeaderEl) readerHeaderEl.style.backgroundColor = '';
     }
   }
 
-  applyFontSize(currentFontSize);
+  applyReaderPreferences();
 
   if (fontDecBtn) {
     fontDecBtn.addEventListener('click', () => {
-      applyFontSize(currentFontSize - 2);
+      const cur = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
+      const next = Math.max(14, cur - 2);
+      localStorage.setItem(FONT_KEY, next.toString());
+      applyReaderPreferences();
     });
   }
 
   if (fontIncBtn) {
     fontIncBtn.addEventListener('click', () => {
-      applyFontSize(currentFontSize + 2);
+      const cur = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
+      const next = Math.min(28, cur + 2);
+      localStorage.setItem(FONT_KEY, next.toString());
+      applyReaderPreferences();
     });
   }
 

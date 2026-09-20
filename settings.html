@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QuickConverter - Settings</title>
+    <link rel="stylesheet" href="tailwind.css" />
+    <style>
+      /* Custom Dark Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0f172a;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+      }
+    </style>
+  </head>
+
+  <body class="bg-slate-900 text-slate-50 min-h-screen font-sans flex flex-col antialiased selection:bg-indigo-500/30 selection:text-indigo-200">
+    <!-- Header with Smart Return Navigation -->
+    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40 px-4 sm:px-8 py-3.5">
+      <div class="max-w-5xl mx-auto flex items-center justify-between gap-4">
+        <!-- Return Button -->
+        <a
+          id="settings-back-btn"
+          href="library.html"
+          class="inline-flex items-center gap-2 text-xs sm:text-sm font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700/80 transition px-3 py-1.5 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 flex-shrink-0 cursor-pointer"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span id="settings-back-text">Back to Library</span>
+        </a>
+
+        <!-- Brand & Title -->
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-sm">
+            Q
+          </div>
+          <div>
+            <h1 class="text-base sm:text-lg font-bold bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300 bg-clip-text text-transparent leading-tight">
+              Settings & Preferences
+            </h1>
+            <p class="text-[11px] text-slate-400 hidden sm:block">
+              DeepSeek AI, Reader Appearance, and Storage
+            </p>
+          </div>
+        </div>
+
+        <!-- Quick Status Pill -->
+        <div class="flex items-center gap-2">
+          <span id="settings-save-pill" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 opacity-0 transition-opacity duration-200">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span>Saved</span>
+          </span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Settings Body -->
+    <main class="max-w-5xl mx-auto w-full px-4 sm:px-8 py-8 flex-1 flex flex-col md:flex-row gap-8">
+      <!-- Sidebar Navigation -->
+      <aside class="w-full md:w-64 flex-shrink-0 flex md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0 select-none">
+        <button
+          type="button"
+          data-tab="deepseek"
+          class="settings-nav-btn active flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition border border-indigo-500/30 bg-indigo-600/15 text-indigo-300 shadow-sm whitespace-nowrap cursor-pointer"
+        >
+          <span class="text-base">🌐</span>
+          <span>DeepSeek AI</span>
+        </button>
+
+        <button
+          type="button"
+          data-tab="reader"
+          class="settings-nav-btn flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition border border-slate-800 bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-slate-200 whitespace-nowrap cursor-pointer"
+        >
+          <span class="text-base">📖</span>
+          <span>Reader Typography</span>
+        </button>
+
+        <button
+          type="button"
+          data-tab="storage"
+          class="settings-nav-btn flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition border border-slate-800 bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-slate-200 whitespace-nowrap cursor-pointer"
+        >
+          <span class="text-base">💾</span>
+          <span>Storage & Quota</span>
+        </button>
+
+        <button
+          type="button"
+          data-tab="about"
+          class="settings-nav-btn flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition border border-slate-800 bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-slate-200 whitespace-nowrap cursor-pointer"
+        >
+          <span class="text-base">ℹ️</span>
+          <span>About</span>
+        </button>
+      </aside>
+
+      <!-- Content Area -->
+      <div class="flex-1 min-w-0 flex flex-col gap-6">
+        <!-- ========================================== -->
+        <!-- TAB 1: DEEPSEEK AI TRANSLATION -->
+        <!-- ========================================== -->
+        <section id="tab-content-deepseek" class="settings-tab-section flex flex-col gap-6">
+          <!-- Section Banner -->
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center justify-between">
+              <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2">
+                <span>🌐</span>
+                <span>DeepSeek AI Translation</span>
+              </h2>
+              <!-- Live Balance Widget Badge in Header -->
+              <div
+                id="deepseek-header-balance"
+                class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 shadow-sm"
+                title="Active DeepSeek Account Balance"
+              >
+                <span>💳</span>
+                <span id="deepseek-header-balance-val">Balance: Loading...</span>
+              </div>
+            </div>
+            <p class="text-xs text-slate-400">
+              Configure global defaults, API credentials, balance auto-refresh, and translation prompt rules.
+            </p>
+          </div>
+
+          <!-- Master AI Translation Enable / Disable Card -->
+          <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur flex items-center justify-between gap-4">
+            <div class="flex flex-col gap-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold text-slate-200">AI Translation by Default</span>
+                <span
+                  id="deepseek-toggle-badge"
+                  class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-700 text-slate-400 border border-slate-600"
+                >
+                  Disabled
+                </span>
+              </div>
+              <p class="text-xs text-slate-400">
+                When enabled, newly queued chapters are translated using DeepSeek AI. You can still toggle this per-novel at any time.
+              </p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+              <input type="checkbox" id="deepseek-master-toggle" class="sr-only peer" />
+              <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-500/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+            </label>
+          </div>
+
+          <!-- Default Translation Model Card -->
+          <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur flex flex-col gap-4">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-200">Default Model</h3>
+              <p class="text-xs text-slate-400">Select the model used for new translation tasks.</p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <!-- Flash Card -->
+              <label
+                id="model-card-flash"
+                class="flex flex-col gap-2 p-4 rounded-xl border border-indigo-500/50 bg-indigo-500/10 cursor-pointer transition relative"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <input type="radio" name="deepseek-model" value="deepseek-flash" id="model-radio-flash" class="text-indigo-600 focus:ring-indigo-500" checked />
+                    <span class="text-sm font-bold text-slate-100">DeepSeek Flash</span>
+                  </div>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    ⚡ 50x Cheaper Cache
+                  </span>
+                </div>
+                <p class="text-xs text-slate-300 leading-relaxed">
+                  Ultra fast throughput, lowest latency, and up to 50x cheaper token cost when context cache hits. Ideal for novel binge-reading.
+                </p>
+                <div class="text-[11px] text-slate-400 font-mono pt-1 border-t border-slate-700/60 flex items-center justify-between">
+                  <span>Input: $0.14 / M</span>
+                  <span class="text-emerald-400 font-semibold">Cached: $0.014 / M</span>
+                </div>
+              </label>
+
+              <!-- Chat Card -->
+              <label
+                id="model-card-chat"
+                class="flex flex-col gap-2 p-4 rounded-xl border border-slate-700/60 bg-slate-900/40 cursor-pointer transition relative hover:border-slate-600"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <input type="radio" name="deepseek-model" value="deepseek-chat" id="model-radio-chat" class="text-indigo-600 focus:ring-indigo-500" />
+                    <span class="text-sm font-bold text-slate-200">DeepSeek Chat</span>
+                  </div>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    🧠 Deep Reasoning
+                  </span>
+                </div>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                  Standard flagship conversational and literary translation model with nuanced grammar awareness for complex prose.
+                </p>
+                <div class="text-[11px] text-slate-400 font-mono pt-1 border-t border-slate-700/60 flex items-center justify-between">
+                  <span>Input: $0.27 / M</span>
+                  <span class="text-emerald-400 font-semibold">Cached: $0.07 / M</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- API Key & Balance Card -->
+          <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur flex flex-col gap-5">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-200">DeepSeek API Key</h3>
+              <p class="text-xs text-slate-400">
+                Your key is stored securely on this device and used exclusively for direct requests to DeepSeek's official API.
+              </p>
+            </div>
+
+            <!-- API Key Input Field -->
+            <div class="flex flex-col gap-2">
+              <div class="flex items-center gap-2">
+                <div class="relative flex-1">
+                  <input
+                    type="password"
+                    id="settings-api-key"
+                    placeholder="sk-..."
+                    autocomplete="off"
+                    class="w-full px-3.5 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700/80 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 font-mono pr-10 transition"
+                  />
+                  <button
+                    type="button"
+                    id="toggle-key-visibility-btn"
+                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1 rounded focus:outline-none cursor-pointer"
+                    title="Show / Hide API Key"
+                  >
+                    <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  id="test-key-btn"
+                  class="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer flex-shrink-0"
+                >
+                  <span>Verify Key</span>
+                </button>
+
+                <button
+                  type="button"
+                  id="clear-key-btn"
+                  class="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-red-500/20 transition focus:outline-none cursor-pointer flex-shrink-0"
+                  title="Remove Key from Storage"
+                >
+                  <span>Clear</span>
+                </button>
+              </div>
+
+              <!-- Key Storage Persistence Options -->
+              <div class="flex items-center justify-between pt-1">
+                <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300 select-none">
+                  <input
+                    type="checkbox"
+                    id="settings-remember-key"
+                    class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-indigo-500"
+                    checked
+                  />
+                  <span>Remember API Key on this computer (Local Storage)</span>
+                </label>
+                <span id="key-validation-status" class="text-xs font-medium"></span>
+              </div>
+            </div>
+
+            <!-- Live Account Balance Monitor -->
+            <div id="settings-balance-card" class="bg-slate-900/60 border border-slate-700/60 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-xl text-emerald-400 flex-shrink-0">
+                  💳
+                </div>
+                <div class="flex flex-col">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-semibold text-slate-400">Available Account Balance</span>
+                    <span id="balance-live-dot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Live Auto-Refreshing"></span>
+                  </div>
+                  <div class="flex items-baseline gap-2">
+                    <span id="settings-balance-text" class="text-lg font-bold font-mono text-emerald-400">
+                      $0.00 USD
+                    </span>
+                    <span id="settings-granted-text" class="text-xs text-slate-400">
+                      (Includes granted funds)
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 self-end sm:self-center">
+                <span class="text-[11px] text-slate-500 hidden lg:inline">Auto-refreshes periodically</span>
+                <button
+                  type="button"
+                  id="refresh-balance-btn"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition focus:outline-none cursor-pointer"
+                  title="Refresh Balance from DeepSeek"
+                >
+                  <svg id="refresh-icon" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M23 4v6h-6"></path>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                  </svg>
+                  <span>Refresh</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Custom Translation System Prompt Card -->
+          <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-200">Default Translation System Prompt</h3>
+                <p class="text-xs text-slate-400">
+                  Global instructions instructing the AI how to translate web novel chapters.
+                </p>
+              </div>
+              <button
+                type="button"
+                id="reset-prompt-btn"
+                class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
+              >
+                Reset to Default
+              </button>
+            </div>
+
+            <textarea
+              id="settings-custom-prompt"
+              rows="4"
+              class="w-full px-3.5 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700/80 text-xs font-mono text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition leading-relaxed"
+              placeholder="Enter custom translation instructions..."
+            ></textarea>
+
+            <p class="text-[11px] text-slate-400">
+              💡 Tip: Individual novels can override this prompt in their respective Novel Overview page.
+            </p>
+          </div>
+
+          <!-- Pricing & Off-Peak Reference Notice -->
+          <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4 flex flex-col gap-2">
+            <div class="flex items-center gap-2 text-xs font-semibold text-slate-300">
+              <span>🕒</span>
+              <span>Off-Peak Discount & Token Pricing Notice</span>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              DeepSeek offers an automatic <strong class="text-emerald-400">50% off-peak discount</strong> during Beijing non-business hours (UTC 16:30 – 08:30). QuickConverter automatically factors in off-peak rates and context caching discounts when calculating per-chapter costs.
+            </p>
+          </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: READER TYPOGRAPHY & APPEARANCE -->
+        <!-- ========================================== -->
+        <section id="tab-content-reader" class="settings-tab-section hidden flex flex-col gap-6">
+          <div class="flex flex-col gap-1">
+            <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2">
+              <span>📖</span>
+              <span>Reader Typography & Appearance</span>
+            </h2>
+            <p class="text-xs text-slate-400">
+              Customize your default reading environment. Changes reflect instantly below in the live preview.
+            </p>
+          </div>
+
+          <!-- Controls Grid -->
+          <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <!-- Font Family -->
+            <div class="flex flex-col gap-2">
+              <label class="text-xs font-semibold text-slate-300">Font Family</label>
+              <select
+                id="reader-font-family"
+                class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+              >
+                <option value="sans">Sans-Serif (Modern Clean UI)</option>
+                <option value="serif">Literary Serif (Classic Book)</option>
+                <option value="mono">Monospace (Clean Tech)</option>
+              </select>
+            </div>
+
+            <!-- Reading Column Width -->
+            <div class="flex flex-col gap-2">
+              <label class="text-xs font-semibold text-slate-300">Column Width</label>
+              <select
+                id="reader-column-width"
+                class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+              >
+                <option value="compact">Compact (672px)</option>
+                <option value="standard" selected>Standard (768px)</option>
+                <option value="wide">Wide (896px)</option>
+                <option value="full">Full Width (1024px)</option>
+              </select>
+            </div>
+
+            <!-- Base Font Size Slider -->
+            <div class="flex flex-col gap-2">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold text-slate-300">Font Size</label>
+                <span id="font-size-val" class="text-xs font-mono font-bold text-indigo-400">18px</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <button
+                  type="button"
+                  id="font-size-dec"
+                  class="px-2.5 py-1 rounded bg-slate-700 text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-600 transition cursor-pointer"
+                >
+                  -
+                </button>
+                <input
+                  type="range"
+                  id="reader-font-size"
+                  min="14"
+                  max="28"
+                  value="18"
+                  step="1"
+                  class="w-full accent-indigo-500 cursor-pointer"
+                />
+                <button
+                  type="button"
+                  id="font-size-inc"
+                  class="px-2.5 py-1 rounded bg-slate-700 text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-600 transition cursor-pointer"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <!-- Line Spacing -->
+            <div class="flex flex-col gap-2">
+              <label class="text-xs font-semibold text-slate-300">Line Spacing</label>
+              <select
+                id="reader-line-height"
+                class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+              >
+                <option value="compact">Compact (1.5x)</option>
+                <option value="relaxed" selected>Relaxed (1.75x)</option>
+                <option value="spacious">Spacious (2.0x)</option>
+              </select>
+            </div>
+
+            <!-- Color Theme Presets -->
+            <div class="sm:col-span-2 flex flex-col gap-2">
+              <label class="text-xs font-semibold text-slate-300">Reading Theme Preset</label>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <!-- Dark Slate -->
+                <button
+                  type="button"
+                  data-theme="slate"
+                  class="theme-picker-btn p-3 rounded-xl border-2 border-indigo-500 bg-slate-900 flex flex-col gap-1 text-left transition cursor-pointer"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-slate-100">Dark Slate</span>
+                    <span class="w-3 h-3 rounded-full bg-slate-700 border border-slate-600"></span>
+                  </div>
+                  <span class="text-[11px] text-slate-400">Default theme</span>
+                </button>
+
+                <!-- OLED Midnight -->
+                <button
+                  type="button"
+                  data-theme="oled"
+                  class="theme-picker-btn p-3 rounded-xl border border-slate-700 bg-black flex flex-col gap-1 text-left transition cursor-pointer hover:border-slate-500"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-zinc-100">OLED Black</span>
+                    <span class="w-3 h-3 rounded-full bg-black border border-zinc-700"></span>
+                  </div>
+                  <span class="text-[11px] text-zinc-400">Pure black battery saver</span>
+                </button>
+
+                <!-- Warm Sepia -->
+                <button
+                  type="button"
+                  data-theme="sepia"
+                  class="theme-picker-btn p-3 rounded-xl border border-amber-800/40 bg-[#241e17] flex flex-col gap-1 text-left transition cursor-pointer hover:border-amber-700/60"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-[#e6d5be]">Warm Sepia</span>
+                    <span class="w-3 h-3 rounded-full bg-[#fbf0d9] border border-amber-600"></span>
+                  </div>
+                  <span class="text-[11px] text-[#b8a68f]">Soft novel book feel</span>
+                </button>
+
+                <!-- Forest Night -->
+                <button
+                  type="button"
+                  data-theme="forest"
+                  class="theme-picker-btn p-3 rounded-xl border border-emerald-900/40 bg-[#0d1712] flex flex-col gap-1 text-left transition cursor-pointer hover:border-emerald-700/60"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-emerald-100">Forest Night</span>
+                    <span class="w-3 h-3 rounded-full bg-[#132e20] border border-emerald-600"></span>
+                  </div>
+                  <span class="text-[11px] text-emerald-400/80">Calm green hue</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Interactive Typography Preview Box -->
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Live Interactive Preview
+              </span>
+              <button
+                type="button"
+                id="reset-reader-defaults-btn"
+                class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
+              >
+                Reset Reader Defaults
+              </button>
+            </div>
+
+            <!-- Preview Card -->
+            <div
+              id="typography-preview-container"
+              class="w-full rounded-xl p-6 sm:p-8 border border-slate-700/60 bg-slate-900 text-slate-100 transition-all duration-150 shadow-md"
+            >
+              <div class="max-w-xl mx-auto flex flex-col gap-4">
+                <span class="text-xs font-bold tracking-wider uppercase text-indigo-400">
+                  Chapter 1: The Transmigrator's Journey
+                </span>
+                <div id="typography-preview-text" class="flex flex-col gap-3 font-sans text-[18px] leading-relaxed">
+                  <p>
+                    When Lin Chen opened his eyes, the morning sun poured through the paper lattice window, illuminating dusty specks that danced lazily in the autumn draft.
+                  </p>
+                  <p>
+                    He took a steady breath, sensing the faint resonance of spiritual qi circulating through his meridians. A translucent system interface blinked quietly into view: <em>[QuickConverter Active — DeepSeek Translation Engaged]</em>.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 3: STORAGE & QUOTA MANAGEMENT -->
+        <!-- ========================================== -->
+        <section id="tab-content-storage" class="settings-tab-section hidden flex flex-col gap-6">
+          <div class="flex flex-col gap-1">
+            <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2">
+              <span>💾</span>
+              <span>Storage & Quota Management</span>
+            </h2>
+            <p class="text-xs text-slate-400">
+              Overview of local IndexedDB disk usage and chapter caching for offline reading.
+            </p>
+          </div>
+
+          <!-- Disk Storage Usage Card -->
+          <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur flex flex-col gap-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-200">IndexedDB Storage Usage</h3>
+                <p class="text-xs text-slate-400">Total estimated disk space occupied by cached novel chapters and artwork.</p>
+              </div>
+              <button
+                type="button"
+                id="refresh-storage-btn"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition cursor-pointer"
+              >
+                <span>↻ Recalculate</span>
+              </button>
+            </div>
+
+            <!-- Progress Bar Container -->
+            <div class="flex flex-col gap-1.5">
+              <div class="flex items-center justify-between text-xs font-mono font-medium">
+                <span id="storage-used-display" class="text-indigo-400 font-bold">Calculating...</span>
+                <span id="storage-quota-display" class="text-slate-400">Quota: ~120 GB</span>
+              </div>
+              <div class="w-full h-3 bg-slate-900 rounded-full overflow-hidden border border-slate-700/80">
+                <div
+                  id="storage-progress-bar"
+                  class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300"
+                  style="width: 1%;"
+                ></div>
+              </div>
+              <span id="storage-percent-display" class="text-[11px] text-slate-500 text-right">0.01% utilized</span>
+            </div>
+
+            <!-- Metrics Grid -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-700/60">
+              <div class="flex flex-col gap-0.5 bg-slate-900/50 p-3 rounded-lg border border-slate-700/40">
+                <span class="text-[11px] text-slate-400">Managed Novels</span>
+                <span id="storage-novel-count" class="text-base font-bold text-slate-200">0</span>
+              </div>
+
+              <div class="flex flex-col gap-0.5 bg-slate-900/50 p-3 rounded-lg border border-slate-700/40">
+                <span class="text-[11px] text-slate-400">Downloaded Chapters</span>
+                <span id="storage-chapter-count" class="text-base font-bold text-indigo-400">0</span>
+              </div>
+
+              <div class="flex flex-col gap-0.5 bg-slate-900/50 p-3 rounded-lg border border-slate-700/40 col-span-2 sm:col-span-1">
+                <span class="text-[11px] text-slate-400">Storage Engine</span>
+                <span class="text-base font-bold text-emerald-400">IndexedDB</span>
+              </div>
+            </div>
+
+            <div class="pt-2 flex items-center justify-between">
+              <p class="text-xs text-slate-400">
+                Need to free up disk space? You can remove completed novels from your Library.
+              </p>
+              <a
+                href="library.html"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition"
+              >
+                <span>Go to Library →</span>
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 4: ABOUT QUICKCONVERTER -->
+        <!-- ========================================== -->
+        <section id="tab-content-about" class="settings-tab-section hidden flex flex-col gap-6">
+          <div class="flex flex-col gap-1">
+            <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2">
+              <span>ℹ️</span>
+              <span>About QuickConverter</span>
+            </h2>
+            <p class="text-xs text-slate-400">
+              Information about the extension and active features.
+            </p>
+          </div>
+
+          <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-6 shadow-sm backdrop-blur flex flex-col gap-4">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-extrabold text-2xl shadow-md">
+                Q
+              </div>
+              <div>
+                <h3 class="text-base font-bold text-slate-100">QuickConverter</h3>
+                <p class="text-xs text-slate-400">Version 1.0.0 &bull; Manifest V3 Extension</p>
+              </div>
+            </div>
+
+            <p class="text-xs text-slate-300 leading-relaxed">
+              QuickConverter turns web novel reading and chapter preservation into a seamless, offline-capable experience. Built with native browser IndexedDB storage, real-time DeepSeek AI literary translation, context-caching cost calculation, and customizable reading typography.
+            </p>
+
+            <div class="border-t border-slate-700/60 pt-4 flex flex-wrap gap-2">
+              <span class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-900 border border-slate-700 text-slate-300">
+                ✨ DeepSeek Flash & Chat
+              </span>
+              <span class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-900 border border-slate-700 text-slate-300">
+                ⚡ IndexedDB Engine
+              </span>
+              <span class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-900 border border-slate-700 text-slate-300">
+                🎨 Reactive Typography
+              </span>
+              <span class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-900 border border-slate-700 text-slate-300">
+                💳 Live Balance Polling
+              </span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Global Toast Notification -->
+    <div
+      id="settings-toast"
+      class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-200 pointer-events-none"
+    >
+      <div class="bg-slate-800 text-slate-100 px-4 py-3 rounded-xl shadow-xl border border-slate-700 flex items-center gap-3 text-sm font-medium">
+        <span id="settings-toast-icon">✓</span>
+        <span id="settings-toast-msg">Settings saved</span>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="storage.js"></script>
+    <script src="services/deepseek.js"></script>
+    <script src="settings.js"></script>
+  </body>
+</html>
