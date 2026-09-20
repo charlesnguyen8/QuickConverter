@@ -187,6 +187,138 @@
         }
         throw err;
       }
+    },
+
+    /**
+     * Retrieves the API key and remember-preference from chrome.storage.session
+     * or chrome.storage.local (with fallback to window.sessionStorage/localStorage).
+     * @returns {Promise<{ apiKey: string, remembered: boolean }>}
+     */
+    async getApiKey() {
+      // 1. Try chrome.storage.session (RAM only, active browser session)
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
+        try {
+          const res = await new Promise((resolve) => {
+            chrome.storage.session.get(['quickconverter_deepseek_key'], (r) => resolve(r || {}));
+          });
+          if (res && res.quickconverter_deepseek_key) {
+            const localRes = await new Promise((resolve) => {
+              chrome.storage.local.get(['quickconverter_deepseek_remember'], (r) => resolve(r || {}));
+            });
+            return {
+              apiKey: res.quickconverter_deepseek_key,
+              remembered: !!(localRes && localRes.quickconverter_deepseek_remember)
+            };
+          }
+        } catch (e) {
+          console.warn('[DeepSeekService] error reading chrome.storage.session:', e);
+        }
+      }
+
+      // 2. Try chrome.storage.local if remembered on device
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        try {
+          const localRes = await new Promise((resolve) => {
+            chrome.storage.local.get(['quickconverter_deepseek_key', 'quickconverter_deepseek_remember'], (r) => resolve(r || {}));
+          });
+          if (localRes && localRes.quickconverter_deepseek_remember && localRes.quickconverter_deepseek_key) {
+            if (chrome.storage.session) {
+              chrome.storage.session.set({ quickconverter_deepseek_key: localRes.quickconverter_deepseek_key });
+            }
+            return {
+              apiKey: localRes.quickconverter_deepseek_key,
+              remembered: true
+            };
+          }
+        } catch (e) {
+          console.warn('[DeepSeekService] error reading chrome.storage.local:', e);
+        }
+      }
+
+      // 3. Fallback for non-extension / web / test contexts
+      if (typeof sessionStorage !== 'undefined') {
+        const sessionKey = sessionStorage.getItem('quickconverter_deepseek_key');
+        if (sessionKey) {
+          const isRem = typeof localStorage !== 'undefined' && localStorage.getItem('quickconverter_deepseek_remember') === 'true';
+          return { apiKey: sessionKey, remembered: isRem };
+        }
+      }
+      if (typeof localStorage !== 'undefined') {
+        const isRem = localStorage.getItem('quickconverter_deepseek_remember') === 'true';
+        const localKey = localStorage.getItem('quickconverter_deepseek_key');
+        if (isRem && localKey) {
+          return { apiKey: localKey, remembered: true };
+        }
+      }
+
+      return { apiKey: '', remembered: false };
+    },
+
+    /**
+     * Sets the API key in session memory, and optionally in persistent local storage.
+     * @param {string} apiKey
+     * @param {boolean} rememberOnDevice
+     */
+    async setApiKey(apiKey, rememberOnDevice = false) {
+      const cleanKey = (apiKey || '').trim();
+
+      if (!cleanKey) {
+        return this.clearApiKey();
+      }
+
+      // Store in session storage (RAM only)
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
+        await new Promise((resolve) => {
+          chrome.storage.session.set({ quickconverter_deepseek_key: cleanKey }, () => resolve());
+        });
+      } else if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('quickconverter_deepseek_key', cleanKey);
+      }
+
+      // Handle remember on device
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        if (rememberOnDevice) {
+          await new Promise((resolve) => {
+            chrome.storage.local.set({
+              quickconverter_deepseek_key: cleanKey,
+              quickconverter_deepseek_remember: true
+            }, () => resolve());
+          });
+        } else {
+          await new Promise((resolve) => {
+            chrome.storage.local.remove(['quickconverter_deepseek_key', 'quickconverter_deepseek_remember'], () => resolve());
+          });
+        }
+      } else if (typeof localStorage !== 'undefined') {
+        if (rememberOnDevice) {
+          localStorage.setItem('quickconverter_deepseek_key', cleanKey);
+          localStorage.setItem('quickconverter_deepseek_remember', 'true');
+        } else {
+          localStorage.removeItem('quickconverter_deepseek_key');
+          localStorage.removeItem('quickconverter_deepseek_remember');
+        }
+      }
+    },
+
+    /**
+     * Clears the API key completely from session and local storage.
+     */
+    async clearApiKey() {
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        if (chrome.storage.session) {
+          await new Promise((resolve) => chrome.storage.session.remove(['quickconverter_deepseek_key'], () => resolve()));
+        }
+        if (chrome.storage.local) {
+          await new Promise((resolve) => chrome.storage.local.remove(['quickconverter_deepseek_key', 'quickconverter_deepseek_remember'], () => resolve()));
+        }
+      }
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('quickconverter_deepseek_key');
+      }
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('quickconverter_deepseek_key');
+        localStorage.removeItem('quickconverter_deepseek_remember');
+      }
     }
   };
 

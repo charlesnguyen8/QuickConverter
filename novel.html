@@ -207,10 +207,27 @@
                 autocorrect="off"
                 autocapitalize="off"
                 spellcheck="false"
-                placeholder="sk-... (session only)"
+                placeholder="sk-..."
                 class="w-full px-3 py-2 text-xs bg-slate-900/90 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition font-mono"
               />
-              <span class="text-[11px] text-slate-500">Kept in memory for this session only (never saved to disk).</span>
+              <div class="flex items-center justify-between pt-0.5 text-[11px] text-slate-400">
+                <label class="inline-flex items-center gap-1.5 cursor-pointer select-none" title="Keep key saved across browser restarts">
+                  <input
+                    type="checkbox"
+                    id="remember-deepseek-key"
+                    class="w-3.5 h-3.5 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500/40 focus:ring-offset-0 cursor-pointer"
+                  />
+                  <span>Remember on this device</span>
+                </label>
+                <button
+                  type="button"
+                  id="clear-deepseek-btn"
+                  class="hidden text-rose-400 hover:text-rose-300 transition text-[11px] underline cursor-pointer"
+                  title="Clear API key from memory and storage"
+                >
+                  Clear Key
+                </button>
+              </div>
             </div>
 
             <!-- Col 3: Translation Prompt -->

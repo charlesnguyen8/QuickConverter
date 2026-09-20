@@ -612,14 +612,27 @@ const StorageService = {
 
     // Optional DeepSeek translation pre-download
     if (options && options.translation && options.translation.enabled) {
-      const { apiKey, prompt, model } = options.translation;
-      if (!apiKey || !apiKey.trim()) {
-        throw new Error('DeepSeek API Key is required when translation is enabled.');
-      }
+      let { apiKey, prompt, model } = options.translation;
+      let cleanKey = (apiKey || '').trim();
 
       const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
         (typeof self !== 'undefined' && self.DeepSeekService) ||
         (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+      if (!cleanKey && deepseek && typeof deepseek.getApiKey === 'function') {
+        try {
+          const stored = await deepseek.getApiKey();
+          if (stored && stored.apiKey) {
+            cleanKey = stored.apiKey.trim();
+          }
+        } catch (e) {
+          console.warn('[StorageService] Error loading stored DeepSeek key:', e);
+        }
+      }
+
+      if (!cleanKey) {
+        throw new Error('DeepSeek API Key is required when translation is enabled.');
+      }
 
       if (!deepseek || typeof deepseek.translateChapter !== 'function') {
         throw new Error('DeepSeek translation service is not loaded.');
@@ -629,7 +642,7 @@ const StorageService = {
         'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
       const result = await deepseek.translateChapter({
-        apiKey: apiKey.trim(),
+        apiKey: cleanKey,
         prompt: effectivePrompt,
         rawText: content.rawText,
         model: model || 'deepseek-flash'

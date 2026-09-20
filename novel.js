@@ -28,6 +28,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const toggleEl = document.getElementById('deepseek-toggle');
     const badgeEl = document.getElementById('deepseek-toggle-badge');
     const keyEl = document.getElementById('deepseek-api-key');
+    const rememberKeyEl = document.getElementById('remember-deepseek-key');
+    const clearKeyBtn = document.getElementById('clear-deepseek-btn');
     const promptEl = document.getElementById('deepseek-prompt');
     const visibilityBtn = document.getElementById('toggle-key-visibility');
     const fieldsEl = document.getElementById('deepseek-config-fields');
@@ -38,13 +40,66 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (!toggleEl) return;
 
-    // Safety: Purge any previously saved API key from storage to ensure it is never stored on disk
-    try {
-      localStorage.removeItem('quickconverter_deepseek_key');
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        chrome.storage.local.remove(['quickconverter_deepseek_key']);
+    const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+      (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+    const updateClearBtnVisibility = () => {
+      const hasKey = !!(keyEl && keyEl.value.trim());
+      if (clearKeyBtn) {
+        clearKeyBtn.classList.toggle('hidden', !hasKey);
       }
-    } catch (e) {}
+    };
+
+    // Load API key from session storage (or local storage if remembered)
+    if (deepseek && typeof deepseek.getApiKey === 'function') {
+      deepseek.getApiKey().then(({ apiKey, remembered }) => {
+        if (keyEl && apiKey) {
+          keyEl.value = apiKey;
+        }
+        if (rememberKeyEl) {
+          rememberKeyEl.checked = !!remembered;
+        }
+        updateClearBtnVisibility();
+      }).catch((e) => console.warn('[novel.js] Failed to load DeepSeek API key:', e));
+    }
+
+    const handleKeyChange = () => {
+      updateClearBtnVisibility();
+      if (deepseek && typeof deepseek.setApiKey === 'function') {
+        const val = keyEl ? keyEl.value.trim() : '';
+        const remember = !!(rememberKeyEl && rememberKeyEl.checked);
+        deepseek.setApiKey(val, remember);
+      }
+    };
+
+    if (keyEl) {
+      keyEl.addEventListener('input', handleKeyChange);
+      keyEl.addEventListener('change', handleKeyChange);
+    }
+
+    if (rememberKeyEl) {
+      rememberKeyEl.addEventListener('change', () => {
+        if (deepseek && typeof deepseek.setApiKey === 'function') {
+          const val = keyEl ? keyEl.value.trim() : '';
+          deepseek.setApiKey(val, rememberKeyEl.checked);
+        }
+      });
+    }
+
+    if (clearKeyBtn) {
+      clearKeyBtn.addEventListener('click', async () => {
+        if (deepseek && typeof deepseek.clearApiKey === 'function') {
+          await deepseek.clearApiKey();
+        }
+        if (keyEl) keyEl.value = '';
+        if (rememberKeyEl) rememberKeyEl.checked = false;
+        updateClearBtnVisibility();
+        if (testStatusEl) {
+          testStatusEl.className = 'hidden';
+          testStatusEl.textContent = '';
+        }
+      });
+    }
 
     const DEFAULT_PROMPT = 'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
@@ -100,8 +155,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       setStored('quickconverter_deepseek_enabled', checked ? 'true' : 'false');
       updateState(checked);
     });
-
-    // API Key: strictly in-memory during session (NOT persisted to storage/disk)
 
     if (visibilityBtn && keyEl) {
       visibilityBtn.addEventListener('click', () => {
@@ -382,8 +435,24 @@ document.addEventListener('DOMContentLoaded', async () => {
           const modelSelectEl = document.getElementById('deepseek-model-select');
 
           const isTranslationEnabled = !!(toggleEl && toggleEl.checked);
-          const apiKey = keyEl ? keyEl.value.trim() : '';
+          let apiKey = keyEl ? keyEl.value.trim() : '';
           const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
+
+          if (isTranslationEnabled && !apiKey) {
+            const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+              (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+            if (deepseek && typeof deepseek.getApiKey === 'function') {
+              try {
+                const stored = await deepseek.getApiKey();
+                if (stored && stored.apiKey) {
+                  apiKey = stored.apiKey.trim();
+                  if (keyEl) keyEl.value = apiKey;
+                  const clearKeyBtn = document.getElementById('clear-deepseek-btn');
+                  if (clearKeyBtn) clearKeyBtn.classList.remove('hidden');
+                }
+              } catch (e) {}
+            }
+          }
 
           if (isTranslationEnabled && !apiKey) {
             if (keyEl) {
