@@ -438,6 +438,243 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
+    // --- DeepSeek Pre-Download UI for Reader ---
+    function initReaderDeepSeekUI(novelRecord) {
+      const toggleEl = document.getElementById('reader-deepseek-toggle');
+      const badgeEl = document.getElementById('reader-deepseek-toggle-badge');
+      const keyEl = document.getElementById('reader-deepseek-api-key');
+      const rememberKeyEl = document.getElementById('reader-remember-deepseek-key');
+      const clearKeyBtn = document.getElementById('reader-clear-deepseek-btn');
+      const promptEl = document.getElementById('reader-deepseek-prompt');
+      const visibilityBtn = document.getElementById('reader-toggle-key-visibility');
+      const fieldsEl = document.getElementById('reader-deepseek-config-fields');
+      const editPromptBtn = document.getElementById('reader-edit-prompt-btn');
+      const modelSelectEl = document.getElementById('reader-deepseek-model-select');
+      const testBtn = document.getElementById('reader-test-deepseek-btn');
+      const testStatusEl = document.getElementById('reader-deepseek-test-status');
+
+      if (!toggleEl) return;
+
+      const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+        (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+      const updateClearBtnVisibility = () => {
+        const hasKey = !!(keyEl && keyEl.value.trim());
+        if (clearKeyBtn) {
+          clearKeyBtn.classList.toggle('hidden', !hasKey);
+        }
+      };
+
+      // Load API key from session storage (or local storage if remembered)
+      if (deepseek && typeof deepseek.getApiKey === 'function') {
+        deepseek.getApiKey().then(({ apiKey, remembered }) => {
+          if (keyEl && apiKey) {
+            keyEl.value = apiKey;
+          }
+          if (rememberKeyEl) {
+            rememberKeyEl.checked = !!remembered;
+          }
+          updateClearBtnVisibility();
+        }).catch((e) => console.warn('[reader.js] Failed to load DeepSeek API key:', e));
+      }
+
+      const handleKeyChange = () => {
+        updateClearBtnVisibility();
+        if (deepseek && typeof deepseek.setApiKey === 'function') {
+          const val = keyEl ? keyEl.value.trim() : '';
+          const remember = !!(rememberKeyEl && rememberKeyEl.checked);
+          deepseek.setApiKey(val, remember);
+        }
+      };
+
+      if (keyEl) {
+        keyEl.addEventListener('input', handleKeyChange);
+        keyEl.addEventListener('change', handleKeyChange);
+      }
+
+      if (rememberKeyEl) {
+        rememberKeyEl.addEventListener('change', () => {
+          if (deepseek && typeof deepseek.setApiKey === 'function') {
+            const val = keyEl ? keyEl.value.trim() : '';
+            deepseek.setApiKey(val, rememberKeyEl.checked);
+          }
+        });
+      }
+
+      if (clearKeyBtn) {
+        clearKeyBtn.addEventListener('click', async () => {
+          if (deepseek && typeof deepseek.clearApiKey === 'function') {
+            await deepseek.clearApiKey();
+          }
+          if (keyEl) keyEl.value = '';
+          if (rememberKeyEl) rememberKeyEl.checked = false;
+          updateClearBtnVisibility();
+          if (testStatusEl) {
+            testStatusEl.className = 'hidden';
+            testStatusEl.textContent = '';
+          }
+        });
+      }
+
+      const DEFAULT_PROMPT = 'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
+
+      const getStored = (key, fallback) => {
+        try {
+          const val = localStorage.getItem(key);
+          return val !== null ? val : fallback;
+        } catch (e) {
+          return fallback;
+        }
+      };
+
+      const setStored = (key, val) => {
+        try {
+          localStorage.setItem(key, val);
+          if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.set({ [key]: val });
+          }
+        } catch (e) {}
+      };
+
+      const isEnabled = getStored('quickconverter_deepseek_enabled', 'false') === 'true';
+      toggleEl.checked = isEnabled;
+
+      const savedModel = getStored('quickconverter_deepseek_model', 'deepseek-flash');
+      if (modelSelectEl) {
+        modelSelectEl.value = savedModel;
+        modelSelectEl.addEventListener('change', () => {
+          setStored('quickconverter_deepseek_model', modelSelectEl.value);
+        });
+      }
+
+      function updateState(checked) {
+        if (badgeEl) {
+          if (checked) {
+            badgeEl.textContent = 'Active (Translates on Download)';
+            badgeEl.className = 'text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+          } else {
+            badgeEl.textContent = 'Off (Save Raw Chapter)';
+            badgeEl.className = 'text-xs font-semibold px-2 py-0.5 rounded bg-slate-700 text-slate-300 border border-slate-600';
+          }
+        }
+        if (fieldsEl) {
+          fieldsEl.classList.toggle('opacity-100', checked);
+          fieldsEl.classList.toggle('opacity-60', !checked);
+        }
+      }
+
+      updateState(isEnabled);
+
+      toggleEl.addEventListener('change', () => {
+        const checked = toggleEl.checked;
+        setStored('quickconverter_deepseek_enabled', checked ? 'true' : 'false');
+        updateState(checked);
+      });
+
+      if (visibilityBtn && keyEl) {
+        visibilityBtn.addEventListener('click', () => {
+          const isPassword = keyEl.type === 'password';
+          keyEl.type = isPassword ? 'text' : 'password';
+          visibilityBtn.textContent = isPassword ? 'Hide Key' : 'Show Key';
+        });
+      }
+
+      // "Test Key" button click handler
+      if (testBtn && keyEl && testStatusEl) {
+        testBtn.addEventListener('click', async () => {
+          const key = keyEl.value.trim();
+          if (!key) {
+            testStatusEl.className = 'text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-md block mt-1';
+            testStatusEl.textContent = 'Please enter an API key to test.';
+            keyEl.focus();
+            return;
+          }
+
+          testBtn.disabled = true;
+          testStatusEl.className = 'text-[11px] text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1.5 rounded-md flex items-center gap-1.5 block mt-1';
+          testStatusEl.innerHTML = `
+            <svg class="animate-spin h-3.5 w-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+            <span>Testing connection & fetching models...</span>
+          `;
+
+          try {
+            if (!deepseek || typeof deepseek.testConnection !== 'function') {
+              throw new Error('DeepSeekService not loaded');
+            }
+
+            const res = await deepseek.testConnection(key);
+            if (res.success) {
+              const currentSelected = (modelSelectEl && modelSelectEl.value) || savedModel;
+              if (modelSelectEl && Array.isArray(res.models) && res.models.length > 0) {
+                modelSelectEl.innerHTML = '';
+                res.models.forEach((mId) => {
+                  const opt = document.createElement('option');
+                  opt.value = mId;
+                  opt.textContent = mId + (mId === 'deepseek-flash' ? ' (V4.1-Flash • Fast)' : (mId === 'deepseek-chat' ? ' (V3 • Standard)' : ''));
+                  if (mId === currentSelected || (!currentSelected && mId === 'deepseek-flash')) {
+                    opt.selected = true;
+                  }
+                  modelSelectEl.appendChild(opt);
+                });
+              }
+
+              const balStr = res.balance ? ` • Balance: ${res.balance.totalBalance === 'Available' ? 'Available' : '$' + res.balance.totalBalance}` : '';
+              testStatusEl.className = 'text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5 rounded-md block mt-1';
+              testStatusEl.textContent = `✓ Connected (${(res.models || []).length} models ready${balStr})`;
+            } else {
+              testStatusEl.className = 'text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1.5 rounded-md block mt-1';
+              testStatusEl.textContent = `✗ ${res.error || 'Connection failed'}`;
+            }
+          } catch (e) {
+            testStatusEl.className = 'text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1.5 rounded-md block mt-1';
+            testStatusEl.textContent = `✗ ${e.message || 'Error testing connection'}`;
+          } finally {
+            testBtn.disabled = false;
+          }
+        });
+      }
+
+      // Translation Prompt: saved per novel with Edit button
+      let isEditingPrompt = false;
+
+      if (promptEl) {
+        promptEl.value = (novelRecord && novelRecord.translationPrompt) ? novelRecord.translationPrompt : DEFAULT_PROMPT;
+        promptEl.readOnly = true;
+      }
+
+      if (editPromptBtn && promptEl) {
+        editPromptBtn.addEventListener('click', async () => {
+          if (!novelRecord) return;
+
+          if (isEditingPrompt) {
+            // Save prompt to novel record in IndexedDB
+            const updatedPrompt = promptEl.value.trim() || DEFAULT_PROMPT;
+            novelRecord.translationPrompt = updatedPrompt;
+            await window.StorageService.updateNovel(novelRecord.id, { translationPrompt: updatedPrompt });
+
+            promptEl.readOnly = true;
+            promptEl.className = 'w-full px-3 py-2 text-xs bg-slate-900/90 border border-slate-700 rounded-lg text-slate-300 placeholder-slate-500 focus:outline-none transition resize-none leading-relaxed cursor-default';
+            editPromptBtn.textContent = 'Edit';
+            editPromptBtn.className = 'text-xs font-medium text-indigo-400 hover:text-indigo-300 transition cursor-pointer px-2 py-0.5 rounded hover:bg-slate-700/60';
+            isEditingPrompt = false;
+            showToast('Translation prompt saved ✓');
+          } else {
+            promptEl.readOnly = false;
+            promptEl.className = 'w-full px-3 py-2 text-xs bg-slate-900 border border-indigo-500/80 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition resize-none leading-relaxed';
+            promptEl.focus();
+            editPromptBtn.textContent = 'Save';
+            editPromptBtn.className = 'text-xs font-medium text-emerald-400 hover:text-emerald-300 transition cursor-pointer px-2 py-0.5 rounded hover:bg-slate-700/60';
+            isEditingPrompt = true;
+          }
+        });
+      }
+    }
+
+    initReaderDeepSeekUI(novel);
+
     // --- Load Chapter Content ---
     async function loadChapterContent() {
       const chapter = await window.StorageService.getChapter(novel.id, chapterNumber);
@@ -544,22 +781,73 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (readerDownloadBtn) {
           readerDownloadBtn.onclick = async () => {
+            const toggleEl = document.getElementById('reader-deepseek-toggle');
+            const keyEl = document.getElementById('reader-deepseek-api-key');
+            const promptEl = document.getElementById('reader-deepseek-prompt');
+            const modelSelectEl = document.getElementById('reader-deepseek-model-select');
+
+            const isTranslationEnabled = !!(toggleEl && toggleEl.checked);
+            let apiKey = keyEl ? keyEl.value.trim() : '';
+            const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
+
+            if (isTranslationEnabled && !apiKey) {
+              const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+                (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+              if (deepseek && typeof deepseek.getApiKey === 'function') {
+                try {
+                  const stored = await deepseek.getApiKey();
+                  if (stored && stored.apiKey) {
+                    apiKey = stored.apiKey.trim();
+                    if (keyEl) keyEl.value = apiKey;
+                    const clearKeyBtn = document.getElementById('reader-clear-deepseek-btn');
+                    if (clearKeyBtn) clearKeyBtn.classList.remove('hidden');
+                  }
+                } catch (e) {}
+              }
+            }
+
+            if (isTranslationEnabled && !apiKey) {
+              if (keyEl) {
+                keyEl.focus();
+                keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');
+                setTimeout(() => {
+                  keyEl.classList.remove('border-rose-500', 'ring-1', 'ring-rose-500/50');
+                }, 2500);
+              }
+              alert('Please enter your DeepSeek API Key before translating.');
+              return;
+            }
+
             readerDownloadBtn.disabled = true;
             readerDownloadBtn.innerHTML = `
               <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
               </svg>
-              <span>Downloading Chapter...</span>
+              <span>${isTranslationEnabled ? 'Translating (' + selectedModel + ')...' : 'Downloading Chapter...'}</span>
             `;
 
             try {
-              await window.StorageService.downloadChapter(novel.id, chapterNumber);
+              const options = {
+                translation: {
+                  enabled: isTranslationEnabled,
+                  apiKey: apiKey,
+                  prompt: promptEl ? promptEl.value : '',
+                  model: selectedModel
+                }
+              };
+              await window.StorageService.downloadChapter(novel.id, chapterNumber, options);
               await loadChapterContent();
             } catch (err) {
               console.error('Download failed:', err);
               readerDownloadBtn.disabled = false;
-              readerDownloadBtn.innerHTML = '<span>Failed. Click to Retry</span>';
+              readerDownloadBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <polyline points="19 12 12 19 5 12"></polyline>
+                </svg>
+                <span>Failed. Click to Retry</span>
+              `;
             }
           };
         }
