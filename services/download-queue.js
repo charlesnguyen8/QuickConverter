@@ -56,6 +56,11 @@
       this._isClearing = false;
       this.subscribers = new Set();
       this._initialized = false;
+      this.cooldown = null;
+      this._cooldownTickInterval = null;
+      this.cooldownEnabled = true;
+      this.minCooldownSec = 180; // 3.0 minutes
+      this.maxCooldownSec = 300; // 5.0 minutes
 
       this._init();
     }
@@ -80,6 +85,11 @@
               this.activeTask.progress = msg.progress;
               this._notifySubscribers();
             }
+          } else if (msg && msg.action === 'QUEUE_COOLDOWN_TICK') {
+            this.cooldown = msg.cooldown || null;
+            this._notifySubscribers();
+          } else if (msg && msg.action === 'QUEUE_SET_COOLDOWN_CONFIG' && msg.config) {
+            this.setCooldownConfig(msg.config);
           }
         });
       }
@@ -101,9 +111,12 @@
       // 3. Load initial state from storage (chrome.storage or localStorage)
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         try {
-          chrome.storage.local.get([STORAGE_KEY], (res) => {
+          chrome.storage.local.get([STORAGE_KEY, 'quickconverter_queue_cooldown'], (res) => {
             if (res && res[STORAGE_KEY]) {
               this._restoreState(res[STORAGE_KEY]);
+            }
+            if (res && res.quickconverter_queue_cooldown) {
+              this.setCooldownConfig(res.quickconverter_queue_cooldown);
             }
           });
         } catch (e) {}
@@ -112,6 +125,10 @@
           const raw = localStorage.getItem(STORAGE_KEY);
           if (raw) {
             this._restoreState(JSON.parse(raw));
+          }
+          const rawCfg = localStorage.getItem('quickconverter_queue_cooldown');
+          if (rawCfg) {
+            this.setCooldownConfig(JSON.parse(rawCfg));
           }
         } catch (e) {}
       }
@@ -125,6 +142,7 @@
             this.queue = resp.queue || [];
             this.isPaused = !!resp.isPaused;
             this.isProcessing = !!resp.activeTask;
+            this.cooldown = resp.cooldown || null;
             this._notifySubscribers();
           });
         } catch (e) {}
@@ -197,7 +215,8 @@
         queue: this.queue.map((t) => this._serializeTask(t)),
         isPaused: this.isPaused,
         isProcessing: this.isProcessing,
-        totalCount: (this.activeTask ? 1 : 0) + this.queue.length
+        totalCount: (this.activeTask ? 1 : 0) + this.queue.length,
+        cooldown: this.cooldown ? { ...this.cooldown } : null
       };
     }
 
@@ -212,7 +231,8 @@
               [STORAGE_KEY]: {
                 activeTask: state.activeTask,
                 queue: state.queue,
-                isPaused: state.isPaused
+                isPaused: state.isPaused,
+                cooldown: state.cooldown
               }
             });
           } catch (e) {}
@@ -221,7 +241,8 @@
             localStorage.setItem(STORAGE_KEY, JSON.stringify({
               activeTask: state.activeTask,
               queue: state.queue,
-              isPaused: state.isPaused
+              isPaused: state.isPaused,
+              cooldown: state.cooldown
             }));
           } catch (e) {}
         }
@@ -478,6 +499,19 @@
       const idx = this.queue.findIndex((t) => t.id === taskId);
       if (idx !== -1) {
         this.queue.splice(idx, 1);
+        if (this.cooldown && this.cooldown.nextTaskId === taskId) {
+          if (this.queue.length === 0) {
+            this._clearCooldownTimers();
+            this.cooldown = null;
+            updateKeepAlive(false);
+          } else {
+            const nextTask = this.queue[0];
+            this.cooldown.nextTaskId = nextTask?.id || null;
+            this.cooldown.nextChapterNumber = nextTask?.chapterNumber || null;
+            this.cooldown.nextNovelTitle = nextTask?.novelTitle || 'Novel';
+            this.cooldown.nextChapterTitle = nextTask?.chapterTitle || '';
+          }
+        }
         this._sync();
         return true;
       }
@@ -490,6 +524,10 @@
      */
     pause() {
       this.isPaused = true;
+      if (this.cooldown) {
+        this._clearCooldownTimers();
+        this.cooldown = null;
+      }
       if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         try {
           chrome.runtime.sendMessage({ action: 'QUEUE_PAUSE' }, (resp) => {
@@ -498,6 +536,7 @@
               this.queue = resp.state.queue || [];
               this.isPaused = !!resp.state.isPaused;
               this.isProcessing = !!resp.state.isProcessing;
+              this.cooldown = resp.state.cooldown || null;
               this._notifySubscribers();
             }
           });
@@ -520,6 +559,7 @@
               this.queue = resp.state.queue || [];
               this.isPaused = !!resp.state.isPaused;
               this.isProcessing = !!resp.state.isProcessing;
+              this.cooldown = resp.state.cooldown || null;
               this._notifySubscribers();
             }
           });
@@ -527,16 +567,18 @@
         return;
       }
       this._sync();
-      if (isExecutionOwner) {
+      if (isExecutionOwner && !this.activeTask && !this.cooldown && this.queue.length > 0) {
         this._processNext();
       }
     }
 
     /**
-     * Clear All: Empties waiting queue and immediately aborts active task.
+     * Clear All: Empties waiting queue and immediately aborts active task and cooldown.
      */
     clearAll() {
       this._isClearing = true;
+      this._clearCooldownTimers();
+      this.cooldown = null;
       this.queue = [];
       const active = this.activeTask;
       this.activeTask = null;
@@ -551,6 +593,7 @@
               this.queue = resp.state.queue || [];
               this.isPaused = !!resp.state.isPaused;
               this.isProcessing = !!resp.state.isProcessing;
+              this.cooldown = resp.state.cooldown || null;
               this._notifySubscribers();
             }
           });
@@ -567,7 +610,140 @@
         } catch (e) {}
       }
       this._sync();
+      updateKeepAlive(false);
       this._isClearing = false;
+    }
+
+    /**
+     * Bypasses the cooldown wait immediately and starts the next chapter in queue.
+     */
+    skipCooldown() {
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        try {
+          chrome.runtime.sendMessage({ action: 'QUEUE_SKIP_COOLDOWN' }, (resp) => {
+            if (resp && resp.state) {
+              this.activeTask = resp.state.activeTask || null;
+              this.queue = resp.state.queue || [];
+              this.isPaused = !!resp.state.isPaused;
+              this.isProcessing = !!resp.state.isProcessing;
+              this.cooldown = resp.state.cooldown || null;
+              this._notifySubscribers();
+            }
+          });
+        } catch (e) {}
+        return;
+      }
+
+      this._clearCooldownTimers();
+      this.cooldown = null;
+      this._sync();
+      if (isExecutionOwner && !this.isPaused && this.queue.length > 0) {
+        this._processNext();
+      }
+    }
+
+    /**
+     * Configures the cooldown duration range and toggle.
+     */
+    setCooldownConfig(config) {
+      if (!config) return;
+      if (typeof config.enabled === 'boolean') {
+        this.cooldownEnabled = config.enabled;
+      }
+      if (typeof config.minSec === 'number' && config.minSec >= 0) {
+        this.minCooldownSec = Math.round(config.minSec);
+      }
+      if (typeof config.maxSec === 'number' && config.maxSec >= 0) {
+        this.maxCooldownSec = Math.max(this.minCooldownSec, Math.round(config.maxSec));
+      }
+
+      const toSave = {
+        enabled: this.cooldownEnabled,
+        minSec: this.minCooldownSec,
+        maxSec: this.maxCooldownSec
+      };
+
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        try { chrome.storage.local.set({ quickconverter_queue_cooldown: toSave }); } catch (e) {}
+      } else if (typeof localStorage !== 'undefined') {
+        try { localStorage.setItem('quickconverter_queue_cooldown', JSON.stringify(toSave)); } catch (e) {}
+      }
+
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        try {
+          chrome.runtime.sendMessage({
+            action: 'QUEUE_SET_COOLDOWN_CONFIG',
+            config: toSave
+          }, () => {
+            if (chrome.runtime.lastError) {}
+          });
+        } catch (e) {}
+      }
+    }
+
+    _clearCooldownTimers() {
+      if (this._cooldownTickInterval) {
+        clearInterval(this._cooldownTickInterval);
+        this._cooldownTickInterval = null;
+      }
+    }
+
+    _startCooldown() {
+      this._clearCooldownTimers();
+
+      if (this.isPaused || this.queue.length === 0 || this._isClearing) {
+        this.cooldown = null;
+        this._sync();
+        updateKeepAlive(false);
+        return;
+      }
+
+      const nextTask = this.queue[0];
+      const min = Math.max(1, Math.min(this.minCooldownSec, this.maxCooldownSec));
+      const max = Math.max(min, this.maxCooldownSec);
+      const durationSec = Math.floor(Math.random() * (max - min + 1)) + min;
+
+      this.cooldown = {
+        active: true,
+        totalSeconds: durationSec,
+        secondsRemaining: durationSec,
+        nextTaskId: nextTask?.id || null,
+        nextChapterNumber: nextTask?.chapterNumber || null,
+        nextNovelTitle: nextTask?.novelTitle || 'Novel',
+        nextChapterTitle: nextTask?.chapterTitle || (nextTask?.chapterNumber ? `Chapter ${nextTask.chapterNumber}` : '')
+      };
+
+      updateKeepAlive(true);
+      this._sync();
+
+      this._cooldownTickInterval = setInterval(() => {
+        if (!this.cooldown || !this.cooldown.active || this._isClearing || this.isPaused) {
+          this._clearCooldownTimers();
+          return;
+        }
+
+        this.cooldown.secondsRemaining -= 1;
+
+        if (this.cooldown.secondsRemaining <= 0) {
+          this._clearCooldownTimers();
+          this.cooldown = null;
+          this._sync();
+          this._processNext();
+          return;
+        }
+
+        this._notifySubscribers();
+        if (isExtension && isExecutionOwner && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          try {
+            chrome.runtime.sendMessage({
+              action: 'QUEUE_COOLDOWN_TICK',
+              cooldown: this.cooldown
+            }, () => {
+              if (chrome.runtime.lastError) {}
+            });
+          } catch (e) {}
+        }
+      }, 1000);
     }
 
     /**
@@ -689,11 +865,17 @@
           this.isProcessing = false;
 
           if (this.isPaused || this.queue.length === 0) {
+            this._clearCooldownTimers();
+            this.cooldown = null;
             this._sync();
             updateKeepAlive(false);
           } else {
-            // Immediately start next task without a transient activeTask: null state
-            this._processNext();
+            // If cooldown is enabled and wait range > 0, wait before next chapter
+            if (this.cooldownEnabled && this.minCooldownSec > 0 && this.maxCooldownSec >= this.minCooldownSec) {
+              this._startCooldown();
+            } else {
+              this._processNext();
+            }
           }
         }
       }

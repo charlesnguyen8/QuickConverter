@@ -509,6 +509,55 @@ async function initDeepSeekSettings() {
       triggerSaveIndicator('Prompt reset to default');
     });
   }
+
+  // --- F. Queue Cooldown Settings ---
+  const cooldownToggle = document.getElementById('queue-cooldown-toggle');
+  const cooldownMin = document.getElementById('queue-cooldown-min');
+  const cooldownMax = document.getElementById('queue-cooldown-max');
+  const cooldownInputsContainer = document.getElementById('queue-cooldown-inputs-container');
+
+  const updateCooldownConfig = () => {
+    const enabled = cooldownToggle ? cooldownToggle.checked : true;
+    let min = cooldownMin ? parseInt(cooldownMin.value, 10) : 180;
+    let max = cooldownMax ? parseInt(cooldownMax.value, 10) : 300;
+    if (isNaN(min) || min < 10) min = 10;
+    if (isNaN(max) || max < min) max = min;
+
+    const config = { enabled, minSec: min, maxSec: max };
+    if (typeof DownloadQueueService !== 'undefined') {
+      DownloadQueueService.setCooldownConfig(config);
+    } else {
+      localStorage.setItem('quickconverter_queue_cooldown', JSON.stringify(config));
+    }
+    if (cooldownInputsContainer) {
+      cooldownInputsContainer.classList.toggle('opacity-50', !enabled);
+      cooldownInputsContainer.classList.toggle('pointer-events-none', !enabled);
+    }
+    triggerSaveIndicator('Queue cooldown settings saved');
+  };
+
+  // Load saved configuration
+  const loadSavedCooldown = () => {
+    let cfg = { enabled: true, minSec: 180, maxSec: 300 };
+    try {
+      const raw = localStorage.getItem('quickconverter_queue_cooldown');
+      if (raw) cfg = { ...cfg, ...JSON.parse(raw) };
+    } catch (e) {}
+
+    if (cooldownToggle) cooldownToggle.checked = cfg.enabled !== false;
+    if (cooldownMin) cooldownMin.value = cfg.minSec || 180;
+    if (cooldownMax) cooldownMax.value = cfg.maxSec || 300;
+    if (cooldownInputsContainer) {
+      cooldownInputsContainer.classList.toggle('opacity-50', !cooldownToggle.checked);
+      cooldownInputsContainer.classList.toggle('pointer-events-none', !cooldownToggle.checked);
+    }
+  };
+
+  loadSavedCooldown();
+
+  if (cooldownToggle) cooldownToggle.addEventListener('change', updateCooldownConfig);
+  if (cooldownMin) cooldownMin.addEventListener('change', updateCooldownConfig);
+  if (cooldownMax) cooldownMax.addEventListener('change', updateCooldownConfig);
 }
 
 function updateBalanceDisplay(data) {

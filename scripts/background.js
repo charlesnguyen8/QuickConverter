@@ -263,7 +263,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (typeof DownloadQueueService !== 'undefined') {
       sendResponse(DownloadQueueService.getState());
     } else {
-      sendResponse({ activeTask: null, queue: [], isPaused: false, isProcessing: false });
+      sendResponse({ activeTask: null, queue: [], isPaused: false, isProcessing: false, cooldown: null });
+    }
+    return false;
+  }
+
+  if (message.action === 'QUEUE_SKIP_COOLDOWN') {
+    if (typeof DownloadQueueService !== 'undefined') {
+      DownloadQueueService.skipCooldown();
+      sendResponse({ success: true, state: DownloadQueueService.getState() });
+    } else {
+      sendResponse({ success: false });
+    }
+    return false;
+  }
+
+  if (message.action === 'QUEUE_SET_COOLDOWN_CONFIG') {
+    if (typeof DownloadQueueService !== 'undefined') {
+      DownloadQueueService.setCooldownConfig(message.config);
+      sendResponse({ success: true, state: DownloadQueueService.getState() });
+    } else {
+      sendResponse({ success: false });
     }
     return false;
   }

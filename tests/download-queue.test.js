@@ -78,6 +78,7 @@ global.StorageService = mockStorageService;
 // Load DownloadQueueService fresh
 delete require.cache[require.resolve('../services/download-queue.js')];
 const DownloadQueueService = require('../services/download-queue.js');
+DownloadQueueService.cooldownEnabled = false;
 
 async function runTests() {
   console.log('\n--- Running DownloadQueueService Test Suite ---');
@@ -566,6 +567,85 @@ async function runTests() {
         global.chrome.runtime.id = originalChromeId;
       }
     }
+  });
+
+  // 14. Rate limit cooldown test: verifies 3-5m delay mechanism, countdown ticking, skipCooldown, and cancellation
+  await test('Rate limit cooldown: waits between chapters, ticks down, allows skipCooldown, and cancellation on clearAll', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    mockDelayMs = 20;
+
+    // Enable cooldown with short test interval (1s min, 1s max)
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 1, maxSec: 1 });
+
+    let cooldownStates = [];
+    const unsub = DownloadQueueService.subscribe((state) => {
+      if (state.cooldown && state.cooldown.active) {
+        cooldownStates.push({ ...state.cooldown });
+      }
+    });
+
+    await DownloadQueueService.enqueueBatch([
+      { novelId: 'cooldown-novel', chapterNumber: 1 },
+      { novelId: 'cooldown-novel', chapterNumber: 2 }
+    ]);
+
+    // Wait until Chapter 1 finishes and cooldown starts
+    await new Promise((resolve) => {
+      const checkUnsub = DownloadQueueService.subscribe((s) => {
+        if (s.cooldown && s.cooldown.active) {
+          checkUnsub();
+          resolve();
+        }
+      });
+    });
+
+    assert.strictEqual(downloadedTasks.length, 1, 'Chapter 1 should be finished');
+    assert.strictEqual(downloadedTasks[0].chapterNumber, 1);
+    assert(cooldownStates.length > 0, 'Should have entered active cooldown state');
+    assert.strictEqual(DownloadQueueService.cooldown.nextChapterNumber, 2);
+
+    // Test skipCooldown()
+    DownloadQueueService.skipCooldown();
+
+    // Wait until Chapter 2 finishes
+    await new Promise((resolve) => {
+      const waitDone = DownloadQueueService.subscribe((s) => {
+        if (s.totalCount === 0 && !s.isProcessing && !s.cooldown) {
+          waitDone();
+          resolve();
+        }
+      });
+    });
+
+    unsub();
+    assert.strictEqual(downloadedTasks.length, 2, 'Chapter 2 should be downloaded after skipping cooldown');
+    assert.strictEqual(downloadedTasks[1].chapterNumber, 2);
+
+    // Test cancellation on clearAll during cooldown
+    downloadedTasks = [];
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 50, maxSec: 50 });
+    await DownloadQueueService.enqueueBatch([
+      { novelId: 'cooldown-cancel', chapterNumber: 1 },
+      { novelId: 'cooldown-cancel', chapterNumber: 2 }
+    ]);
+
+    await new Promise((resolve) => {
+      const checkUnsub = DownloadQueueService.subscribe((s) => {
+        if (s.cooldown && s.cooldown.active) {
+          checkUnsub();
+          resolve();
+        }
+      });
+    });
+
+    assert(DownloadQueueService.cooldown && DownloadQueueService.cooldown.active);
+    DownloadQueueService.clearAll();
+    assert.strictEqual(DownloadQueueService.cooldown, null, 'Cooldown should be aborted on clearAll');
+    assert.strictEqual(DownloadQueueService.queue.length, 0, 'Queue should be empty');
+
+    // Reset cooldown to false for safety
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
   });
 
   console.log(`\n🎉 All ${passedCount} DownloadQueueService tests passed!`);

@@ -12,6 +12,16 @@
     );
   }
 
+  function formatCooldownTime(sec) {
+    const s = Math.max(0, Math.round(sec || 0));
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    if (m > 0) {
+      return `${m}m ${rem < 10 ? '0' : ''}${rem}s`;
+    }
+    return `${rem}s`;
+  }
+
   function renderProgressRing(percent, size = 32, strokeWidth = 3, showText = true) {
     const pct = Math.max(0, Math.min(100, Math.round(percent || 0)));
     const radius = (size - strokeWidth) / 2;
@@ -60,6 +70,7 @@
       this.lastTotal = -1;
       this.lastIsPaused = null;
       this.lastIsExpanded = null;
+      this.lastIsCooldown = null;
     }
 
     /**
@@ -105,11 +116,39 @@
       this.lastTotal = -1;
       this.lastIsPaused = null;
       this.lastIsExpanded = null;
+      this.lastIsCooldown = null;
     }
 
     updateProgressInPlace(state) {
       if (!this.container) return false;
       const active = state?.activeTask;
+      const cooldown = state?.cooldown;
+
+      // Handle cooldown state updates in place
+      if (cooldown && cooldown.active) {
+        const timeStr = formatCooldownTime(cooldown.secondsRemaining);
+        const totalSec = cooldown.totalSeconds || 180;
+        const progressPct = Math.max(0, Math.min(100, Math.round(((totalSec - cooldown.secondsRemaining) / totalSec) * 100)));
+
+        if (!this.isExpanded) {
+          const textEl = this.container.querySelector('#queue-dock-pill-text');
+          if (textEl) {
+            textEl.textContent = `⏳ Wait ${timeStr}`;
+          }
+          return true;
+        } else {
+          const timeBadge = this.container.querySelector('#queue-dock-cooldown-time');
+          if (timeBadge) {
+            timeBadge.textContent = timeStr;
+          }
+          const barEl = this.container.querySelector('#queue-dock-cooldown-bar');
+          if (barEl) {
+            barEl.style.width = `${progressPct}%`;
+          }
+          return true;
+        }
+      }
+
       if (!active) return false;
 
       const percent = active.progress?.percent !== undefined ? active.progress.percent : 10;
@@ -166,14 +205,16 @@
       if (!this.container) return;
 
       const active = state?.activeTask;
+      const cooldown = state?.cooldown;
+      const isCooldown = !!(cooldown && cooldown.active);
       const queue = state?.queue || [];
       const total = (active ? 1 : 0) + queue.length;
       const isPaused = !!state?.isPaused;
       const isPopup = checkIsPopup();
       const currentActiveId = active?.id || null;
 
-      // Hide dock completely when queue is empty
-      if (total === 0) {
+      // Hide dock completely when queue is empty and not in cooldown
+      if (total === 0 && !isCooldown) {
         this.container.classList.add('opacity-0', 'pointer-events-none');
         this.container.classList.remove('opacity-100', 'pointer-events-auto');
         this.container.innerHTML = '';
@@ -181,13 +222,14 @@
         this.lastTotal = 0;
         this.lastIsPaused = false;
         this.lastIsExpanded = this.isExpanded;
+        this.lastIsCooldown = false;
         return;
       }
 
-      // In-place progress update check: skip DOM rebuilding if structure is unchanged
+      // In-place progress & cooldown update check: skip DOM rebuilding if structure is unchanged
       if (
-        currentActiveId &&
         currentActiveId === this.lastActiveId &&
+        isCooldown === this.lastIsCooldown &&
         total === this.lastTotal &&
         isPaused === this.lastIsPaused &&
         this.isExpanded === this.lastIsExpanded
@@ -201,6 +243,7 @@
       this.lastTotal = total;
       this.lastIsPaused = isPaused;
       this.lastIsExpanded = this.isExpanded;
+      this.lastIsCooldown = isCooldown;
 
       // Show dock
       this.container.classList.remove('opacity-0', 'pointer-events-none');
@@ -209,26 +252,38 @@
       // Collapsed Pill View (Compact, 100% solid/opaque, non-obtrusive)
       if (!this.isExpanded) {
         const percent = active?.progress?.percent !== undefined ? active.progress.percent : (active ? 10 : 0);
-        const activeText = isPaused
-          ? '⏸ Paused'
-          : (active ? `Ch. ${active.chapterNumber} (${percent}%)` : `${total} Queued`);
+        let activeText = `${total} Queued`;
+        if (isPaused) {
+          activeText = '⏸ Paused';
+        } else if (isCooldown) {
+          activeText = `⏳ Wait ${formatCooldownTime(cooldown.secondsRemaining)}`;
+        } else if (active) {
+          activeText = `Ch. ${active.chapterNumber} (${percent}%)`;
+        }
 
         this.container.innerHTML = `
           <button
             type="button"
             id="queue-dock-expand-btn"
-            class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-indigo-500 shadow-2xl text-white text-xs font-semibold hover:border-indigo-400 hover:bg-slate-800 transition cursor-pointer select-none"
+            class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900 border ${isCooldown ? 'border-amber-500 hover:border-amber-400' : 'border-indigo-500 hover:border-indigo-400'} shadow-2xl text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer select-none"
             title="Click to expand Download Queue details"
           >
             <div id="queue-dock-pill-ring" class="flex items-center justify-center flex-shrink-0">
-              ${active && !isPaused ? renderProgressRing(percent, 20, 2.5, false) : `
-                <span class="flex h-2 w-2 relative flex-shrink-0">
-                  <span class="${isPaused ? 'bg-amber-400' : 'animate-ping bg-indigo-400'} absolute inline-flex h-full w-full rounded-full opacity-75"></span>
-                  <span class="relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-indigo-500'}"></span>
-                </span>
-              `}
+              ${active && !isPaused ? renderProgressRing(percent, 20, 2.5, false) : (
+                isCooldown ? `
+                  <span class="flex h-2.5 w-2.5 relative flex-shrink-0">
+                    <span class="animate-ping bg-amber-400 absolute inline-flex h-full w-full rounded-full opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                  </span>
+                ` : `
+                  <span class="flex h-2 w-2 relative flex-shrink-0">
+                    <span class="${isPaused ? 'bg-amber-400' : 'animate-ping bg-indigo-400'} absolute inline-flex h-full w-full rounded-full opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-indigo-500'}"></span>
+                  </span>
+                `
+              )}
             </div>
-            <span id="queue-dock-pill-text" class="truncate max-w-[150px] sm:max-w-[200px] text-slate-100">${activeText}</span>
+            <span id="queue-dock-pill-text" class="truncate max-w-[150px] sm:max-w-[200px] ${isCooldown ? 'text-amber-300' : 'text-slate-100'}">${activeText}</span>
             <span class="px-1.5 py-0.5 rounded-md bg-indigo-950 text-indigo-300 border border-indigo-500/40 text-[10px] font-mono font-bold flex-shrink-0">
               ${total}
             </span>
@@ -288,6 +343,44 @@
             <!-- Mini progress track under active task -->
             <div class="w-full bg-slate-900 rounded-full h-1 overflow-hidden border border-slate-700/50">
               <div id="queue-dock-expanded-bar" class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: ${percent}%;"></div>
+            </div>
+          </div>
+        `;
+      } else if (isCooldown) {
+        const timeStr = formatCooldownTime(cooldown.secondsRemaining);
+        const totalSec = cooldown.totalSeconds || 180;
+        const progressPct = Math.max(0, Math.min(100, Math.round(((totalSec - cooldown.secondsRemaining) / totalSec) * 100)));
+        const targetChapter = cooldown.nextChapterTitle || (cooldown.nextChapterNumber ? `Chapter ${cooldown.nextChapterNumber}` : 'next chapter');
+
+        activeHtml = `
+          <div class="p-2.5 sm:p-3 rounded-xl bg-amber-950/40 border border-amber-500/60 flex flex-col gap-2 shadow-md">
+            <div class="flex items-center justify-between gap-2.5">
+              <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                <span class="text-xl flex-shrink-0 animate-pulse">⏳</span>
+                <div class="flex flex-col min-w-0">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-xs font-bold text-amber-200">Rate Limit Cooldown</span>
+                    <span id="queue-dock-cooldown-time" class="text-[11px] font-mono font-extrabold text-amber-300 bg-amber-900/80 px-1.5 py-0.5 rounded border border-amber-500/40">
+                      ${timeStr}
+                    </span>
+                  </div>
+                  <span id="queue-dock-cooldown-subtitle" class="text-[11px] text-amber-300/80 truncate font-medium">
+                    Waiting before ${targetChapter}...
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                id="queue-dock-skip-cooldown-btn"
+                class="px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:scale-95 shadow transition cursor-pointer flex items-center gap-1 flex-shrink-0"
+                title="Skip wait and start downloading next chapter immediately"
+              >
+                <span>Skip ⏩</span>
+              </button>
+            </div>
+            <!-- Cooldown progress bar -->
+            <div class="w-full bg-slate-900 rounded-full h-1 overflow-hidden border border-amber-500/30">
+              <div id="queue-dock-cooldown-bar" class="bg-amber-400 h-full rounded-full transition-all duration-1000" style="width: ${progressPct}%;"></div>
             </div>
           </div>
         `;
@@ -416,6 +509,16 @@
         clearBtn.onclick = () => {
           const q = (typeof window !== 'undefined' && window.DownloadQueueService);
           if (q) q.clearAll();
+        };
+      }
+
+      const skipBtn = this.container.querySelector('#queue-dock-skip-cooldown-btn');
+      if (skipBtn) {
+        skipBtn.onclick = () => {
+          const q = (typeof window !== 'undefined' && window.DownloadQueueService);
+          if (q && typeof q.skipCooldown === 'function') {
+            q.skipCooldown();
+          }
         };
       }
 
