@@ -93,7 +93,138 @@ console.log('✓ CustomApiService constants, timeouts, and local loopback detect
   assert.strictEqual(DeepSeekService.CUSTOM_DEFAULT_URL, 'http://127.0.0.1:8000/v1');
   console.log('✓ DeepSeekService backward-compatibility delegates verified');
 
-  // Test 5: Verify live local bridge endpoint if running
+  // Test 5: SSE Stream Reading & Content Accumulation
+  function createMockSseResponse(chunks, headers = { 'content-type': 'text/event-stream' }) {
+    const encoder = new TextEncoder();
+    return {
+      ok: true,
+      status: 200,
+      headers: {
+        get: (h) => headers[h.toLowerCase()] || null
+      },
+      body: {
+        getReader() {
+          let idx = 0;
+          return {
+            async read() {
+              if (idx >= chunks.length) return { done: true, value: undefined };
+              const chunk = chunks[idx++];
+              const bytes = typeof chunk === 'string' ? encoder.encode(chunk) : chunk;
+              return { done: false, value: bytes };
+            },
+            releaseLock() {}
+          };
+        }
+      }
+    };
+  }
+
+  const sseChunksBasic = [
+    'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n',
+    'data: {"choices":[{"delta":{"content":"Chapter 1: "}}]}\n\n',
+    'data: {"choices":[{"delta":{"content":"The Wind Rises."}}]}\n\n',
+    'data: [DONE]\n\n'
+  ];
+  const streamResult1 = await CustomApiService._readSseStream(createMockSseResponse(sseChunksBasic));
+  assert.strictEqual(streamResult1.content, 'Chapter 1: The Wind Rises.');
+  assert.strictEqual(streamResult1.reasoning, null);
+  console.log('✓ SSE stream decoding and content accumulation verified');
+
+  // Test 6: DeepSeek-R1 reasoning_content stream
+  const sseChunksReasoning = [
+    'data: {"choices":[{"delta":{"reasoning_content":"Thinking about character names... "}}]}\n\n',
+    'data: {"choices":[{"delta":{"reasoning_content":"Translating tone..."}}]}\n\n',
+    'data: {"choices":[{"delta":{"content":"The night was quiet."}}]}\n\n',
+    'data: [DONE]\n\n'
+  ];
+  const streamResult2 = await CustomApiService._readSseStream(createMockSseResponse(sseChunksReasoning));
+  assert.strictEqual(streamResult2.reasoning, null, 'Reasoning process must be discarded and not accumulated');
+  assert.strictEqual(streamResult2.content, 'The night was quiet.');
+  console.log('✓ DeepSeek-R1 reasoning_content discarded from persistent output verified');
+
+  // Test 7: Fragmented chunks across buffer boundaries (mid-JSON split)
+  const fragmentedChunks = [
+    'data: {"choices":[{"del',
+    'ta":{"content":"Frag',
+    'mented "}}]}\n\ndata: {"choices":[{"delta":{"content":"Text"}}]}\n\ndata: [DONE]\n\n'
+  ];
+  const streamResult3 = await CustomApiService._readSseStream(createMockSseResponse(fragmentedChunks));
+  assert.strictEqual(streamResult3.content, 'Fragmented Text');
+  console.log('✓ Fragmented SSE chunks reassembly across packet boundaries verified');
+
+  // Test 8: onChunk callback verification (can still observe thinking in real-time if listener attached)
+  const receivedChunks = [];
+  await CustomApiService._readSseStream(createMockSseResponse(sseChunksReasoning), {
+    onChunk: (c) => receivedChunks.push(c)
+  });
+  assert.strictEqual(receivedChunks.length, 3);
+  assert.strictEqual(receivedChunks[0].type, 'reasoning');
+  assert.strictEqual(receivedChunks[0].delta, 'Thinking about character names... ');
+  assert.strictEqual(receivedChunks[2].type, 'content');
+  assert.strictEqual(receivedChunks[2].delta, 'The night was quiet.');
+  console.log('✓ onChunk streaming deltas callback verified');
+
+  // Test 9: Non-streaming JSON fallback
+  const mockJsonResponse = {
+    ok: true,
+    status: 200,
+    headers: { get: () => 'application/json' },
+    json: async () => ({
+      choices: [{ message: { content: 'Fallback JSON content', reasoning_content: 'Fallback reasoning' } }],
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+  };
+  const streamResult4 = await CustomApiService._readSseStream(mockJsonResponse);
+  assert.strictEqual(streamResult4.content, 'Fallback JSON content');
+  assert.strictEqual(streamResult4.reasoning, null, 'Fallback reasoning must be discarded');
+  assert.strictEqual(streamResult4.usage.total_tokens, 15);
+  console.log('✓ Non-streaming application/json fallback verified');
+
+  // Test 10: CustomApiService.translateChapter with streaming mock (reasoning discarded)
+  const originalFetch = global.fetch;
+  global.fetch = async (url, opts) => {
+    assert(opts.body.includes('"stream":true'), 'Request payload must have stream: true');
+    return createMockSseResponse([
+      'data: {"choices":[{"delta":{"reasoning_content":"Step 1"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"Translated Chapter Stream"}}]}\n\n',
+      'data: [DONE]\n\n'
+    ]);
+  };
+
+  const customTransRes = await CustomApiService.translateChapter({
+    rawText: '第一章 测试',
+    prompt: 'Translate'
+  });
+  assert.strictEqual(customTransRes.translatedText, 'Translated Chapter Stream');
+  assert.strictEqual(customTransRes.reasoningText, null, 'reasoningText must be discarded (null)');
+  assert.strictEqual(customTransRes.isCustom, true);
+  assert.strictEqual(customTransRes.costInfo.costUSD, 0);
+  console.log('✓ CustomApiService.translateChapter stream: true end-to-end verified (reasoning discarded)');
+
+  // Test 11: DeepSeekService.translateChapter with streaming mock and usage
+  global.fetch = async (url, opts) => {
+    assert(opts.body.includes('"stream":true'), 'Request payload must have stream: true');
+    return createMockSseResponse([
+      'data: {"choices":[{"delta":{"content":"Official Translation"}}]}\n\n',
+      'data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150}}\n\n',
+      'data: [DONE]\n\n'
+    ]);
+  };
+
+  const dsTransRes = await DeepSeekService.translateChapter({
+    apiKey: 'sk-test-key',
+    rawText: '第一章 官方测试',
+    prompt: 'Translate'
+  });
+  assert.strictEqual(dsTransRes.translatedText, 'Official Translation');
+  assert.strictEqual(dsTransRes.usage.total_tokens, 150);
+  assert(dsTransRes.costInfo !== null, 'Official service must calculate costInfo');
+  console.log('✓ DeepSeekService.translateChapter stream: true end-to-end verified');
+
+  // Restore fetch
+  global.fetch = originalFetch;
+
+  // Test 12: Verify live local bridge endpoint if running
   const http = require('http');
   const req = http.get('http://127.0.0.1:8000/v1/models', { timeout: 3000 }, (res) => {
     let data = '';

@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const popupNovelStats = document.getElementById('popup-novel-stats');
   const popupChapterCount = document.getElementById('popup-chapter-count');
   const popupChapterList = document.getElementById('popup-chapter-list');
+  const popupDownloadAllBtn = document.getElementById('popup-download-all-btn');
   const settingsBtn = document.getElementById('settings-btn');
   const novelSettingsBtn = document.getElementById('novel-settings-btn');
 
@@ -668,6 +669,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const updated = await window.StorageService.syncNovelChapters(novel.id);
       if (updated && updated.chapterList && updated.chapterList.length > 0) {
         novel = updated;
+        currentActiveNovel = updated;
         chaptersCatalog = novel.chapterList;
       }
     }
@@ -688,6 +690,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (popupChapterCount) {
       popupChapterCount.textContent = `${displayList.length} Chapters`;
+    }
+
+    if (popupDownloadAllBtn) {
+      const queueService = (typeof window !== 'undefined' && window.DownloadQueueService);
+      const unqueuedMissingCount = chaptersCatalog.filter((c) => {
+        const chNum = Number(c.chapterNumber !== undefined ? c.chapterNumber : c.number);
+        if (downloadedMap.has(chNum)) return false;
+        if (queueService && typeof queueService.isQueued === 'function') {
+          if (queueService.isQueued(novel.id, chNum)) return false;
+        }
+        return true;
+      }).length;
+
+      if (chaptersCatalog.length === 0 || unqueuedMissingCount === 0) {
+        popupDownloadAllBtn.classList.add('opacity-50', 'pointer-events-none');
+        popupDownloadAllBtn.title = 'All chapters are already downloaded or queued';
+      } else {
+        popupDownloadAllBtn.classList.remove('opacity-50', 'pointer-events-none');
+        popupDownloadAllBtn.title = `Download and translate all ${unqueuedMissingCount} missing chapters`;
+      }
     }
 
     if (!popupChapterList) return;
@@ -791,80 +813,108 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         rightSection.appendChild(delBtn);
       } else {
-        // Download button with downward arrow icon
-        const dlBtn = document.createElement('button');
-        dlBtn.type = 'button';
-        dlBtn.className = 'p-1.5 rounded text-indigo-400 hover:text-white hover:bg-indigo-600/80 bg-slate-700/60 transition focus:outline-none cursor-pointer flex-shrink-0 flex items-center justify-center';
-        dlBtn.title = `Download Chapter ${chNum}`;
-        dlBtn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <polyline points="19 12 12 19 5 12"></polyline>
-          </svg>
-        `;
+        const queueService = (typeof window !== 'undefined' && window.DownloadQueueService) ||
+          (typeof globalThis !== 'undefined' && globalThis.DownloadQueueService);
+        const qStatus = queueService && typeof queueService.getChapterStatus === 'function'
+          ? queueService.getChapterStatus(novel.id, chNum)
+          : null;
 
-        dlBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-
-          const toggleEl = document.getElementById('deepseek-toggle');
-          const keyEl = document.getElementById('deepseek-api-key');
-          const promptEl = document.getElementById('deepseek-prompt');
-          const modelSelectEl = document.getElementById('deepseek-model-select');
-
-          const isTranslationEnabled = !!(toggleEl && toggleEl.checked);
-          let apiKey = keyEl ? keyEl.value.trim() : '';
-          const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
-
-          const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
-            (typeof DeepSeekService !== 'undefined' && DeepSeekService);
-
-          let curProvConfig = { provider: 'official', customUrl: 'http://127.0.0.1:8000/v1' };
-          if (deepseek && typeof deepseek.getProviderConfig === 'function') {
-            try {
-              curProvConfig = await deepseek.getProviderConfig();
-            } catch (e) {}
-          }
-          const isCustomMode = curProvConfig.provider !== 'official';
-          const customUrlInputEl = document.getElementById('popup-custom-base-url');
-          const effectiveCustomUrl = customUrlInputEl ? (customUrlInputEl.value.trim() || curProvConfig.customUrl || 'http://127.0.0.1:8000/v1') : (curProvConfig.customUrl || 'http://127.0.0.1:8000/v1');
-
-          if (isTranslationEnabled && !apiKey) {
-            if (isCustomMode) {
-              apiKey = 'sk-local';
-            } else if (deepseek && typeof deepseek.getApiKey === 'function') {
-              try {
-                const stored = await deepseek.getApiKey();
-                if (stored && stored.apiKey) {
-                  apiKey = stored.apiKey.trim();
-                  if (keyEl) keyEl.value = apiKey;
-                  const clearKeyBtn = document.getElementById('clear-deepseek-btn');
-                  if (clearKeyBtn) clearKeyBtn.classList.remove('hidden');
-                }
-              } catch (e) {}
-            }
-          }
-
-          if (isTranslationEnabled && !apiKey && !isCustomMode) {
-            if (keyEl) {
-              keyEl.focus();
-              keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');
-              setTimeout(() => {
-                keyEl.classList.remove('border-rose-500', 'ring-1', 'ring-rose-500/50');
-              }, 2500);
-            }
-            alert('Please enter your DeepSeek API Key before translating.');
-            return;
-          }
-
-          dlBtn.disabled = true;
-          dlBtn.innerHTML = `
-            <svg class="animate-spin h-3.5 w-3.5 text-indigo-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        if (qStatus && qStatus.status === 'processing') {
+          const activeBtn = document.createElement('button');
+          activeBtn.type = 'button';
+          activeBtn.className = 'p-1.5 rounded text-indigo-300 bg-indigo-600/40 hover:bg-rose-600 hover:text-white transition cursor-pointer flex-shrink-0 flex items-center justify-center';
+          activeBtn.title = 'Translating chapter... Click to cancel.';
+          activeBtn.innerHTML = `
+            <svg class="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
             </svg>
           `;
+          activeBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (queueService) await queueService.remove(`${novel.id}_ch${chNum}`);
+          });
+          rightSection.appendChild(activeBtn);
+        } else if (qStatus && qStatus.status === 'queued') {
+          const queuedBtn = document.createElement('button');
+          queuedBtn.type = 'button';
+          queuedBtn.className = 'px-1.5 py-1 rounded text-[10px] font-mono text-amber-300 bg-amber-500/15 border border-amber-500/30 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/40 transition cursor-pointer flex items-center gap-1';
+          queuedBtn.title = `Queued (#${qStatus.queuePosition}). Click to remove from queue.`;
+          queuedBtn.innerHTML = `
+            <span>⏳#${qStatus.queuePosition}</span>
+            <span class="font-bold">✕</span>
+          `;
+          queuedBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (queueService) await queueService.remove(`${novel.id}_ch${chNum}`);
+          });
+          rightSection.appendChild(queuedBtn);
+        } else {
+          // Download button with downward arrow icon
+          const dlBtn = document.createElement('button');
+          dlBtn.type = 'button';
+          dlBtn.className = 'p-1.5 rounded text-indigo-400 hover:text-white hover:bg-indigo-600/80 bg-slate-700/60 transition focus:outline-none cursor-pointer flex-shrink-0 flex items-center justify-center';
+          dlBtn.title = `Download Chapter ${chNum}`;
+          dlBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <polyline points="19 12 12 19 5 12"></polyline>
+            </svg>
+          `;
 
-          try {
+          dlBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+
+            const toggleEl = document.getElementById('deepseek-toggle');
+            const keyEl = document.getElementById('deepseek-api-key');
+            const promptEl = document.getElementById('deepseek-prompt');
+            const modelSelectEl = document.getElementById('deepseek-model-select');
+
+            const isTranslationEnabled = !!(toggleEl && toggleEl.checked);
+            let apiKey = keyEl ? keyEl.value.trim() : '';
+            const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
+
+            const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+              (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+            let curProvConfig = { provider: 'official', customUrl: 'http://127.0.0.1:8000/v1' };
+            if (deepseek && typeof deepseek.getProviderConfig === 'function') {
+              try {
+                curProvConfig = await deepseek.getProviderConfig();
+              } catch (e) {}
+            }
+            const isCustomMode = curProvConfig.provider !== 'official';
+            const customUrlInputEl = document.getElementById('popup-custom-base-url');
+            const effectiveCustomUrl = customUrlInputEl ? (customUrlInputEl.value.trim() || curProvConfig.customUrl || 'http://127.0.0.1:8000/v1') : (curProvConfig.customUrl || 'http://127.0.0.1:8000/v1');
+
+            if (isTranslationEnabled && !apiKey) {
+              if (isCustomMode) {
+                apiKey = 'sk-local';
+              } else if (deepseek && typeof deepseek.getApiKey === 'function') {
+                try {
+                  const stored = await deepseek.getApiKey();
+                  if (stored && stored.apiKey) {
+                    apiKey = stored.apiKey.trim();
+                    if (keyEl) keyEl.value = apiKey;
+                    const clearKeyBtn = document.getElementById('clear-deepseek-btn');
+                    if (clearKeyBtn) clearKeyBtn.classList.remove('hidden');
+                  }
+                } catch (e) {}
+              }
+            }
+
+            if (isTranslationEnabled && !apiKey && !isCustomMode) {
+              if (keyEl) {
+                keyEl.focus();
+                keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');
+                setTimeout(() => {
+                  keyEl.classList.remove('border-rose-500', 'ring-1', 'ring-rose-500/50');
+                }, 2500);
+              }
+              alert('Please enter your DeepSeek API Key before translating.');
+              return;
+            }
+
             const options = {
               translation: {
                 enabled: isTranslationEnabled,
@@ -875,31 +925,191 @@ document.addEventListener('DOMContentLoaded', async () => {
                 baseUrl: isCustomMode ? effectiveCustomUrl : undefined
               }
             };
-            await window.StorageService.downloadChapter(novel.id, chNum, options);
-            if (popupBalanceTracker && isTranslationEnabled && !isCustomMode) {
-              popupBalanceTracker.refresh(true);
-            }
-            await renderPopupChapters(novel);
-          } catch (err) {
-            console.error('Error downloading chapter:', err);
-            dlBtn.disabled = false;
-            dlBtn.classList.add('text-red-400');
-            dlBtn.title = err.message || 'Error downloading chapter';
-            dlBtn.innerHTML = `
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <polyline points="19 12 12 19 5 12"></polyline>
-              </svg>
-            `;
-          }
-        });
 
-        rightSection.appendChild(dlBtn);
+            if (queueService && typeof queueService.enqueue === 'function') {
+              await queueService.enqueue({
+                novelId: novel.id,
+                novelTitle: novel.title,
+                chapterNumber: chNum,
+                chapterTitle: chapter.title || `Chapter ${chNum}`,
+                options
+              });
+              await renderPopupChapters(novel);
+            } else {
+              dlBtn.disabled = true;
+              dlBtn.innerHTML = `
+                <svg class="animate-spin h-3.5 w-3.5 text-indigo-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                </svg>
+              `;
+
+              try {
+                await window.StorageService.downloadChapter(novel.id, chNum, options);
+                if (popupBalanceTracker && isTranslationEnabled && !isCustomMode) {
+                  popupBalanceTracker.refresh(true);
+                }
+                await renderPopupChapters(novel);
+              } catch (err) {
+                console.error('Error downloading chapter:', err);
+                dlBtn.disabled = false;
+                dlBtn.classList.add('text-red-400');
+                dlBtn.title = err.message || 'Error downloading chapter';
+                dlBtn.innerHTML = `
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <polyline points="19 12 12 19 5 12"></polyline>
+                  </svg>
+                `;
+              }
+            }
+          });
+
+          rightSection.appendChild(dlBtn);
+        }
       }
 
       row.appendChild(leftSection);
       row.appendChild(rightSection);
       popupChapterList.appendChild(row);
+    });
+  }
+
+  if (popupDownloadAllBtn) {
+    popupDownloadAllBtn.addEventListener('click', async () => {
+      if (!currentActiveNovel) return;
+      const catalog = currentActiveNovel.chapterList || [];
+      if (catalog.length === 0) {
+        alert('No chapters found in catalog.');
+        return;
+      }
+
+      const queueService = window.DownloadQueueService;
+      const downloadedChapters = await window.StorageService.getNovelChapters(currentActiveNovel.id);
+      const downloadedMap = new Map(downloadedChapters.map((c) => [Number(c.chapterNumber), c]));
+
+      const unqueuedMissing = catalog.filter((c) => {
+        const chNum = Number(c.chapterNumber !== undefined ? c.chapterNumber : c.number);
+        if (downloadedMap.has(chNum)) return false;
+        if (queueService && typeof queueService.isQueued === 'function') {
+          if (queueService.isQueued(currentActiveNovel.id, chNum)) return false;
+        }
+        return true;
+      });
+
+      if (unqueuedMissing.length === 0) {
+        alert('All chapters are already downloaded or queued!');
+        return;
+      }
+
+      const toggleEl = document.getElementById('deepseek-toggle');
+      const keyEl = document.getElementById('deepseek-api-key');
+      const promptEl = document.getElementById('deepseek-prompt');
+      const modelSelectEl = document.getElementById('deepseek-model-select');
+
+      const isTranslationEnabled = !!(toggleEl && toggleEl.checked);
+      let apiKey = keyEl ? keyEl.value.trim() : '';
+      const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
+
+      const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+        (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+      let curProvConfig = { provider: 'official', customUrl: 'http://127.0.0.1:8000/v1' };
+      if (deepseek && typeof deepseek.getProviderConfig === 'function') {
+        try {
+          curProvConfig = await deepseek.getProviderConfig();
+        } catch (e) {}
+      }
+      const isCustomMode = curProvConfig.provider !== 'official';
+      const customUrlInputEl = document.getElementById('popup-custom-base-url');
+      const effectiveCustomUrl = customUrlInputEl ? (customUrlInputEl.value.trim() || curProvConfig.customUrl || 'http://127.0.0.1:8000/v1') : (curProvConfig.customUrl || 'http://127.0.0.1:8000/v1');
+
+      if (isTranslationEnabled && !apiKey) {
+        if (isCustomMode) {
+          apiKey = 'sk-local';
+        } else if (deepseek && typeof deepseek.getApiKey === 'function') {
+          try {
+            const stored = await deepseek.getApiKey();
+            if (stored && stored.apiKey) {
+              apiKey = stored.apiKey.trim();
+              if (keyEl) keyEl.value = apiKey;
+              const clearKeyBtn = document.getElementById('clear-deepseek-btn');
+              if (clearKeyBtn) clearKeyBtn.classList.remove('hidden');
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (isTranslationEnabled && !apiKey && !isCustomMode) {
+        if (keyEl) {
+          keyEl.focus();
+          keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');
+          setTimeout(() => {
+            keyEl.classList.remove('border-rose-500', 'ring-1', 'ring-rose-500/50');
+          }, 2500);
+        }
+        alert('Please enter your DeepSeek API Key before translating.');
+        return;
+      }
+
+      if (unqueuedMissing.length > 5) {
+        const transDetail = isTranslationEnabled
+          ? `with translation enabled (${selectedModel}, provider: ${curProvConfig.provider})`
+          : `without translation (raw text)`;
+        const confirmed = confirm(`You are about to queue ${unqueuedMissing.length} chapters for download ${transDetail}.\n\nDo you wish to proceed?`);
+        if (!confirmed) {
+          return;
+        }
+      }
+
+      const options = {
+        translation: {
+          enabled: isTranslationEnabled,
+          apiKey: apiKey || (isCustomMode ? 'sk-local' : ''),
+          prompt: promptEl ? promptEl.value : '',
+          model: selectedModel,
+          provider: curProvConfig.provider,
+          baseUrl: isCustomMode ? effectiveCustomUrl : undefined
+        }
+      };
+
+      const tasksToEnqueue = unqueuedMissing.map((c) => {
+        const chNum = Number(c.chapterNumber !== undefined ? c.chapterNumber : c.number);
+        return {
+          novelId: currentActiveNovel.id,
+          novelTitle: currentActiveNovel.title,
+          chapterNumber: chNum,
+          chapterTitle: c.title || `Chapter ${chNum}`,
+          options
+        };
+      });
+
+      popupDownloadAllBtn.disabled = true;
+      const originalHtml = popupDownloadAllBtn.innerHTML;
+      popupDownloadAllBtn.innerHTML = `
+        <svg class="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <span>Queuing...</span>
+      `;
+
+      try {
+        if (queueService && typeof queueService.enqueueBatch === 'function') {
+          await queueService.enqueueBatch(tasksToEnqueue);
+        } else if (queueService && typeof queueService.enqueue === 'function') {
+          for (const task of tasksToEnqueue) {
+            await queueService.enqueue(task);
+          }
+        }
+        await renderPopupChapters(currentActiveNovel);
+      } catch (err) {
+        console.error('Error queuing batch download in popup:', err);
+        alert('Error queuing chapters: ' + (err.message || err));
+      } finally {
+        popupDownloadAllBtn.disabled = false;
+        popupDownloadAllBtn.innerHTML = originalHtml;
+      }
     });
   }
 
@@ -1185,6 +1395,47 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else {
         window.open(url, '_blank');
       }
+    });
+  }
+
+  // Listen for queue state events to update chapter button states in popup
+  let isUpdatingPopupQueue = false;
+  let hasPendingPopupUpdate = false;
+  let hadActivePopupTask = false;
+
+  async function handlePopupQueueChange(state) {
+    if (isUpdatingPopupQueue) {
+      hasPendingPopupUpdate = true;
+      return;
+    }
+    isUpdatingPopupQueue = true;
+    try {
+      if (currentActiveNovel && viewNovel && !viewNovel.classList.contains('hidden')) {
+        await renderPopupChapters(currentActiveNovel);
+        if (hadActivePopupTask && (!state || !state.activeTask) && popupBalanceTracker) {
+          popupBalanceTracker.refresh(true);
+        }
+      }
+      hadActivePopupTask = !!(state && state.activeTask);
+    } catch (e) {
+      console.warn('[popup.js] Error updating from queue change:', e);
+    } finally {
+      isUpdatingPopupQueue = false;
+      if (hasPendingPopupUpdate) {
+        hasPendingPopupUpdate = false;
+        handlePopupQueueChange(window.DownloadQueueService ? window.DownloadQueueService.getState() : null);
+      }
+    }
+  }
+
+  window.addEventListener('quickconverter:queue_state', (e) => {
+    handlePopupQueueChange(e.detail);
+  });
+
+  const popupQueueService = (typeof window !== 'undefined' && window.DownloadQueueService);
+  if (popupQueueService && typeof popupQueueService.subscribe === 'function') {
+    popupQueueService.subscribe((state) => {
+      handlePopupQueueChange(state);
     });
   }
 

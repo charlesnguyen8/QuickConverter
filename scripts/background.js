@@ -1,7 +1,7 @@
 // QuickConverter Background Service Worker
 // Coordinates tab listeners, automated popup triggering via providers, and IndexedDB message bus.
 
-importScripts('../providers/wetriedtls.js', '../providers/registry.js', '../services/deepseek.js', '../services/storage.js');
+importScripts('../providers/wetriedtls.js', '../providers/registry.js', '../services/custom-api.js', '../services/deepseek.js', '../services/ai-service.js', '../services/storage.js', '../services/download-queue.js');
 
 function shouldOpenPopup(urlStr) {
   if (!urlStr) return false;
@@ -179,5 +179,92 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true; // Keep channel open for async response
+  }
+
+  if (message.action === 'QUEUE_ENQUEUE') {
+    (async () => {
+      try {
+        if (typeof DownloadQueueService !== 'undefined') {
+          const res = await DownloadQueueService.enqueue(message.task || message);
+          sendResponse({ ...res, state: DownloadQueueService.getState() });
+        } else {
+          sendResponse({ success: false, error: 'DownloadQueueService not loaded' });
+        }
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'QUEUE_ENQUEUE_BATCH') {
+    (async () => {
+      try {
+        if (typeof DownloadQueueService !== 'undefined') {
+          const res = await DownloadQueueService.enqueueBatch(message.tasks || []);
+          sendResponse({ ...res, state: DownloadQueueService.getState() });
+        } else {
+          sendResponse({ success: false, error: 'DownloadQueueService not loaded' });
+        }
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'QUEUE_REMOVE') {
+    (async () => {
+      try {
+        if (typeof DownloadQueueService !== 'undefined') {
+          const res = await DownloadQueueService.remove(message.taskId);
+          sendResponse({ success: res, state: DownloadQueueService.getState() });
+        } else {
+          sendResponse({ success: false });
+        }
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'QUEUE_PAUSE') {
+    if (typeof DownloadQueueService !== 'undefined') {
+      DownloadQueueService.pause();
+      sendResponse({ success: true, isPaused: true, state: DownloadQueueService.getState() });
+    } else {
+      sendResponse({ success: false });
+    }
+    return false;
+  }
+
+  if (message.action === 'QUEUE_RESUME') {
+    if (typeof DownloadQueueService !== 'undefined') {
+      DownloadQueueService.resume();
+      sendResponse({ success: true, isPaused: false, state: DownloadQueueService.getState() });
+    } else {
+      sendResponse({ success: false });
+    }
+    return false;
+  }
+
+  if (message.action === 'QUEUE_CLEAR_ALL') {
+    if (typeof DownloadQueueService !== 'undefined') {
+      DownloadQueueService.clearAll();
+      sendResponse({ success: true, state: DownloadQueueService.getState() });
+    } else {
+      sendResponse({ success: false });
+    }
+    return false;
+  }
+
+  if (message.action === 'QUEUE_GET_STATE') {
+    if (typeof DownloadQueueService !== 'undefined') {
+      sendResponse(DownloadQueueService.getState());
+    } else {
+      sendResponse({ activeTask: null, queue: [], isPaused: false, isProcessing: false });
+    }
+    return false;
   }
 });

@@ -11,7 +11,8 @@ const testFiles = [
   'reader.test.js',
   'deepseek.test.js',
   'custom-api.test.js',
-  'bridge.test.js'
+  'bridge.test.js',
+  'download-queue.test.js'
 ];
 
 let allPassed = true;

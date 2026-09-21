@@ -1,0 +1,327 @@
+// QuickConverter - Reusable Floating Download Queue Dock Component
+// Solid, opaque dock displaying active & queued chapter downloads,
+// with dedicated Collapse/Expand controls, Pause/Resume toggle, Clear All, and cancellation buttons.
+
+(function (global) {
+  function checkIsPopup() {
+    if (typeof window === 'undefined') return false;
+    return (
+      (typeof window.location !== 'undefined' && window.location.pathname.includes('popup.html')) ||
+      (typeof document !== 'undefined' && document.body && document.body.clientWidth <= 420) ||
+      window.innerWidth <= 420
+    );
+  }
+
+  class QueueDock {
+    constructor() {
+      const isPopup = checkIsPopup();
+      // In compact popup window, start collapsed so it never covers popup content.
+      // In full pages (novel, reader, library), start expanded by default.
+      this.isExpanded = !isPopup;
+      this.container = null;
+      this._unsub = null;
+      this._mounted = false;
+    }
+
+    /**
+     * Mounts the queue dock onto the current document body.
+     */
+    mount() {
+      if (this._mounted || typeof document === 'undefined') return;
+      this._mounted = true;
+
+      const isPopup = checkIsPopup();
+      if (isPopup) {
+        this.isExpanded = false;
+      }
+
+      // Create container element
+      this.container = document.createElement('div');
+      this.container.id = 'quickconverter-queue-dock';
+      // In popup, pin at bottom-2 right-2; in full tabs, bottom-5 right-5
+      this.container.className = isPopup
+        ? 'fixed bottom-2 right-2 z-50 flex flex-col items-end transition-all duration-200 pointer-events-none opacity-0 translate-y-2'
+        : 'fixed bottom-5 right-5 z-50 flex flex-col items-end transition-all duration-200 pointer-events-none opacity-0 translate-y-3';
+      document.body.appendChild(this.container);
+
+      // Subscribe to DownloadQueueService
+      const queue = (typeof window !== 'undefined' && window.DownloadQueueService) ||
+        (typeof global !== 'undefined' && global.DownloadQueueService);
+
+      if (queue && typeof queue.subscribe === 'function') {
+        this._unsub = queue.subscribe((state) => this.render(state));
+      }
+    }
+
+    unmount() {
+      if (this._unsub) {
+        this._unsub();
+        this._unsub = null;
+      }
+      if (this.container && this.container.parentNode) {
+        this.container.parentNode.removeChild(this.container);
+      }
+      this._mounted = false;
+    }
+
+    render(state) {
+      if (!this.container) return;
+
+      const active = state.activeTask;
+      const queue = state.queue || [];
+      const total = (active ? 1 : 0) + queue.length;
+      const isPaused = !!state.isPaused;
+      const isPopup = checkIsPopup();
+
+      // Broadcast custom event so active pages (e.g. novel.js) can refresh row buttons
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('quickconverter:queue_state', { detail: state }));
+      }
+
+      // Hide dock completely when queue is empty
+      if (total === 0) {
+        this.container.classList.add('opacity-0', 'pointer-events-none');
+        this.container.classList.remove('opacity-100', 'pointer-events-auto');
+        this.container.innerHTML = '';
+        return;
+      }
+
+      // Show dock
+      this.container.classList.remove('opacity-0', 'pointer-events-none');
+      this.container.classList.add('opacity-100', 'pointer-events-auto');
+
+      // Collapsed Pill View (Compact, 100% solid/opaque, non-obtrusive)
+      if (!this.isExpanded) {
+        const activeText = isPaused
+          ? '⏸ Paused'
+          : (active ? `Downloading Ch. ${active.chapterNumber}` : `${total} Queued`);
+
+        this.container.innerHTML = `
+          <button
+            type="button"
+            id="queue-dock-expand-btn"
+            class="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-900 border border-indigo-500 shadow-2xl text-white text-xs font-semibold hover:border-indigo-400 hover:bg-slate-800 transition cursor-pointer select-none"
+            title="Click to expand Download Queue details"
+          >
+            <span class="flex h-2 w-2 relative flex-shrink-0">
+              <span class="${isPaused ? 'bg-amber-400' : 'animate-ping bg-indigo-400'} absolute inline-flex h-full w-full rounded-full opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-indigo-500'}"></span>
+            </span>
+            <span class="truncate max-w-[150px] sm:max-w-[200px] text-slate-100">${activeText}</span>
+            <span class="px-1.5 py-0.5 rounded-md bg-indigo-950 text-indigo-300 border border-indigo-500/40 text-[10px] font-mono font-bold flex-shrink-0">
+              ${total}
+            </span>
+            <span class="text-[11px] font-medium text-indigo-300 flex items-center gap-0.5 pl-1 border-l border-slate-700 hover:text-white">
+              <span>Expand</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="18 15 12 9 6 15"></polyline>
+              </svg>
+            </span>
+          </button>
+        `;
+
+        const expandBtn = this.container.querySelector('#queue-dock-expand-btn');
+        if (expandBtn) {
+          expandBtn.onclick = () => {
+            this.isExpanded = true;
+            this.render(state);
+          };
+        }
+        return;
+      }
+
+      // Expanded Card View (100% Solid/Opaque, No Transparency)
+      let activeHtml = '';
+      if (active) {
+        const modelName = active.options?.translation?.model || 'deepseek';
+        activeHtml = `
+          <div class="p-2.5 sm:p-3 rounded-xl bg-slate-800 border border-indigo-500 flex items-center justify-between gap-2.5 shadow-md">
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+              <svg class="animate-spin h-4 w-4 text-indigo-400 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+              <div class="flex flex-col min-w-0">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="text-xs font-bold text-white truncate">${active.chapterTitle || 'Chapter ' + active.chapterNumber}</span>
+                  <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/40">${modelName}</span>
+                </div>
+                <span class="text-[11px] text-indigo-300 truncate font-medium">${active.novelTitle || 'Novel'} • Translating...</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              data-cancel-id="${active.id}"
+              class="queue-item-cancel-btn p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-700 transition cursor-pointer flex-shrink-0"
+              title="Cancel active chapter and skip to next"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        `;
+      } else if (isPaused) {
+        activeHtml = `
+          <div class="p-2.5 sm:p-3 rounded-xl bg-slate-800 border border-amber-500 text-xs text-amber-300 flex items-center gap-2 shadow-md">
+            <span class="text-sm">⏸</span>
+            <span>Queue is paused. Click <strong>Resume</strong> to continue.</span>
+          </div>
+        `;
+      }
+
+      let queueListHtml = '';
+      const listMaxH = isPopup ? 'max-h-28' : 'max-h-48';
+      if (queue.length > 0) {
+        queueListHtml = `
+          <div class="flex flex-col gap-1.5 ${listMaxH} overflow-y-auto pr-1 select-none">
+            ${queue.map((task, idx) => `
+              <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-800 border border-slate-700 text-xs hover:border-slate-600 transition group shadow-sm">
+                <div class="flex items-center gap-2 min-w-0 flex-1">
+                  <span class="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-700 flex-shrink-0">
+                    #${idx + 1}
+                  </span>
+                  <span class="text-slate-200 truncate font-medium">${task.chapterTitle || 'Chapter ' + task.chapterNumber}</span>
+                </div>
+                <button
+                  type="button"
+                  data-cancel-id="${task.id}"
+                  class="queue-item-cancel-btn p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-700 transition cursor-pointer flex-shrink-0"
+                  title="Remove Chapter ${task.chapterNumber} from queue"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      // Responsive card width: in popup, strictly bounded to fit popup; in tabs, standard width
+      const cardWidth = isPopup
+        ? 'w-[calc(100vw-1rem)] max-w-[344px]'
+        : 'w-80 sm:w-96';
+
+      this.container.innerHTML = `
+        <div class="${cardWidth} rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-3.5 sm:p-4 flex flex-col gap-3 select-none">
+          <!-- Dock Header -->
+          <div class="flex items-center justify-between pb-2.5 border-b border-slate-800 gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="text-base flex-shrink-0">📥</span>
+              <span class="text-xs font-bold text-slate-100 truncate">Download Queue</span>
+              <span class="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/40 flex-shrink-0">
+                ${total}
+              </span>
+            </div>
+
+            <div class="flex items-center gap-1.5 flex-shrink-0">
+              <!-- Pause / Resume Button -->
+              <button
+                type="button"
+                id="queue-dock-pause-btn"
+                class="px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 ${isPaused ? 'bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-500/60' : 'bg-amber-950 text-amber-300 hover:bg-amber-900 border border-amber-500/60'}"
+                title="${isPaused ? 'Resume queued downloads' : 'Pause queue (finishes current chapter)'}"
+              >
+                <span>${isPaused ? '▶ Resume' : '⏸ Pause'}</span>
+              </button>
+
+              <!-- Clear All Button -->
+              <button
+                type="button"
+                id="queue-dock-clear-btn"
+                class="px-2 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-rose-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition cursor-pointer"
+                title="Clear all waiting chapters and abort active"
+              >
+                Clear All
+              </button>
+
+              <!-- Prominent Collapse Button -->
+              <button
+                type="button"
+                id="queue-dock-collapse-btn"
+                class="px-2 py-1 rounded text-[11px] font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 hover:border-slate-600 transition cursor-pointer flex items-center gap-1"
+                title="Collapse queue dock into small pill"
+              >
+                <span>Collapse</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Active Task Area -->
+          ${activeHtml}
+
+          <!-- Queue List Area -->
+          ${queueListHtml}
+        </div>
+      `;
+
+      // Wire Event Handlers
+      const collapseBtn = this.container.querySelector('#queue-dock-collapse-btn');
+      if (collapseBtn) {
+        collapseBtn.onclick = () => {
+          this.isExpanded = false;
+          this.render(state);
+        };
+      }
+
+      const pauseBtn = this.container.querySelector('#queue-dock-pause-btn');
+      if (pauseBtn) {
+        pauseBtn.onclick = () => {
+          const q = (typeof window !== 'undefined' && window.DownloadQueueService);
+          if (q) {
+            if (isPaused) q.resume();
+            else q.pause();
+          }
+        };
+      }
+
+      const clearBtn = this.container.querySelector('#queue-dock-clear-btn');
+      if (clearBtn) {
+        clearBtn.onclick = () => {
+          const q = (typeof window !== 'undefined' && window.DownloadQueueService);
+          if (q) q.clearAll();
+        };
+      }
+
+      // Wire individual cancel/remove buttons
+      const cancelBtns = this.container.querySelectorAll('.queue-item-cancel-btn');
+      cancelBtns.forEach((btn) => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const taskId = btn.dataset.cancelId;
+          const q = (typeof window !== 'undefined' && window.DownloadQueueService);
+          if (q && taskId) {
+            q.remove(taskId);
+          }
+        };
+      });
+    }
+  }
+
+  // Singleton instance
+  const QueueDockInstance = new QueueDock();
+
+  // Auto-mount when DOM is ready
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => QueueDockInstance.mount());
+    } else {
+      QueueDockInstance.mount();
+    }
+  }
+
+  // Export to global scope
+  if (typeof window !== 'undefined') {
+    window.QueueDock = QueueDockInstance;
+  }
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = QueueDock;
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : this);

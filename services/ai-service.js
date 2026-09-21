@@ -174,7 +174,10 @@
           prompt: params.prompt,
           rawText: params.rawText,
           model: params.model || 'deepseek-chat',
-          temperature: params.temperature
+          temperature: params.temperature,
+          stream: params.stream !== undefined ? params.stream : true,
+          onChunk: params.onChunk,
+          signal: params.signal
         });
       }
 

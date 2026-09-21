@@ -756,11 +756,14 @@ const StorageService = {
         rawText: content.rawText,
         model: model || (activeProvider === 'local_bridge' ? 'deepseek-chat' : 'deepseek-flash'),
         provider: activeProvider,
-        baseUrl: effectiveBaseUrl
+        baseUrl: effectiveBaseUrl,
+        signal: options.signal,
+        onChunk: options.onChunk
       });
 
       finalText = result.translatedText;
-      reasoningText = result.reasoningText || null;
+      // Discard deepthink reasoning process - do not save to storage
+      reasoningText = null;
       isTranslated = true;
       modelUsed = result.modelUsed;
       translationCost = result.costInfo || null;
@@ -774,7 +777,7 @@ const StorageService = {
       url: chapterUrl,
       rawText: finalText,
       originalRawText: content.rawText,
-      reasoningText: reasoningText,
+      reasoningText: null, // Discarded: deepthink reasoning process is not saved
       isTranslated: isTranslated,
       modelUsed: modelUsed,
       translatedAt: isTranslated ? Date.now() : null,

@@ -4,13 +4,17 @@
 (function (global) {
   const DEFAULT_BASE_URL = 'http://127.0.0.1:8000/v1';
   const DEFAULT_KEY = 'sk-local';
-  const TIMEOUT_MS = 180000; // 180s for local bridge reasoning & human cooldown
+  const TIMEOUT_MS = 180000; // 180s fallback timeout
+  const INACTIVITY_TIMEOUT_MS = 60000; // 60s idle reset on streaming
+  const MAX_REQUEST_TIMEOUT_MS = 300000; // 300s (5m) hard ceiling for giant chapters
   const DEFAULT_MODEL = 'deepseek-chat';
 
   const CustomApiService = {
     DEFAULT_BASE_URL,
     DEFAULT_KEY,
     TIMEOUT_MS,
+    INACTIVITY_TIMEOUT_MS,
+    MAX_REQUEST_TIMEOUT_MS,
     DEFAULT_MODEL,
 
     /**
@@ -184,8 +188,131 @@
     },
 
     /**
+     * Parses an SSE stream from a fetch Response, accumulating content, reasoning, and usage.
+     * Compatible with browser ReadableStream, Node.js streams, and non-streaming JSON fallback.
+     * @param {Response} res
+     * @param {object} [options]
+     * @param {function} [options.onChunk]
+     * @param {function} [options.onActivity]
+     * @returns {Promise<{ content: string, reasoning: string, usage: object|null }>}
+     */
+    async _readSseStream(res, { onChunk, onActivity } = {}) {
+      const contentType = (res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-type') : '') || '';
+
+      // Fallback: If server returned standard JSON payload instead of an event stream
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (typeof onActivity === 'function') onActivity();
+        const choice = data.choices && data.choices[0];
+        const content = (choice && choice.message && choice.message.content) || '';
+        const reasoningRaw = (choice && choice.message && choice.message.reasoning_content) || '';
+        const reasoningCharCount = reasoningRaw.length;
+        if (content && typeof onChunk === 'function') {
+          onChunk({ type: 'content', delta: content, fullText: content });
+        }
+        return { content, reasoning: null, reasoningCharCount, usage: data.usage || null };
+      }
+
+      let content = '';
+      let reasoning = null;
+      let reasoningCharCount = 0;
+      let usage = null;
+
+      const processLine = (line) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(':')) return;
+        if (trimmed === 'data: [DONE]') return;
+        if (trimmed.startsWith('data:')) {
+          const jsonStr = trimmed.replace(/^data:\s*/, '');
+          try {
+            const data = JSON.parse(jsonStr);
+            const delta = data.choices && data.choices[0] && data.choices[0].delta;
+            if (delta) {
+              if (delta.content) {
+                content += delta.content;
+                if (typeof onChunk === 'function') {
+                  onChunk({ type: 'content', delta: delta.content, fullText: content });
+                }
+              }
+              if (delta.reasoning_content) {
+                // Count characters for token calculation, but discard reasoning text
+                reasoningCharCount += delta.reasoning_content.length;
+                if (typeof onChunk === 'function') {
+                  onChunk({ type: 'reasoning', delta: delta.reasoning_content });
+                }
+              }
+            }
+            if (data.usage) {
+              usage = data.usage;
+            }
+          } catch (e) {
+            // Incomplete or non-JSON chunk, ignore
+          }
+        }
+      };
+
+      if (res.body && typeof res.body.getReader === 'function') {
+        const reader = res.body.getReader();
+        const decoder = new (typeof TextDecoder !== 'undefined' ? TextDecoder : require('util').TextDecoder)('utf-8');
+        let buffer = '';
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (typeof onActivity === 'function') onActivity();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              processLine(line);
+            }
+          }
+
+          if (buffer.trim()) {
+            processLine(buffer);
+          }
+        } finally {
+          if (reader && typeof reader.releaseLock === 'function') {
+            reader.releaseLock();
+          }
+        }
+      } else if (res.body && typeof res.body[Symbol.asyncIterator] === 'function') {
+        const decoder = new (typeof TextDecoder !== 'undefined' ? TextDecoder : require('util').TextDecoder)('utf-8');
+        let buffer = '';
+
+        for await (const chunk of res.body) {
+          if (typeof onActivity === 'function') onActivity();
+          const str = typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true });
+          buffer += str;
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            processLine(line);
+          }
+        }
+
+        if (buffer.trim()) {
+          processLine(buffer);
+        }
+      } else {
+        const text = await res.text();
+        if (typeof onActivity === 'function') onActivity();
+        const lines = text.split('\n');
+        for (const line of lines) {
+          processLine(line);
+        }
+      }
+
+      return { content, reasoning: null, reasoningCharCount, usage };
+    },
+
+    /**
      * Translates raw chapter text using an OpenAI-compatible /v1/chat/completions endpoint.
-     * Supports DeepSeek-R1 / DeepThink chain-of-thought reasoning extraction.
+     * Supports streaming (stream: true) and DeepSeek-R1 / DeepThink chain-of-thought reasoning extraction.
      * @param {object} params
      * @param {string} [params.baseUrl]
      * @param {string} [params.apiKey]
@@ -193,9 +320,11 @@
      * @param {string} params.rawText
      * @param {string} [params.model='deepseek-chat']
      * @param {number} [params.temperature=0.7]
+     * @param {boolean} [params.stream=true]
+     * @param {function} [params.onChunk] Callback receiving streaming deltas
      * @returns {Promise<{ translatedText: string, reasoningText?: string, modelUsed: string, usage?: object, costInfo: object, isCustom: boolean, isLocalBridge: boolean }>}
      */
-    async translateChapter({ baseUrl, apiKey, prompt, rawText, model = DEFAULT_MODEL, temperature = 0.7 }) {
+    async translateChapter({ baseUrl, apiKey, prompt, rawText, model = DEFAULT_MODEL, temperature = 0.7, stream = true, onChunk, signal }) {
       if (!rawText || !rawText.trim()) {
         throw new Error('Chapter text to translate is empty.');
       }
@@ -210,16 +339,33 @@
         'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      if (signal) {
+        if (signal.aborted) throw new Error('Translation cancelled by user.');
+        signal.addEventListener('abort', () => controller.abort(new Error('UserCancelled')));
+      }
+      let inactivityTimer = null;
+      let maxTimer = null;
+
+      const resetInactivity = () => {
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(() => {
+          controller.abort(new Error('InactivityTimeout'));
+        }, INACTIVITY_TIMEOUT_MS);
+      };
 
       try {
+        resetInactivity();
+        maxTimer = setTimeout(() => {
+          controller.abort(new Error('MaxDurationTimeout'));
+        }, MAX_REQUEST_TIMEOUT_MS);
+
         const payload = {
           model: activeModel,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: rawText }
           ],
-          stream: false,
+          stream: stream !== false,
           temperature: typeof temperature === 'number' ? temperature : 0.7
         };
 
@@ -228,15 +374,16 @@
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${cleanKey}`,
-            'Accept': 'application/json'
+            'Accept': 'text/event-stream, application/json'
           },
           body: JSON.stringify(payload),
           signal: controller.signal
         });
 
-        clearTimeout(timeoutId);
-
         if (!res.ok) {
+          if (inactivityTimer) clearTimeout(inactivityTimer);
+          if (maxTimer) clearTimeout(maxTimer);
+
           if (res.status === 401) {
             throw new Error('Custom API: Invalid or unauthorized key (401).');
           } else if (res.status === 502) {
@@ -257,18 +404,24 @@
           throw new Error(`Custom API error (${res.status}): ${errMsg}`);
         }
 
-        const data = await res.json();
-        const choice = data.choices && data.choices[0];
-        const content = choice && choice.message && choice.message.content;
-        const reasoningContent = choice && choice.message && choice.message.reasoning_content;
+        const { content, reasoning, reasoningCharCount, usage } = await this._readSseStream(res, {
+          onChunk,
+          onActivity: resetInactivity
+        });
 
         if (!content || !content.trim()) {
           throw new Error('Custom API returned an empty translation response.');
         }
 
-        const promptTokens = data.usage?.prompt_tokens || 0;
-        const completionTokens = data.usage?.completion_tokens || 0;
-        const totalTokens = data.usage?.total_tokens || (promptTokens + completionTokens);
+        const promptTokens = usage?.prompt_tokens || Math.max(1, Math.round((systemPrompt.length + rawText.length) / 3.5));
+        const completionTokens = usage?.completion_tokens || Math.max(1, Math.round((content.length + (reasoningCharCount || 0)) / 3.5));
+        const totalTokens = usage?.total_tokens || (promptTokens + completionTokens);
+
+        const synthesizedUsage = usage || {
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: totalTokens
+        };
 
         const costInfo = {
           costUSD: 0,
@@ -287,19 +440,30 @@
 
         return {
           translatedText: content.trim(),
-          reasoningText: reasoningContent ? reasoningContent.trim() : null,
+          reasoningText: null, // Discarded: deepthink reasoning process is not saved
           modelUsed: activeModel,
-          usage: data.usage || null,
+          usage: synthesizedUsage,
           costInfo,
           isCustom: true,
           isLocalBridge: isLocal
         };
       } catch (err) {
-        clearTimeout(timeoutId);
-        if (err.name === 'AbortError') {
+        if (signal?.aborted || err.message === 'UserCancelled' || controller.signal.reason?.message === 'UserCancelled') {
+          throw new Error('Translation cancelled by user.');
+        }
+        if (err.name === 'AbortError' || err.message === 'InactivityTimeout' || err.message === 'MaxDurationTimeout') {
+          if (controller.signal.reason?.message === 'InactivityTimeout' || err.message === 'InactivityTimeout') {
+            throw new Error(`Custom API translation timed out: no data received for ${INACTIVITY_TIMEOUT_MS / 1000} seconds.`);
+          }
+          if (controller.signal.reason?.message === 'MaxDurationTimeout' || err.message === 'MaxDurationTimeout') {
+            throw new Error(`Custom API translation exceeded maximum limit of ${MAX_REQUEST_TIMEOUT_MS / 1000} seconds.`);
+          }
           throw new Error(`Custom API translation request timed out after ${TIMEOUT_MS / 1000} seconds.`);
         }
         throw err;
+      } finally {
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        if (maxTimer) clearTimeout(maxTimer);
       }
     }
   };
