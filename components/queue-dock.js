@@ -12,6 +12,41 @@
     );
   }
 
+  function renderProgressRing(percent, size = 32, strokeWidth = 3, showText = true) {
+    const pct = Math.max(0, Math.min(100, Math.round(percent || 0)));
+    const radius = (size - strokeWidth) / 2;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (pct / 100) * circumference;
+
+    return `
+      <div class="relative flex items-center justify-center flex-shrink-0" style="width: ${size}px; height: ${size}px;">
+        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="-rotate-90">
+          <circle
+            cx="${size / 2}"
+            cy="${size / 2}"
+            r="${radius}"
+            fill="none"
+            stroke="#334155"
+            stroke-width="${strokeWidth}"
+          />
+          <circle
+            cx="${size / 2}"
+            cy="${size / 2}"
+            r="${radius}"
+            fill="none"
+            stroke="#6366f1"
+            stroke-width="${strokeWidth}"
+            stroke-linecap="round"
+            stroke-dasharray="${circumference.toFixed(1)}"
+            stroke-dashoffset="${offset.toFixed(1)}"
+            style="transition: stroke-dashoffset 0.3s ease;"
+          />
+        </svg>
+        ${showText ? `<span class="absolute text-[9px] font-mono font-bold text-indigo-200 select-none">${pct}%</span>` : ''}
+      </div>
+    `;
+  }
+
   class QueueDock {
     constructor() {
       const isPopup = checkIsPopup();
@@ -92,21 +127,24 @@
 
       // Collapsed Pill View (Compact, 100% solid/opaque, non-obtrusive)
       if (!this.isExpanded) {
+        const percent = active?.progress?.percent !== undefined ? active.progress.percent : (active ? 10 : 0);
         const activeText = isPaused
           ? '⏸ Paused'
-          : (active ? `Downloading Ch. ${active.chapterNumber}` : `${total} Queued`);
+          : (active ? `Ch. ${active.chapterNumber} (${percent}%)` : `${total} Queued`);
 
         this.container.innerHTML = `
           <button
             type="button"
             id="queue-dock-expand-btn"
-            class="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-900 border border-indigo-500 shadow-2xl text-white text-xs font-semibold hover:border-indigo-400 hover:bg-slate-800 transition cursor-pointer select-none"
+            class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-indigo-500 shadow-2xl text-white text-xs font-semibold hover:border-indigo-400 hover:bg-slate-800 transition cursor-pointer select-none"
             title="Click to expand Download Queue details"
           >
-            <span class="flex h-2 w-2 relative flex-shrink-0">
-              <span class="${isPaused ? 'bg-amber-400' : 'animate-ping bg-indigo-400'} absolute inline-flex h-full w-full rounded-full opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-indigo-500'}"></span>
-            </span>
+            ${active && !isPaused ? renderProgressRing(percent, 20, 2.5, false) : `
+              <span class="flex h-2 w-2 relative flex-shrink-0">
+                <span class="${isPaused ? 'bg-amber-400' : 'animate-ping bg-indigo-400'} absolute inline-flex h-full w-full rounded-full opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-indigo-500'}"></span>
+              </span>
+            `}
             <span class="truncate max-w-[150px] sm:max-w-[200px] text-slate-100">${activeText}</span>
             <span class="px-1.5 py-0.5 rounded-md bg-indigo-950 text-indigo-300 border border-indigo-500/40 text-[10px] font-mono font-bold flex-shrink-0">
               ${total}
@@ -134,32 +172,38 @@
       let activeHtml = '';
       if (active) {
         const modelName = active.options?.translation?.model || 'deepseek';
+        const percent = active.progress?.percent !== undefined ? active.progress.percent : 10;
+        const progressText = active.progress?.text || (active.progress?.phase === 'translating' ? `Translating (${percent}%)...` : 'Translating...');
+
         activeHtml = `
-          <div class="p-2.5 sm:p-3 rounded-xl bg-slate-800 border border-indigo-500 flex items-center justify-between gap-2.5 shadow-md">
-            <div class="flex items-center gap-2.5 min-w-0 flex-1">
-              <svg class="animate-spin h-4 w-4 text-indigo-400 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-              </svg>
-              <div class="flex flex-col min-w-0">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="text-xs font-bold text-white truncate">${active.chapterTitle || 'Chapter ' + active.chapterNumber}</span>
-                  <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/40">${modelName}</span>
+          <div class="p-2.5 sm:p-3 rounded-xl bg-slate-800 border border-indigo-500 flex flex-col gap-2 shadow-md">
+            <div class="flex items-center justify-between gap-2.5">
+              <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                ${renderProgressRing(percent, 34, 3.5, true)}
+                <div class="flex flex-col min-w-0">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-xs font-bold text-white truncate">${active.chapterTitle || 'Chapter ' + active.chapterNumber}</span>
+                    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/40">${modelName}</span>
+                  </div>
+                  <span class="text-[11px] text-indigo-300 truncate font-medium">${active.novelTitle || 'Novel'} • ${progressText}</span>
                 </div>
-                <span class="text-[11px] text-indigo-300 truncate font-medium">${active.novelTitle || 'Novel'} • Translating...</span>
               </div>
+              <button
+                type="button"
+                data-cancel-id="${active.id}"
+                class="queue-item-cancel-btn p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-700 transition cursor-pointer flex-shrink-0"
+                title="Cancel active chapter and skip to next"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
             </div>
-            <button
-              type="button"
-              data-cancel-id="${active.id}"
-              class="queue-item-cancel-btn p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-700 transition cursor-pointer flex-shrink-0"
-              title="Cancel active chapter and skip to next"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
+            <!-- Mini progress track under active task -->
+            <div class="w-full bg-slate-900 rounded-full h-1 overflow-hidden border border-slate-700/50">
+              <div class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: ${percent}%;"></div>
+            </div>
           </div>
         `;
       } else if (isPaused) {
@@ -318,10 +362,13 @@
   }
 
   // Export to global scope
+  QueueDockInstance.renderProgressRing = renderProgressRing;
   if (typeof window !== 'undefined') {
     window.QueueDock = QueueDockInstance;
+    window.renderProgressRing = renderProgressRing;
   }
   if (typeof module !== 'undefined' && module.exports) {
+    QueueDock.renderProgressRing = renderProgressRing;
     module.exports = QueueDock;
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this);

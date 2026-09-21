@@ -687,6 +687,10 @@ const StorageService = {
     );
     const chapterSlugOrNumber = catalogItem && catalogItem.slug ? catalogItem.slug : chapterNumber;
 
+    if (options && typeof options.onProgress === 'function') {
+      options.onProgress({ phase: 'fetching', percent: 5, text: 'Fetching raw chapter...' });
+    }
+
     const content = await provider.fetchChapterContent(novel.slug, chapterSlugOrNumber);
     if (!content || !content.rawText) {
       throw new Error(`Failed to extract chapter content for Chapter ${chapterNumber}`);
@@ -706,6 +710,10 @@ const StorageService = {
     if (options && options.translation && options.translation.enabled) {
       let { apiKey, prompt, model, provider, baseUrl } = options.translation;
       let cleanKey = (apiKey || '').trim();
+
+      if (options && typeof options.onProgress === 'function') {
+        options.onProgress({ phase: 'connecting', percent: 10, text: 'Connecting to AI...' });
+      }
 
       const ai = (typeof window !== 'undefined' && window.AIService) ||
         (typeof self !== 'undefined' && self.AIService) ||
@@ -750,6 +758,12 @@ const StorageService = {
       const effectivePrompt = prompt || novel.translationPrompt ||
         'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
+      // Estimate expected translated character count (CJK: ~2.8x, Latin: ~1.1x)
+      const rawLen = content.rawText ? content.rawText.length : 1000;
+      const isCJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\uac00-\ud7af]/.test(content.rawText || '');
+      const expansionRatio = isCJK ? 2.8 : 1.1;
+      const expectedChars = Math.max(100, Math.round(rawLen * expansionRatio));
+
       const result = await client.translateChapter({
         apiKey: cleanKey,
         prompt: effectivePrompt,
@@ -758,7 +772,37 @@ const StorageService = {
         provider: activeProvider,
         baseUrl: effectiveBaseUrl,
         signal: options.signal,
-        onChunk: options.onChunk
+        onChunk: (chunk) => {
+          if (options && typeof options.onChunk === 'function') {
+            options.onChunk(chunk);
+          }
+          if (options && typeof options.onProgress === 'function' && chunk) {
+            if (chunk.type === 'reasoning') {
+              options.onProgress({
+                phase: 'reasoning',
+                percent: 12,
+                text: 'DeepThinking...'
+              });
+            } else if (chunk.type === 'content') {
+              const currentChars = (chunk.fullText || '').length;
+              const ratio = currentChars / expectedChars;
+              let pct;
+              if (ratio <= 1.0) {
+                pct = Math.round(10 + ratio * 82); // 10% to 92%
+              } else {
+                const overflow = (currentChars - expectedChars) / (expectedChars * 0.5);
+                pct = Math.min(98, Math.round(92 + (1 - Math.exp(-overflow)) * 6)); // 92% to 98%
+              }
+              options.onProgress({
+                phase: 'translating',
+                percent: Math.max(12, Math.min(98, pct)),
+                text: `Translating (${pct}%)...`,
+                currentChars,
+                expectedChars
+              });
+            }
+          }
+        }
       });
 
       finalText = result.translatedText;
@@ -768,6 +812,12 @@ const StorageService = {
       modelUsed = result.modelUsed;
       translationCost = result.costInfo || null;
       translationUsage = result.usage || null;
+    } else if (options && typeof options.onProgress === 'function') {
+      options.onProgress({ phase: 'saving', percent: 80, text: 'Saving raw chapter...' });
+    }
+
+    if (options && typeof options.onProgress === 'function') {
+      options.onProgress({ phase: 'saving', percent: 99, text: 'Saving chapter...' });
     }
 
     const saved = await this.saveChapter({
@@ -784,6 +834,10 @@ const StorageService = {
       translationCost: translationCost,
       translationUsage: translationUsage
     });
+
+    if (options && typeof options.onProgress === 'function') {
+      options.onProgress({ phase: 'completed', percent: 100, text: 'Completed' });
+    }
 
     return saved;
   },

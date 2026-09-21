@@ -565,16 +565,43 @@
           throw new Error('StorageService is not available to download chapter.');
         }
 
+        let lastNotifyTime = 0;
+        let lastNotifiedPercent = -1;
+        let lastSyncTime = 0;
+
         const taskOptions = {
           ...(task.options || {}),
           signal: abortController.signal,
-          onChunk: (chunk) => {
-            if (chunk && chunk.type === 'content' && (!task.progress || task.progress.phase !== 'translating')) {
-              task.progress = {
-                phase: 'translating',
-                text: 'Translating chapter...'
-              };
+          onProgress: (prog) => {
+            if (!prog) return;
+            task.progress = {
+              phase: prog.phase || 'translating',
+              percent: prog.percent !== undefined ? prog.percent : (task.progress?.percent || 0),
+              text: prog.text || 'Processing...',
+              currentChars: prog.currentChars,
+              expectedChars: prog.expectedChars
+            };
+
+            const now = Date.now();
+            if (
+              now - lastNotifyTime > 150 ||
+              Math.abs((prog.percent || 0) - lastNotifiedPercent) >= 5 ||
+              prog.percent >= 99 ||
+              prog.percent <= 10
+            ) {
+              lastNotifyTime = now;
+              lastNotifiedPercent = prog.percent || 0;
+              this._notifySubscribers();
+            }
+
+            if (now - lastSyncTime > 450 || prog.percent >= 99) {
+              lastSyncTime = now;
               this._sync();
+            }
+          },
+          onChunk: (chunk) => {
+            if (task.options && typeof task.options.onChunk === 'function') {
+              task.options.onChunk(chunk);
             }
           }
         };

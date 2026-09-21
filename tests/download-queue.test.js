@@ -43,9 +43,13 @@ const mockStorageService = {
       throw new Error(`Simulated download error for chapter ${chNum}`);
     }
 
-    // Simulate chunk streaming
+    // Simulate chunk streaming and progress
     if (options && typeof options.onChunk === 'function') {
-      options.onChunk({ type: 'content', text: 'Hello' });
+      options.onChunk({ type: 'content', text: 'Hello', fullText: 'Hello' });
+    }
+    if (options && typeof options.onProgress === 'function') {
+      options.onProgress({ phase: 'fetching', percent: 5, text: 'Fetching raw chapter...' });
+      options.onProgress({ phase: 'translating', percent: 45, text: 'Translating (45%)...' });
     }
 
     // Simulate async execution with delay and abort checking
@@ -482,6 +486,37 @@ async function runTests() {
     assert.strictEqual(downloadedTasks[0].chapterNumber, 90);
     assert.strictEqual(downloadedTasks[1].chapterNumber, 91);
     assert.strictEqual(downloadedTasks[2].chapterNumber, 92);
+  });
+
+  // 12. Streaming progress estimation and circular percentage test
+  await test('Task progress updates with estimated percentage during streaming translation', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    mockDelayMs = 40;
+
+    let receivedPercentages = [];
+    const unsub = DownloadQueueService.subscribe((state) => {
+      if (state.activeTask && state.activeTask.progress) {
+        receivedPercentages.push(state.activeTask.progress.percent);
+      }
+    });
+
+    await DownloadQueueService.enqueue({ novelId: 'novel-k', chapterNumber: 99 });
+
+    await new Promise((resolve) => {
+      const waitUnsub = DownloadQueueService.subscribe((s) => {
+        if (s.totalCount === 0 && !s.isProcessing) {
+          waitUnsub();
+          resolve();
+        }
+      });
+    });
+
+    unsub();
+
+    assert(receivedPercentages.length > 0, 'Should receive progress events with percent');
+    assert(receivedPercentages.includes(45), 'Should have recorded 45% progress milestone');
+    assert.strictEqual(downloadedTasks.length, 1, 'Chapter should be downloaded');
   });
 
   console.log(`\n🎉 All ${passedCount} DownloadQueueService tests passed!`);

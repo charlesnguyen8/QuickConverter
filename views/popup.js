@@ -820,15 +820,23 @@ document.addEventListener('DOMContentLoaded', async () => {
           : null;
 
         if (qStatus && qStatus.status === 'processing') {
-          const activeBtn = document.createElement('button');
-          activeBtn.type = 'button';
-          activeBtn.className = 'p-1.5 rounded text-indigo-300 bg-indigo-600/40 hover:bg-rose-600 hover:text-white transition cursor-pointer flex-shrink-0 flex items-center justify-center';
-          activeBtn.title = 'Translating chapter... Click to cancel.';
-          activeBtn.innerHTML = `
+          const percent = qStatus.progress?.percent !== undefined ? qStatus.progress.percent : 10;
+          const ringHtml = (typeof window !== 'undefined' && typeof window.renderProgressRing === 'function')
+            ? window.renderProgressRing(percent, 16, 2.5, false)
+            : `
             <svg class="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-            </svg>
+            </svg>`;
+
+          const activeBtn = document.createElement('button');
+          activeBtn.type = 'button';
+          activeBtn.className = 'px-1.5 py-1 rounded text-[10px] font-mono font-semibold text-indigo-200 bg-indigo-600/40 hover:bg-rose-600 hover:text-white transition cursor-pointer flex-shrink-0 flex items-center gap-1 group/pactive';
+          activeBtn.title = `Translating (${percent}%)... Click to cancel.`;
+          activeBtn.innerHTML = `
+            ${ringHtml}
+            <span class="group-hover/pactive:hidden">${percent}%</span>
+            <span class="hidden group-hover/pactive:inline font-bold">✕</span>
           `;
           activeBtn.addEventListener('click', async (e) => {
             e.stopPropagation();

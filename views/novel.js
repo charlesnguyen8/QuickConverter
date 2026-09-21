@@ -753,12 +753,19 @@ document.addEventListener('DOMContentLoaded', async () => {
           activeBtn.type = 'button';
           activeBtn.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-rose-600 transition shadow-sm cursor-pointer group/activebtn';
           activeBtn.title = 'Currently downloading & translating. Click to cancel and skip to next.';
-          activeBtn.innerHTML = `
+
+          const percent = qStatus.progress?.percent !== undefined ? qStatus.progress.percent : 10;
+          const ringHtml = (typeof window !== 'undefined' && typeof window.renderProgressRing === 'function')
+            ? window.renderProgressRing(percent, 16, 2.5, false)
+            : `
             <svg class="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-            </svg>
-            <span class="group-hover/activebtn:hidden">Translating...</span>
+            </svg>`;
+
+          activeBtn.innerHTML = `
+            ${ringHtml}
+            <span class="group-hover/activebtn:hidden">${percent}% Translating...</span>
             <span class="hidden group-hover/activebtn:inline font-bold">Cancel ✕</span>
           `;
 
