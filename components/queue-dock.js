@@ -39,7 +39,7 @@
             stroke-linecap="round"
             stroke-dasharray="${circumference.toFixed(1)}"
             stroke-dashoffset="${offset.toFixed(1)}"
-            style="transition: stroke-dashoffset 0.3s ease;"
+            style="transition: stroke-dashoffset 0.8s ease;"
           />
         </svg>
         ${showText ? `<span class="absolute text-[9px] font-mono font-bold text-indigo-200 select-none">${pct}%</span>` : ''}
@@ -56,6 +56,10 @@
       this.container = null;
       this._unsub = null;
       this._mounted = false;
+      this.lastActiveId = null;
+      this.lastTotal = -1;
+      this.lastIsPaused = null;
+      this.lastIsExpanded = null;
     }
 
     /**
@@ -97,29 +101,106 @@
         this.container.parentNode.removeChild(this.container);
       }
       this._mounted = false;
+      this.lastActiveId = null;
+      this.lastTotal = -1;
+      this.lastIsPaused = null;
+      this.lastIsExpanded = null;
+    }
+
+    updateProgressInPlace(state) {
+      if (!this.container) return false;
+      const active = state?.activeTask;
+      if (!active) return false;
+
+      const percent = active.progress?.percent !== undefined ? active.progress.percent : 10;
+      const progressText = active.progress?.text || (active.progress?.phase === 'translating' ? `Translating (${percent}%)...` : 'Translating...');
+
+      if (!this.isExpanded) {
+        // Collapsed Pill
+        const ringEl = this.container.querySelector('#queue-dock-pill-ring');
+        if (ringEl) {
+          const circle = ringEl.querySelector('circle[stroke="#6366f1"]');
+          if (circle) {
+            const size = 20, strokeWidth = 2.5;
+            const radius = (size - strokeWidth) / 2;
+            const circumference = 2 * Math.PI * radius;
+            const offset = circumference - (Math.max(0, Math.min(100, percent)) / 100) * circumference;
+            circle.style.strokeDashoffset = offset.toFixed(1);
+          }
+        }
+        const textEl = this.container.querySelector('#queue-dock-pill-text');
+        if (textEl) {
+          textEl.textContent = `Ch. ${active.chapterNumber} (${percent}%)`;
+        }
+        return true;
+      } else {
+        // Expanded Card
+        const ringEl = this.container.querySelector('#queue-dock-expanded-ring');
+        if (ringEl) {
+          const circle = ringEl.querySelector('circle[stroke="#6366f1"]');
+          if (circle) {
+            const size = 34, strokeWidth = 3.5;
+            const radius = (size - strokeWidth) / 2;
+            const circumference = 2 * Math.PI * radius;
+            const offset = circumference - (Math.max(0, Math.min(100, percent)) / 100) * circumference;
+            circle.style.strokeDashoffset = offset.toFixed(1);
+          }
+          const textEl = ringEl.querySelector('span');
+          if (textEl) {
+            textEl.textContent = `${percent}%`;
+          }
+        }
+        const subtitleEl = this.container.querySelector('#queue-dock-expanded-subtitle');
+        if (subtitleEl) {
+          subtitleEl.textContent = `${active.novelTitle || 'Novel'} • ${progressText}`;
+        }
+        const barEl = this.container.querySelector('#queue-dock-expanded-bar');
+        if (barEl) {
+          barEl.style.width = `${percent}%`;
+        }
+        return true;
+      }
     }
 
     render(state) {
       if (!this.container) return;
 
-      const active = state.activeTask;
-      const queue = state.queue || [];
+      const active = state?.activeTask;
+      const queue = state?.queue || [];
       const total = (active ? 1 : 0) + queue.length;
-      const isPaused = !!state.isPaused;
+      const isPaused = !!state?.isPaused;
       const isPopup = checkIsPopup();
-
-      // Broadcast custom event so active pages (e.g. novel.js) can refresh row buttons
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('quickconverter:queue_state', { detail: state }));
-      }
+      const currentActiveId = active?.id || null;
 
       // Hide dock completely when queue is empty
       if (total === 0) {
         this.container.classList.add('opacity-0', 'pointer-events-none');
         this.container.classList.remove('opacity-100', 'pointer-events-auto');
         this.container.innerHTML = '';
+        this.lastActiveId = null;
+        this.lastTotal = 0;
+        this.lastIsPaused = false;
+        this.lastIsExpanded = this.isExpanded;
         return;
       }
+
+      // In-place progress update check: skip DOM rebuilding if structure is unchanged
+      if (
+        currentActiveId &&
+        currentActiveId === this.lastActiveId &&
+        total === this.lastTotal &&
+        isPaused === this.lastIsPaused &&
+        this.isExpanded === this.lastIsExpanded
+      ) {
+        if (this.updateProgressInPlace(state)) {
+          return;
+        }
+      }
+
+      this.lastActiveId = currentActiveId;
+      this.lastTotal = total;
+      this.lastIsPaused = isPaused;
+      this.lastIsExpanded = this.isExpanded;
 
       // Show dock
       this.container.classList.remove('opacity-0', 'pointer-events-none');
@@ -139,13 +220,15 @@
             class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-indigo-500 shadow-2xl text-white text-xs font-semibold hover:border-indigo-400 hover:bg-slate-800 transition cursor-pointer select-none"
             title="Click to expand Download Queue details"
           >
-            ${active && !isPaused ? renderProgressRing(percent, 20, 2.5, false) : `
-              <span class="flex h-2 w-2 relative flex-shrink-0">
-                <span class="${isPaused ? 'bg-amber-400' : 'animate-ping bg-indigo-400'} absolute inline-flex h-full w-full rounded-full opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-indigo-500'}"></span>
-              </span>
-            `}
-            <span class="truncate max-w-[150px] sm:max-w-[200px] text-slate-100">${activeText}</span>
+            <div id="queue-dock-pill-ring" class="flex items-center justify-center flex-shrink-0">
+              ${active && !isPaused ? renderProgressRing(percent, 20, 2.5, false) : `
+                <span class="flex h-2 w-2 relative flex-shrink-0">
+                  <span class="${isPaused ? 'bg-amber-400' : 'animate-ping bg-indigo-400'} absolute inline-flex h-full w-full rounded-full opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-indigo-500'}"></span>
+                </span>
+              `}
+            </div>
+            <span id="queue-dock-pill-text" class="truncate max-w-[150px] sm:max-w-[200px] text-slate-100">${activeText}</span>
             <span class="px-1.5 py-0.5 rounded-md bg-indigo-950 text-indigo-300 border border-indigo-500/40 text-[10px] font-mono font-bold flex-shrink-0">
               ${total}
             </span>
@@ -179,13 +262,15 @@
           <div class="p-2.5 sm:p-3 rounded-xl bg-slate-800 border border-indigo-500 flex flex-col gap-2 shadow-md">
             <div class="flex items-center justify-between gap-2.5">
               <div class="flex items-center gap-2.5 min-w-0 flex-1">
-                ${renderProgressRing(percent, 34, 3.5, true)}
+                <div id="queue-dock-expanded-ring" class="flex items-center justify-center flex-shrink-0">
+                  ${renderProgressRing(percent, 34, 3.5, true)}
+                </div>
                 <div class="flex flex-col min-w-0">
                   <div class="flex items-center gap-1.5 flex-wrap">
                     <span class="text-xs font-bold text-white truncate">${active.chapterTitle || 'Chapter ' + active.chapterNumber}</span>
                     <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/40">${modelName}</span>
                   </div>
-                  <span class="text-[11px] text-indigo-300 truncate font-medium">${active.novelTitle || 'Novel'} • ${progressText}</span>
+                  <span id="queue-dock-expanded-subtitle" class="text-[11px] text-indigo-300 truncate font-medium">${active.novelTitle || 'Novel'} • ${progressText}</span>
                 </div>
               </div>
               <button
@@ -202,7 +287,7 @@
             </div>
             <!-- Mini progress track under active task -->
             <div class="w-full bg-slate-900 rounded-full h-1 overflow-hidden border border-slate-700/50">
-              <div class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: ${percent}%;"></div>
+              <div id="queue-dock-expanded-bar" class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: ${percent}%;"></div>
             </div>
           </div>
         `;

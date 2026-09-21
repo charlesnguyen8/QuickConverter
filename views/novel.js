@@ -1176,8 +1176,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const percent = activeTask.progress?.percent !== undefined ? activeTask.progress.percent : 10;
       const ringContainer = btn.querySelector('.active-progress-ring-container');
-      if (ringContainer && typeof window.renderProgressRing === 'function') {
-        ringContainer.innerHTML = window.renderProgressRing(percent, 16, 2.5, false);
+      if (ringContainer) {
+        const circle = ringContainer.querySelector('circle[stroke="#6366f1"]');
+        if (circle) {
+          const size = 16, strokeWidth = 2.5;
+          const radius = (size - strokeWidth) / 2;
+          const circumference = 2 * Math.PI * radius;
+          const offset = circumference - (Math.max(0, Math.min(100, percent)) / 100) * circumference;
+          circle.style.strokeDashoffset = offset.toFixed(1);
+        } else if (typeof window.renderProgressRing === 'function') {
+          ringContainer.innerHTML = window.renderProgressRing(percent, 16, 2.5, false);
+        }
       }
       const textEl = btn.querySelector('.active-progress-text');
       if (textEl) {
@@ -1232,10 +1241,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     }
-
-    window.addEventListener('quickconverter:queue_state', (e) => {
-      handleQueueChange(e.detail);
-    });
 
     const queueService = (typeof window !== 'undefined' && window.DownloadQueueService);
     if (queueService && typeof queueService.subscribe === 'function') {

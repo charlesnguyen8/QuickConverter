@@ -74,6 +74,12 @@
             this.isPaused = !!msg.state.isPaused;
             this.isProcessing = !!msg.state.isProcessing;
             this._notifySubscribers();
+          } else if (msg && msg.action === 'QUEUE_PROGRESS' && this.activeTask) {
+            // Lightweight in-place progress update without storage disk serialization overhead
+            if (this.activeTask.id === msg.taskId || Number(this.activeTask.chapterNumber) === Number(msg.chapterNumber)) {
+              this.activeTask.progress = msg.progress;
+              this._notifySubscribers();
+            }
           }
         });
       }
@@ -617,20 +623,37 @@
             };
 
             const now = Date.now();
+            const pct = prog.percent !== undefined ? prog.percent : 0;
+            // Throttle progress updates to at most once per second (1000ms),
+            // or on completion (>= 99%), or on large milestone jumps (>= 20% in tests/fast steps),
+            // or on initial notification
             if (
-              now - lastNotifyTime > 150 ||
-              Math.abs((prog.percent || 0) - lastNotifiedPercent) >= 5 ||
-              prog.percent >= 99 ||
-              prog.percent <= 10
+              now - lastNotifyTime >= 1000 ||
+              pct >= 99 ||
+              Math.abs(pct - lastNotifiedPercent) >= 20 ||
+              lastNotifiedPercent === -1
             ) {
               lastNotifyTime = now;
-              lastNotifiedPercent = prog.percent || 0;
-              this._notifySubscribers();
-            }
+              lastNotifiedPercent = pct;
 
-            if (now - lastSyncTime > 450 || prog.percent >= 99) {
-              lastSyncTime = now;
-              this._sync();
+              // 1. In-memory notification for local subscribers
+              this._notifySubscribers();
+
+              // 2. In Chrome extension, broadcast lightweight progress IPC message without storage disk churn
+              if (isExtension && isExecutionOwner && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+                try {
+                  chrome.runtime.sendMessage({
+                    action: 'QUEUE_PROGRESS',
+                    taskId: task.id,
+                    chapterNumber: task.chapterNumber,
+                    progress: task.progress
+                  }, () => {
+                    if (chrome.runtime.lastError) {
+                      // Harmless when no UI views are open
+                    }
+                  });
+                } catch (e) {}
+              }
             }
           },
           onChunk: (chunk) => {
