@@ -834,9 +834,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           activeBtn.type = 'button';
           activeBtn.className = 'px-1.5 py-1 rounded text-[10px] font-mono font-semibold text-indigo-200 bg-indigo-600/40 hover:bg-rose-600 hover:text-white transition cursor-pointer flex-shrink-0 flex items-center gap-1 group/pactive';
           activeBtn.title = `Translating (${percent}%)... Click to cancel.`;
+          activeBtn.dataset.activeChapter = String(chNum);
           activeBtn.innerHTML = `
-            ${ringHtml}
-            <span class="group-hover/pactive:hidden">${percent}%</span>
+            <span class="popup-active-ring-container flex items-center justify-center">${ringHtml}</span>
+            <span class="popup-active-text group-hover/pactive:hidden">${percent}%</span>
             <span class="hidden group-hover/pactive:inline font-bold">✕</span>
           `;
           activeBtn.addEventListener('click', async (e) => {
@@ -1411,8 +1412,51 @@ document.addEventListener('DOMContentLoaded', async () => {
   let isUpdatingPopupQueue = false;
   let hasPendingPopupUpdate = false;
   let hadActivePopupTask = false;
+  let lastPopupActiveTaskId = null;
+  let lastPopupQueueCount = -1;
+  let lastPopupIsPaused = null;
+
+  function updatePopupActiveProgressInPlace(activeTask) {
+    if (!activeTask || !popupChapterList) return false;
+    const chNum = Number(activeTask.chapterNumber);
+    const btn = popupChapterList.querySelector(`button[data-active-chapter="${chNum}"]`);
+    if (!btn) return false;
+
+    const percent = activeTask.progress?.percent !== undefined ? activeTask.progress.percent : 10;
+    const ringContainer = btn.querySelector('.popup-active-ring-container');
+    if (ringContainer && typeof window.renderProgressRing === 'function') {
+      ringContainer.innerHTML = window.renderProgressRing(percent, 16, 2.5, false);
+    }
+    const textEl = btn.querySelector('.popup-active-text');
+    if (textEl) {
+      textEl.textContent = `${percent}%`;
+    }
+    btn.title = `Translating (${percent}%)... Click to cancel.`;
+    return true;
+  }
 
   async function handlePopupQueueChange(state) {
+    const currentActiveTaskId = state?.activeTask?.id || null;
+    const currentQueueCount = Array.isArray(state?.queue) ? state.queue.length : 0;
+    const currentIsPaused = !!state?.isPaused;
+
+    // If active task and queue structure are unchanged, update only progress in place!
+    if (
+      currentActiveTaskId &&
+      currentActiveTaskId === lastPopupActiveTaskId &&
+      currentQueueCount === lastPopupQueueCount &&
+      currentIsPaused === lastPopupIsPaused
+    ) {
+      const updated = updatePopupActiveProgressInPlace(state.activeTask);
+      if (updated) {
+        return; // Targeted in-place update with zero DOM rebuilding
+      }
+    }
+
+    lastPopupActiveTaskId = currentActiveTaskId;
+    lastPopupQueueCount = currentQueueCount;
+    lastPopupIsPaused = currentIsPaused;
+
     if (isUpdatingPopupQueue) {
       hasPendingPopupUpdate = true;
       return;

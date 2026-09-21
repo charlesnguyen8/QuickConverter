@@ -754,6 +754,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           activeBtn.type = 'button';
           activeBtn.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-rose-600 transition shadow-sm cursor-pointer group/activebtn';
           activeBtn.title = 'Currently downloading & translating. Click to cancel and skip to next.';
+          activeBtn.dataset.activeChapter = String(chNum);
 
           const percent = qStatus.progress?.percent !== undefined ? qStatus.progress.percent : 10;
           const ringHtml = (typeof window !== 'undefined' && typeof window.renderProgressRing === 'function')
@@ -765,8 +766,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             </svg>`;
 
           activeBtn.innerHTML = `
-            ${ringHtml}
-            <span class="group-hover/activebtn:hidden">${percent}% Translating...</span>
+            <span class="active-progress-ring-container flex items-center justify-center">${ringHtml}</span>
+            <span class="active-progress-text group-hover/activebtn:hidden">${percent}% Translating...</span>
             <span class="hidden group-hover/activebtn:inline font-bold">Cancel ✕</span>
           `;
 
@@ -1163,8 +1164,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     let isUpdatingFromQueue = false;
     let hasPendingQueueUpdate = false;
     let hadActiveTask = false;
+    let lastActiveTaskId = null;
+    let lastQueueCount = -1;
+    let lastIsPaused = null;
+
+    function updateActiveProgressInPlace(activeTask) {
+      if (!activeTask || !chaptersListEl) return false;
+      const chNum = Number(activeTask.chapterNumber);
+      const btn = chaptersListEl.querySelector(`button[data-active-chapter="${chNum}"]`);
+      if (!btn) return false;
+
+      const percent = activeTask.progress?.percent !== undefined ? activeTask.progress.percent : 10;
+      const ringContainer = btn.querySelector('.active-progress-ring-container');
+      if (ringContainer && typeof window.renderProgressRing === 'function') {
+        ringContainer.innerHTML = window.renderProgressRing(percent, 16, 2.5, false);
+      }
+      const textEl = btn.querySelector('.active-progress-text');
+      if (textEl) {
+        textEl.textContent = `${percent}% Translating...`;
+      }
+      return true;
+    }
 
     async function handleQueueChange(state) {
+      const currentActiveTaskId = state?.activeTask?.id || null;
+      const currentQueueCount = Array.isArray(state?.queue) ? state.queue.length : 0;
+      const currentIsPaused = !!state?.isPaused;
+
+      // If active task and queue structure are unchanged, update only progress in place!
+      if (
+        currentActiveTaskId &&
+        currentActiveTaskId === lastActiveTaskId &&
+        currentQueueCount === lastQueueCount &&
+        currentIsPaused === lastIsPaused
+      ) {
+        const updated = updateActiveProgressInPlace(state.activeTask);
+        if (updated) {
+          return; // Targeted in-place update with zero DOM rebuilding or hover blinking
+        }
+      }
+
+      // Active task, queue items, or paused state transitioned -> Full re-render needed
+      lastActiveTaskId = currentActiveTaskId;
+      lastQueueCount = currentQueueCount;
+      lastIsPaused = currentIsPaused;
+
       if (isUpdatingFromQueue) {
         hasPendingQueueUpdate = true;
         return;
