@@ -12,7 +12,8 @@ const testFiles = [
   'deepseek.test.js',
   'custom-api.test.js',
   'bridge.test.js',
-  'download-queue.test.js'
+  'download-queue.test.js',
+  'add-book.test.js'
 ];
 
 let allPassed = true;

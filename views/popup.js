@@ -1448,6 +1448,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Listen for newly added novels from Add Book modal
+  window.addEventListener('novel-added', async () => {
+    await refreshNovelsList();
+    checkCurrentPageStatus();
+  });
+
   // Initial Load
   await refreshNovelsList();
   checkCurrentPageStatus();
