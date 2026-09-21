@@ -274,8 +274,9 @@ const WetriedtlsProvider = {
     return [];
   },
 
-  async fetchChapterContent(slug, chapterSlugOrNumber) {
+  async fetchChapterContent(slug, chapterSlugOrNumber, options = {}) {
     if (!slug) return null;
+    const fetchSignal = options && options.signal ? options.signal : undefined;
     let chapterSlug = String(chapterSlugOrNumber);
     if (!chapterSlug.startsWith('chapter-')) {
       chapterSlug = `chapter-${chapterSlugOrNumber}`;
@@ -284,7 +285,7 @@ const WetriedtlsProvider = {
     // 1. Fetch directly from API
     try {
       const apiUrl = `https://api.wetriedtls.com/chapter/${slug}/${chapterSlug}`;
-      const resp = await fetch(apiUrl);
+      const resp = await fetch(apiUrl, { signal: fetchSignal });
       if (resp.ok) {
         const json = await resp.json();
         if (json && json.chapter) {
@@ -308,13 +309,14 @@ const WetriedtlsProvider = {
         }
       }
     } catch (e) {
+      if (fetchSignal && fetchSignal.aborted) throw e;
       console.warn('[WeTriedTLS Provider] API fetchChapterContent error, attempting HTML fallback:', e);
     }
 
     // 2. Fallback: Fetch chapter web page HTML and extract
     try {
       const pageUrl = `https://wetriedtls.com/series/${slug}/${chapterSlug}`;
-      const pageResp = await fetch(pageUrl);
+      const pageResp = await fetch(pageUrl, { signal: fetchSignal });
       if (pageResp.ok) {
         const html = await pageResp.text();
         const pMatches = [];

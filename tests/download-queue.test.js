@@ -30,11 +30,13 @@ global.chrome = {
 
 // Mock StorageService
 let downloadedTasks = [];
+let startedTasks = [];
 let mockFailChapter = null;
 let mockDelayMs = 20;
 
 const mockStorageService = {
   async downloadChapter(novelId, chNum, options) {
+    startedTasks.push({ novelId, chapterNumber: Number(chNum) });
     if (options && options.signal && options.signal.aborted) {
       throw new Error('UserCancelled');
     }
@@ -263,14 +265,20 @@ async function runTests() {
   });
 
   // 7. Clear All test
-  await test('Clear All empties waiting queue and immediately aborts active task', async () => {
+  await test('Clear All empties waiting queue and immediately aborts active task without starting next', async () => {
     downloadedTasks = [];
+    startedTasks = [];
     DownloadQueueService.clearAll();
     mockDelayMs = 150;
 
     await DownloadQueueService.enqueue({ novelId: 'novel-f', chapterNumber: 50 });
     await DownloadQueueService.enqueue({ novelId: 'novel-f', chapterNumber: 51 });
     await DownloadQueueService.enqueue({ novelId: 'novel-f', chapterNumber: 52 });
+
+    // Wait a brief tick so Ch 50 is actively downloading
+    await new Promise((r) => setTimeout(r, 20));
+    assert.strictEqual(startedTasks.length, 1, 'Ch 50 should have started');
+    assert.strictEqual(startedTasks[0].chapterNumber, 50, 'Ch 50 was started');
 
     DownloadQueueService.clearAll();
 
@@ -282,6 +290,7 @@ async function runTests() {
 
     await new Promise((resolve) => setTimeout(resolve, 200));
     assert.strictEqual(downloadedTasks.length, 0, 'No tasks should have completed');
+    assert.strictEqual(startedTasks.length, 1, 'Subsequent chapters (51, 52) must NEVER be started or sent to API');
   });
 
   // 8. Error resilience test (skips to next chapter on failure)

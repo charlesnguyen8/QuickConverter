@@ -53,6 +53,7 @@
       this.queue = [];
       this.isPaused = false;
       this.isProcessing = false;
+      this._isClearing = false;
       this.subscribers = new Set();
       this._initialized = false;
 
@@ -529,9 +530,16 @@
      * Clear All: Empties waiting queue and immediately aborts active task.
      */
     clearAll() {
+      this._isClearing = true;
+      this.queue = [];
+      const active = this.activeTask;
+      this.activeTask = null;
+      this.isProcessing = false;
+
       if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         try {
           chrome.runtime.sendMessage({ action: 'QUEUE_CLEAR_ALL' }, (resp) => {
+            this._isClearing = false;
             if (resp && resp.state) {
               this.activeTask = resp.state.activeTask || null;
               this.queue = resp.state.queue || [];
@@ -540,30 +548,27 @@
               this._notifySubscribers();
             }
           });
-        } catch (e) {}
-        this.activeTask = null;
-        this.queue = [];
-        this.isProcessing = false;
+        } catch (e) {
+          this._isClearing = false;
+        }
         this._notifySubscribers();
         return;
       }
 
-      if (this.activeTask && this.activeTask.abortController) {
+      if (active && active.abortController) {
         try {
-          this.activeTask.abortController.abort(new Error('UserCancelled'));
+          active.abortController.abort(new Error('UserCancelled'));
         } catch (e) {}
       }
-      this.activeTask = null;
-      this.queue = [];
-      this.isProcessing = false;
       this._sync();
+      this._isClearing = false;
     }
 
     /**
      * Internal sequential processor (Processes 1 chapter at a time).
      */
     async _processNext() {
-      if (!isExecutionOwner) {
+      if (this._isClearing || !isExecutionOwner) {
         // UI Views in extension mode never process tasks directly - processing is delegated to background service worker
         return;
       }
@@ -648,6 +653,14 @@
           task.error = err.message || 'Download failed';
         }
       } finally {
+        if (this._isClearing) {
+          this.activeTask = null;
+          this.isProcessing = false;
+          this._sync();
+          updateKeepAlive(false);
+          return;
+        }
+
         if (this.activeTask === task) {
           this.activeTask = null;
           this.isProcessing = false;

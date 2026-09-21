@@ -667,6 +667,10 @@ const StorageService = {
       throw new Error('novelId and chapterNumber are required to download a chapter');
     }
 
+    if (options && options.signal && options.signal.aborted) {
+      throw new Error('UserCancelled');
+    }
+
     const novel = await this.getNovelById(novelId);
     if (!novel) {
       throw new Error(`Novel not found for ID: ${novelId}`);
@@ -691,9 +695,13 @@ const StorageService = {
       options.onProgress({ phase: 'fetching', percent: 5, text: 'Fetching raw chapter...' });
     }
 
-    const content = await provider.fetchChapterContent(novel.slug, chapterSlugOrNumber);
+    const content = await provider.fetchChapterContent(novel.slug, chapterSlugOrNumber, { signal: options?.signal });
     if (!content || !content.rawText) {
       throw new Error(`Failed to extract chapter content for Chapter ${chapterNumber}`);
+    }
+
+    if (options && options.signal && options.signal.aborted) {
+      throw new Error('UserCancelled');
     }
 
     const chapterTitle = (catalogItem && catalogItem.title) || content.title || `Chapter ${chapterNumber}`;
@@ -708,6 +716,9 @@ const StorageService = {
 
     // Optional DeepSeek translation pre-download
     if (options && options.translation && options.translation.enabled) {
+      if (options && options.signal && options.signal.aborted) {
+        throw new Error('UserCancelled');
+      }
       let { apiKey, prompt, model, provider, baseUrl } = options.translation;
       let cleanKey = (apiKey || '').trim();
 
