@@ -415,6 +415,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
+    // --- Cooldown Elements in DeepSeek Panel ---
+    const cooldownToggleEl = document.getElementById('novel-cooldown-toggle');
+    const cooldownToggleLabelEl = document.getElementById('novel-cooldown-toggle-label');
+    const cooldownMinEl = document.getElementById('novel-cooldown-min');
+    const cooldownMaxEl = document.getElementById('novel-cooldown-max');
+    const cooldownMinLabelEl = document.getElementById('novel-cooldown-min-label');
+    const cooldownMaxLabelEl = document.getElementById('novel-cooldown-max-label');
+    const cooldownBadgeEl = document.getElementById('novel-cooldown-badge');
+    const cooldownInputsContainerEl = document.getElementById('novel-cooldown-inputs-container');
+
     function updateState(checked) {
       if (badgeEl) {
         if (checked) {
@@ -437,16 +447,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     }
-
-    // --- Cooldown Elements in DeepSeek Panel ---
-    const cooldownToggleEl = document.getElementById('novel-cooldown-toggle');
-    const cooldownToggleLabelEl = document.getElementById('novel-cooldown-toggle-label');
-    const cooldownMinEl = document.getElementById('novel-cooldown-min');
-    const cooldownMaxEl = document.getElementById('novel-cooldown-max');
-    const cooldownMinLabelEl = document.getElementById('novel-cooldown-min-label');
-    const cooldownMaxLabelEl = document.getElementById('novel-cooldown-max-label');
-    const cooldownBadgeEl = document.getElementById('novel-cooldown-badge');
-    const cooldownInputsContainerEl = document.getElementById('novel-cooldown-inputs-container');
 
     const formatSecondsHuman = (sec) => {
       const s = Math.round(sec);
@@ -957,6 +957,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               return;
             }
 
+            const cooldownToggleEl = document.getElementById('novel-cooldown-toggle');
             const isCooldownActive = cooldownToggleEl ? cooldownToggleEl.checked : true;
             const options = {
               cooldown: isCooldownActive,
@@ -1200,6 +1201,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
+        const cooldownToggleEl = document.getElementById('novel-cooldown-toggle');
         const isCooldownActive = cooldownToggleEl ? cooldownToggleEl.checked : true;
         const options = {
           cooldown: isCooldownActive,

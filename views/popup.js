@@ -407,6 +407,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
+    // Cooldown elements in popup DeepSeek panel
+    const popupCooldownToggleEl = document.getElementById('popup-cooldown-toggle');
+    const popupCooldownToggleLabelEl = document.getElementById('popup-cooldown-toggle-label');
+    const popupCooldownBadgeEl = document.getElementById('popup-cooldown-badge');
+
     function updateState(checked) {
       if (badgeEl) {
         if (checked) {
@@ -429,11 +434,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     }
-
-    // Cooldown elements in popup DeepSeek panel
-    const popupCooldownToggleEl = document.getElementById('popup-cooldown-toggle');
-    const popupCooldownToggleLabelEl = document.getElementById('popup-cooldown-toggle-label');
-    const popupCooldownBadgeEl = document.getElementById('popup-cooldown-badge');
 
     const updatePopupCooldownUI = () => {
       let cfg = { enabled: true, minSec: 180, maxSec: 300 };
@@ -987,6 +987,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               return;
             }
 
+            const popupCooldownToggleEl = document.getElementById('popup-cooldown-toggle');
             const isCooldownActive = popupCooldownToggleEl ? popupCooldownToggleEl.checked : true;
             const options = {
               cooldown: isCooldownActive,
@@ -1137,6 +1138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
 
+      const popupCooldownToggleEl = document.getElementById('popup-cooldown-toggle');
       const isCooldownActive = popupCooldownToggleEl ? popupCooldownToggleEl.checked : true;
       const options = {
         cooldown: isCooldownActive,
