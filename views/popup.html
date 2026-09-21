@@ -20,6 +20,13 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #64748b;
       }
+      /* Custom Amber Toggle for Cooldown */
+      #popup-cooldown-toggle:checked + .cooldown-popup-track {
+        background-color: #d97706 !important;
+      }
+      #popup-cooldown-toggle:not(:checked) + .cooldown-popup-track {
+        background-color: #334155 !important;
+      }
     </style>
   </head>
 
@@ -402,10 +409,13 @@
               </div>
             </div>
 
-            <label class="relative inline-flex items-center cursor-pointer flex-shrink-0" title="Toggle 3-5m randomized cooldown between translated chapters">
-              <input type="checkbox" id="popup-cooldown-toggle" class="sr-only peer" checked />
-              <div class="w-8 h-4.5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-amber-600"></div>
-            </label>
+            <div class="flex items-center gap-1.5 flex-shrink-0">
+              <span id="popup-cooldown-toggle-label" class="text-[10px] font-mono font-bold text-amber-400">ON</span>
+              <label class="relative inline-flex items-center cursor-pointer flex-shrink-0" title="Toggle 3-5m randomized cooldown between translated chapters">
+                <input type="checkbox" id="popup-cooldown-toggle" class="sr-only peer" checked />
+                <div class="w-8 h-4.5 cooldown-popup-track rounded-full peer-focus:outline-none peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all"></div>
+              </label>
+            </div>
           </div>
         </div>
       </div>

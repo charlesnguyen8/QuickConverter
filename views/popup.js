@@ -432,6 +432,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Cooldown elements in popup DeepSeek panel
     const popupCooldownToggleEl = document.getElementById('popup-cooldown-toggle');
+    const popupCooldownToggleLabelEl = document.getElementById('popup-cooldown-toggle-label');
     const popupCooldownBadgeEl = document.getElementById('popup-cooldown-badge');
 
     const updatePopupCooldownUI = () => {
@@ -443,6 +444,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const isChecked = cfg.enabled !== false;
       if (popupCooldownToggleEl) popupCooldownToggleEl.checked = isChecked;
+
+      if (popupCooldownToggleLabelEl) {
+        popupCooldownToggleLabelEl.textContent = isChecked ? 'ON' : 'OFF';
+        popupCooldownToggleLabelEl.className = isChecked
+          ? 'text-[10px] font-mono font-bold text-amber-400'
+          : 'text-[10px] font-mono font-semibold text-slate-400';
+      }
+
       if (popupCooldownBadgeEl) {
         if (isChecked) {
           const minM = Math.round((cfg.minSec || 180) / 60);

@@ -20,6 +20,23 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #475569;
       }
+      /* Custom High-Contrast Cooldown Inputs & Amber Toggle */
+      .cooldown-number-input {
+        background-color: #020617 !important;
+        color: #f8fafc !important;
+        border: 1px solid #334155 !important;
+      }
+      .cooldown-number-input:focus {
+        border-color: #f59e0b !important;
+        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35) !important;
+        outline: none !important;
+      }
+      #novel-cooldown-toggle:checked + .cooldown-slider-track {
+        background-color: #d97706 !important;
+      }
+      #novel-cooldown-toggle:not(:checked) + .cooldown-slider-track {
+        background-color: #334155 !important;
+      }
     </style>
   </head>
 
@@ -358,29 +375,46 @@
             </div>
           </div>
 
-          <!-- Rate Limit Cooldown Row in DeepSeek Panel -->
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-700/60">
-            <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 flex-shrink-0 text-sm">
-                ⏳
-              </div>
-              <div class="flex flex-col">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="text-xs font-bold text-slate-200">Rate Limit Cooldown</span>
-                  <span id="novel-cooldown-badge" class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                    3m – 5m Randomized
-                  </span>
+          <!-- Rate Limit Cooldown Section in DeepSeek Panel -->
+          <div class="rounded-xl bg-slate-900/90 border border-slate-700/80 p-4 flex flex-col gap-3.5 shadow-sm">
+            <!-- Header Row: Title, Description, and Prominent ON/OFF Toggle Switch -->
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0 text-sm">
+                  ⏳
                 </div>
-                <p class="text-[11px] text-slate-400 mt-0.5">
-                  Pause 3 to 5 minutes between queued chapters to prevent API rate limits.
-                </p>
+                <div class="flex flex-col">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-xs font-bold text-slate-100">Rate Limit Cooldown</span>
+                    <span id="novel-cooldown-badge" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      Active (3m – 5m)
+                    </span>
+                  </div>
+                  <p class="text-[11px] text-slate-400 mt-0.5">
+                    Pause a randomized duration between queued chapters to avoid API rate limits.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Toggle with visible text badge -->
+              <div class="flex items-center gap-2.5 flex-shrink-0">
+                <span id="novel-cooldown-toggle-label" class="text-xs font-bold text-amber-400 font-mono">ON</span>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0" title="Enable or disable rate limit cooldown between chapters">
+                  <input type="checkbox" id="novel-cooldown-toggle" class="sr-only peer" checked />
+                  <div class="w-11 h-6 cooldown-slider-track rounded-full peer-focus:outline-none peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                </label>
               </div>
             </div>
 
-            <div class="flex items-center gap-3 self-end sm:self-auto">
-              <!-- Quick Duration Adjuster -->
-              <div id="novel-cooldown-inputs-row" class="flex items-center gap-1.5 text-xs text-slate-300">
-                <div class="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded-lg border border-slate-700 shadow-inner">
+            <!-- Time Settings Row (High-contrast inputs with clean labels) -->
+            <div id="novel-cooldown-inputs-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-800">
+              <!-- Min Wait -->
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="font-semibold text-slate-300">Minimum Wait</span>
+                  <span id="novel-cooldown-min-label" class="text-slate-400 font-mono font-medium">3 min</span>
+                </div>
+                <div class="relative flex items-center">
                   <input
                     type="number"
                     id="novel-cooldown-min"
@@ -388,11 +422,19 @@
                     max="600"
                     step="5"
                     value="180"
-                    class="w-12 bg-transparent text-right font-mono text-xs text-amber-300 focus:outline-none"
-                    title="Minimum cooldown in seconds"
+                    class="cooldown-number-input w-full px-3 py-1.5 rounded-lg text-xs font-mono font-bold"
                   />
-                  <span class="text-[10px] text-slate-500 font-mono">s</span>
-                  <span class="text-slate-600 font-bold">~</span>
+                  <span class="absolute right-3 text-xs text-slate-400 font-mono pointer-events-none select-none">seconds</span>
+                </div>
+              </div>
+
+              <!-- Max Wait -->
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="font-semibold text-slate-300">Maximum Wait</span>
+                  <span id="novel-cooldown-max-label" class="text-slate-400 font-mono font-medium">5 min</span>
+                </div>
+                <div class="relative flex items-center">
                   <input
                     type="number"
                     id="novel-cooldown-max"
@@ -400,18 +442,11 @@
                     max="1200"
                     step="5"
                     value="300"
-                    class="w-12 bg-transparent text-right font-mono text-xs text-amber-300 focus:outline-none"
-                    title="Maximum cooldown in seconds"
+                    class="cooldown-number-input w-full px-3 py-1.5 rounded-lg text-xs font-mono font-bold"
                   />
-                  <span class="text-[10px] text-slate-500 font-mono">s</span>
+                  <span class="absolute right-3 text-xs text-slate-400 font-mono pointer-events-none select-none">seconds</span>
                 </div>
               </div>
-
-              <!-- Toggle Switch -->
-              <label class="relative inline-flex items-center cursor-pointer flex-shrink-0" title="Toggle randomized cooldown between translated chapters">
-                <input type="checkbox" id="novel-cooldown-toggle" class="sr-only peer" checked />
-                <div class="w-10 h-5.5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-amber-600"></div>
-              </label>
             </div>
           </div>
         </div>
