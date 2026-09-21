@@ -1,367 +1,230 @@
-// QuickConverter - DeepSeek Translation & Model Service
-// Integrates DeepSeek's OpenAI-compatible completions, models discovery, and balance health endpoints.
+// QuickConverter - Official DeepSeek Cloud API Service
+// Dedicated client for DeepSeek's cloud platform (https://api.deepseek.com),
+// managing official chat completions, models discovery, UTC pricing schedules, and account balance.
 
 (function (global) {
   const OFFICIAL_BASE_URL = 'https://api.deepseek.com';
-  const CUSTOM_DEFAULT_URL = 'http://127.0.0.1:8000/v1';
-  const LOCAL_BRIDGE_DEFAULT_URL = CUSTOM_DEFAULT_URL;
-  const DEFAULT_LOCAL_KEY = 'sk-local';
-  const PROVIDER_OFFICIAL = 'official';
-  const PROVIDER_CUSTOM = 'custom';
-  const PROVIDER_LOCAL_BRIDGE = 'local_bridge'; // backward-compatible alias
   const DEFAULT_MODEL = 'deepseek-flash';
-  const REQUEST_TIMEOUT_MS = 90000; // 90 seconds for official API
-  const BRIDGE_TIMEOUT_MS = 180000; // 180 seconds for local bridge with DeepThink R1
+  const REQUEST_TIMEOUT_MS = 90000; // 90 seconds for official cloud requests
 
   // In-memory balance cache for debounce (15 seconds)
   let _balanceCache = null;
   const BALANCE_CACHE_TTL_MS = 15000;
 
+  function resolveAIService() {
+    if (typeof global !== 'undefined' && global.AIService) return global.AIService;
+    if (typeof window !== 'undefined' && window.AIService) return window.AIService;
+    if (typeof module !== 'undefined' && typeof require === 'function') {
+      try { return require('./ai-service.js'); } catch (e) {}
+    }
+    return null;
+  }
+
   const DeepSeekService = {
     BASE_URL: OFFICIAL_BASE_URL,
     OFFICIAL_BASE_URL,
-    CUSTOM_DEFAULT_URL,
-    LOCAL_BRIDGE_DEFAULT_URL,
-    DEFAULT_LOCAL_KEY,
-    PROVIDER_OFFICIAL,
-    PROVIDER_CUSTOM,
-    PROVIDER_LOCAL_BRIDGE,
     DEFAULT_MODEL,
     REQUEST_TIMEOUT_MS,
-    BRIDGE_TIMEOUT_MS,
+
+    // Backward-compatibility aliases
+    PROVIDER_OFFICIAL: 'official',
+    PROVIDER_CUSTOM: 'custom',
+    PROVIDER_LOCAL_BRIDGE: 'local_bridge',
+    CUSTOM_DEFAULT_URL: 'http://127.0.0.1:8000/v1',
+    LOCAL_BRIDGE_DEFAULT_URL: 'http://127.0.0.1:8000/v1',
 
     /**
-     * Resolves currently active AI provider and endpoint configuration.
-     * @returns {Promise<{ provider: string, baseUrl: string, isOfficial: boolean, isCustom: boolean, isLocal: boolean }>}
+     * Resolves provider config by delegating to AIService.
      */
     async getProviderConfig() {
-      let provider = PROVIDER_OFFICIAL;
-      let customUrl = CUSTOM_DEFAULT_URL;
-      let customApiKey = '';
-
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        try {
-          const r = await new Promise((resolve) => {
-            chrome.storage.local.get(
-              ['quickconverter_ai_provider', 'quickconverter_ai_custom_url', 'quickconverter_ai_bridge_url', 'quickconverter_custom_api_key'],
-              (res) => resolve(res || {})
-            );
-          });
-          if (r.quickconverter_ai_provider) provider = r.quickconverter_ai_provider;
-          if (r.quickconverter_ai_custom_url) customUrl = r.quickconverter_ai_custom_url;
-          else if (r.quickconverter_ai_bridge_url) customUrl = r.quickconverter_ai_bridge_url;
-          if (r.quickconverter_custom_api_key) customApiKey = r.quickconverter_custom_api_key;
-        } catch (e) {}
+      const ai = resolveAIService();
+      if (ai && typeof ai.getProviderConfig === 'function') {
+        return ai.getProviderConfig();
       }
-
-      if (typeof localStorage !== 'undefined') {
-        const storedProv = localStorage.getItem('quickconverter_ai_provider');
-        if (storedProv) provider = storedProv;
-        const storedCustom = localStorage.getItem('quickconverter_ai_custom_url') || localStorage.getItem('quickconverter_ai_bridge_url');
-        if (storedCustom) customUrl = storedCustom;
-        const storedKey = localStorage.getItem('quickconverter_custom_api_key');
-        if (storedKey) customApiKey = storedKey;
-      }
-
-      const isOfficial = provider === PROVIDER_OFFICIAL;
-      const isCustom = !isOfficial;
-      const baseUrl = isOfficial ? OFFICIAL_BASE_URL : (customUrl || CUSTOM_DEFAULT_URL);
-      const isLocal = baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost');
-
       return {
-        provider: isOfficial ? PROVIDER_OFFICIAL : PROVIDER_CUSTOM,
-        baseUrl: baseUrl.replace(/\/+$/, ''),
-        customUrl: customUrl.replace(/\/+$/, ''),
-        customApiKey,
-        isOfficial,
-        isCustom,
-        isLocal,
-        isLocalBridge: isLocal // alias for tests
+        provider: 'official',
+        baseUrl: OFFICIAL_BASE_URL,
+        customUrl: 'http://127.0.0.1:8000/v1',
+        customApiKey: '',
+        isOfficial: true,
+        isCustom: false,
+        isLocal: false,
+        isLocalBridge: false
       };
     },
 
     /**
-     * Sets and persists the AI provider configuration.
-     * @param {object} config
-     * @param {string} [config.provider]
-     * @param {string} [config.baseUrl]
-     * @param {string} [config.customUrl]
-     * @param {string} [config.customApiKey]
+     * Sets provider config by delegating to AIService.
      */
-    async setProviderConfig({ provider, baseUrl, customUrl, customApiKey, bridgeUrl }) {
-      const targetUrl = customUrl || baseUrl || bridgeUrl;
-      const updates = {};
-      if (provider) updates.quickconverter_ai_provider = provider;
-      if (targetUrl !== undefined) {
-        updates.quickconverter_ai_custom_url = targetUrl;
-        updates.quickconverter_ai_bridge_url = targetUrl; // keep for backward compat
+    async setProviderConfig(cfg) {
+      const ai = resolveAIService();
+      if (ai && typeof ai.setProviderConfig === 'function') {
+        return ai.setProviderConfig(cfg);
       }
-      if (customApiKey !== undefined) updates.quickconverter_custom_api_key = customApiKey;
-
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        await new Promise((resolve) => chrome.storage.local.set(updates, () => resolve()));
-      }
-      if (typeof localStorage !== 'undefined') {
-        if (provider) localStorage.setItem('quickconverter_ai_provider', provider);
-        if (targetUrl !== undefined) {
-          localStorage.setItem('quickconverter_ai_custom_url', targetUrl);
-          localStorage.setItem('quickconverter_ai_bridge_url', targetUrl);
-        }
-        if (customApiKey !== undefined) localStorage.setItem('quickconverter_custom_api_key', customApiKey);
-      }
-
       return this.getProviderConfig();
     },
 
     /**
-     * Retrieves account balance for the given DeepSeek API key.
-     * @param {string} apiKey 
+     * Fetches live account balance from https://api.deepseek.com/user/balance
+     * @param {string} apiKey
      * @param {object} [options]
-     * @param {boolean} [options.force=false] Bypasses short-term cache
-     * @returns {Promise<{ success: boolean, totalBalance?: string, numericBalance?: number, currency?: string, currencySymbol?: string, formatted?: string, compact?: string, isAvailable?: boolean, isLow?: boolean, error?: string, fromCache?: boolean }>}
+     * @param {boolean} [options.force=false] Bypass cache
+     * @returns {Promise<{ isAvailable: boolean, totalBalance: string, grantedBalance: string, toppedUpBalance: string, currency: string, isLow: boolean, formatted: string, compact: string }>}
      */
     async getBalance(apiKey, options = {}) {
       const cleanKey = (apiKey || '').trim();
       if (!cleanKey) {
-        return { success: false, error: 'API key is required' };
+        throw new Error('API key is required to check balance.');
       }
 
-      const force = !!options.force;
       const now = Date.now();
-
-      // Check in-memory cache if not forced
-      if (!force && _balanceCache && _balanceCache.key === cleanKey && (now - _balanceCache.timestamp) < BALANCE_CACHE_TTL_MS) {
-        return { ..._balanceCache.data, fromCache: true };
+      if (!options.force && _balanceCache && _balanceCache.key === cleanKey && (now - _balanceCache.timestamp) < BALANCE_CACHE_TTL_MS) {
+        return _balanceCache.data;
       }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       try {
-        const res = await fetch(`${BASE_URL}/user/balance`, {
+        const res = await fetch(`${OFFICIAL_BASE_URL}/user/balance`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${cleanKey}`,
             'Accept': 'application/json'
-          }
+          },
+          signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (!res.ok) {
           if (res.status === 401) {
-            return { success: false, error: 'Invalid DeepSeek API Key (401 Unauthorized)' };
+            throw new Error('Invalid API key (401 Unauthorized)');
           }
-          if (res.status === 402) {
-            return { success: false, error: 'Insufficient DeepSeek account balance (402)' };
-          }
-          return { success: false, error: `HTTP error ${res.status}` };
+          throw new Error(`Failed to fetch balance (HTTP ${res.status})`);
         }
 
         const data = await res.json();
-        let totalStr = '0.00';
-        let curr = 'USD';
-        let grantedStr = '0.00';
-        let toppedUpStr = '0.00';
+        const balanceInfos = data.balance_infos || [];
+        const primary = balanceInfos[0] || {};
 
-        if (data && Array.isArray(data.balance_infos) && data.balance_infos.length > 0) {
-          // Prefer info with positive balance or take the first
-          const b0 = data.balance_infos.find((b) => parseFloat(b.total_balance || '0') > 0) || data.balance_infos[0];
-          totalStr = b0.total_balance || b0.granted_balance || '0.00';
-          curr = b0.currency || 'USD';
-          grantedStr = b0.granted_balance || '0.00';
-          toppedUpStr = b0.topped_up_balance || '0.00';
-        }
+        const totalNum = parseFloat(primary.total_balance) || 0;
+        const grantedNum = parseFloat(primary.granted_balance) || 0;
+        const toppedUpNum = parseFloat(primary.topped_up_balance) || 0;
+        const currency = primary.currency || 'USD';
+        const isAvailable = data.is_available !== false && totalNum > 0;
 
-        const numVal = parseFloat(totalStr) || 0;
-        const symbol = (curr.toUpperCase() === 'CNY' || curr.toUpperCase() === 'RMB') ? '¥' : '$';
-        const isAvailable = data ? data.is_available !== false : true;
-        const isLow = numVal < (symbol === '¥' ? 3.5 : 0.50);
+        const symbol = currency === 'CNY' ? '¥' : '$';
+        const formatted = `${symbol}${totalNum.toFixed(4)} ${currency}`;
+        const compact = `${symbol}${totalNum.toFixed(2)}`;
 
-        const balanceResult = {
-          success: true,
+        const parsed = {
           isAvailable,
-          totalBalance: totalStr,
-          numericBalance: numVal,
-          currency: curr.toUpperCase(),
-          currencySymbol: symbol,
-          formatted: `${symbol}${numVal.toFixed(2)} ${curr.toUpperCase()}`,
-          compact: `${symbol}${numVal.toFixed(2)}`,
-          isLow,
-          grantedBalance: grantedStr,
-          toppedUpBalance: toppedUpStr,
-          timestamp: now
+          totalBalance: primary.total_balance || '0.00',
+          grantedBalance: primary.granted_balance || '0.00',
+          toppedUpBalance: primary.topped_up_balance || '0.00',
+          numericBalance: totalNum,
+          currency,
+          symbol,
+          isLow: isAvailable && totalNum < 0.50,
+          formatted,
+          compact,
+          updatedAt: now,
+          success: true
         };
 
         _balanceCache = {
           key: cleanKey,
-          data: balanceResult,
-          timestamp: now
+          timestamp: now,
+          data: parsed
         };
 
-        // Cache in session storage for instant retrieval across views
-        try {
-          if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
-            chrome.storage.session.set({
-              quickconverter_deepseek_balance_cache: {
-                data: balanceResult,
-                timestamp: now,
-                keyLast4: cleanKey.slice(-4)
-              }
-            });
-          }
-        } catch (storageErr) {}
-
-        // Emit custom DOM event for active page
-        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-          try {
-            window.dispatchEvent(new CustomEvent('deepseek:balance_updated', { detail: balanceResult }));
-          } catch (evErr) {}
-        }
-
-        return balanceResult;
+        return parsed;
       } catch (err) {
-        return {
-          success: false,
-          error: err.name === 'AbortError' ? 'Connection timed out' : (err.message || 'Network request failed')
-        };
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+          throw new Error('Balance check request timed out.');
+        }
+        throw err;
       }
     },
 
     /**
-     * Alias for getBalance for backward compatibility and alternate naming.
-     * @param {string} apiKey
-     * @param {object} [options]
+     * Alias for getBalance.
      */
     async fetchBalance(apiKey, options = {}) {
       return this.getBalance(apiKey, options);
     },
 
     /**
-     * Sets up automatic balance tracking and synchronization for a view.
-     * Updates frequently on mount, tab focus, visibility change, and periodic heartbeat.
-     * @param {Function} getApiKeyFn Function returning the current API key string (or Promise of it)
-     * @param {Function} onBalanceUpdatedFn Callback (balanceInfo, isUpdating) => void
-     * @returns {{ refresh: (force?: boolean) => Promise<void>, destroy: () => void }}
+     * Creates a balance tracker instance that automatically updates a UI callback.
+     * @param {Function} getKeyFn Function returning active API key
+     * @param {Function} updateCallback Callback receiving (balanceInfo, isUpdating)
+     * @returns {{ refresh: Function, destroy: Function }}
      */
-    createBalanceTracker(getApiKeyFn, onBalanceUpdatedFn) {
-      let isDestroyed = false;
-      let intervalId = null;
+    createBalanceTracker(getKeyFn, updateCallback) {
+      let isChecking = false;
 
-      const refresh = async (force = true) => {
-        if (isDestroyed) return;
+      const refresh = async (force = false) => {
+        if (isChecking) return;
+        const key = typeof getKeyFn === 'function' ? getKeyFn() : '';
+        if (!key || !key.trim()) {
+          updateCallback(null, false);
+          return;
+        }
+
+        isChecking = true;
+        updateCallback(null, true);
+
         try {
-          const keyRaw = typeof getApiKeyFn === 'function' ? await getApiKeyFn() : '';
-          const key = (keyRaw || '').trim();
-          if (!key) {
-            if (typeof onBalanceUpdatedFn === 'function') {
-              onBalanceUpdatedFn(null, false);
-            }
-            return;
-          }
-
-          if (typeof onBalanceUpdatedFn === 'function') {
-            onBalanceUpdatedFn(null, true); // true indicates updating/loading
-          }
-
-          const res = await this.getBalance(key, { force });
-          if (!isDestroyed && typeof onBalanceUpdatedFn === 'function') {
-            onBalanceUpdatedFn(res, false);
-          }
-        } catch (e) {
-          if (!isDestroyed && typeof onBalanceUpdatedFn === 'function') {
-            onBalanceUpdatedFn({ success: false, error: e.message }, false);
-          }
+          const bal = await this.getBalance(key, { force });
+          updateCallback(bal, false);
+        } catch (err) {
+          updateCallback({ success: false, error: err.message }, false);
+        } finally {
+          isChecking = false;
         }
       };
-
-      // 1. Initial check (use cache if fresh)
-      refresh(false);
-
-      // 2. On window focus / tab re-entry
-      const handleFocus = () => {
-        refresh(false);
-      };
-      if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-        window.addEventListener('focus', handleFocus);
-      }
-
-      // 3. On document visibility change
-      const handleVisibilityChange = () => {
-        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-          refresh(false);
-        }
-      };
-      if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-      }
-
-      // 4. Periodic heartbeat (every 60s while tab is visible)
-      intervalId = setInterval(() => {
-        if (typeof document !== 'undefined' && document.hidden) return;
-        refresh(false);
-      }, 60000);
-
-      // 5. Cross-tab sync via chrome.storage.onChanged
-      const handleStorageChange = (changes, areaName) => {
-        if (areaName === 'session' && changes.quickconverter_deepseek_balance_cache) {
-          const newVal = changes.quickconverter_deepseek_balance_cache.newValue;
-          if (newVal && newVal.data && !isDestroyed && typeof onBalanceUpdatedFn === 'function') {
-            onBalanceUpdatedFn(newVal.data, false);
-          }
-        }
-      };
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
-        chrome.storage.onChanged.addListener(handleStorageChange);
-      }
 
       return {
         refresh,
         destroy() {
-          isDestroyed = true;
-          if (intervalId) clearInterval(intervalId);
-          if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
-            window.removeEventListener('focus', handleFocus);
-          }
-          if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-          }
-          if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
-            chrome.storage.onChanged.removeListener(handleStorageChange);
-          }
+          isChecking = false;
         }
       };
     },
 
     /**
-     * Test API Key, check account balance, and retrieve live models roster.
-     * Supports both official DeepSeek API and local/custom OpenAI-compatible endpoints.
+     * Test official API Key, check account balance, and retrieve live models roster.
      * @param {string} apiKey 
      * @param {object} [options]
-     * @param {string} [options.provider]
-     * @param {string} [options.baseUrl]
-     * @returns {Promise<{ success: boolean, models?: string[], balance?: object, isLocalBridge?: boolean, provider?: string, baseUrl?: string, error?: string }>}
+     * @returns {Promise<{ success: boolean, models?: string[], balance?: object, provider: string, baseUrl: string, modelCount?: number, error?: string }>}
      */
     async testConnection(apiKey, options = {}) {
-      const provConfig = await this.getProviderConfig();
-      const activeProvider = options.provider || provConfig.provider;
-      const targetBaseUrl = (options.baseUrl || provConfig.baseUrl || CUSTOM_DEFAULT_URL).replace(/\/+$/, '');
-      const isCustom = activeProvider === PROVIDER_CUSTOM || activeProvider === PROVIDER_LOCAL_BRIDGE || targetBaseUrl !== OFFICIAL_BASE_URL;
-      const isBridge = isCustom && (targetBaseUrl.includes('127.0.0.1') || targetBaseUrl.includes('localhost'));
+      // If options specify custom provider or custom baseUrl, route to AIService
+      if (options.provider === 'custom' || options.provider === 'local_bridge' || (options.baseUrl && options.baseUrl !== OFFICIAL_BASE_URL)) {
+        const ai = resolveAIService();
+        if (ai && typeof ai.testConnection === 'function') {
+          return ai.testConnection(apiKey, options);
+        }
+      }
 
-      const cleanKey = (apiKey || (isCustom ? (provConfig.customApiKey || DEFAULT_LOCAL_KEY) : '')).trim();
-      if (!cleanKey && !isCustom) {
-        return { success: false, error: 'API key is required' };
+      const cleanKey = (apiKey || '').trim();
+      if (!cleanKey) {
+        return { success: false, error: 'DeepSeek API key is required' };
       }
 
       try {
-        const headers = {
-          'Authorization': `Bearer ${cleanKey || DEFAULT_LOCAL_KEY}`,
-          'Accept': 'application/json'
-        };
-
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 12000);
 
-        // 1. Fetch available models roster (OpenAI-compatible /models endpoint)
-        const modelsRes = await fetch(`${targetBaseUrl}/models`, {
+        // 1. Fetch available models roster
+        const modelsRes = await fetch(`${OFFICIAL_BASE_URL}/models`, {
           method: 'GET',
-          headers,
+          headers: {
+            'Authorization': `Bearer ${cleanKey}`,
+            'Accept': 'application/json'
+          },
           signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -372,12 +235,6 @@
           }
           if (modelsRes.status === 402) {
             return { success: false, error: 'Account has insufficient balance / payment required (402)' };
-          }
-          if (modelsRes.status === 502) {
-            return { success: false, error: 'Local Bridge: Chromium automation browser is disconnected (502)' };
-          }
-          if (modelsRes.status === 503) {
-            return { success: false, error: 'Local Bridge: Cloudflare challenge required in browser (503)' };
           }
           let errMsg = `HTTP error ${modelsRes.status}`;
           try {
@@ -392,24 +249,22 @@
         const data = await modelsRes.json();
         const models = (data.data || []).map((m) => m.id);
 
-        // 2. Fetch balance if official provider
+        // 2. Fetch balance
         let balance = null;
-        if (!isCustom) {
-          try {
-            balance = await this.getBalance(cleanKey, { force: true });
-          } catch (e) {
-            console.warn('Balance check failed during test:', e);
-          }
+        try {
+          balance = await this.getBalance(cleanKey, { force: true });
+        } catch (e) {
+          console.warn('[DeepSeekService] Balance check failed during test:', e);
         }
 
         return {
           success: true,
           models,
           balance,
-          isCustom,
-          isLocalBridge: isBridge,
-          provider: activeProvider,
-          baseUrl: targetBaseUrl,
+          isCustom: false,
+          isLocalBridge: false,
+          provider: 'official',
+          baseUrl: OFFICIAL_BASE_URL,
           modelCount: models.length
         };
       } catch (err) {
@@ -421,8 +276,7 @@
     },
 
     /**
-     * Translates raw chapter text to formatted English using OpenAI-compatible chat completions.
-     * Supports both official API and custom/local bridge (with reasoning_content extraction).
+     * Translates raw chapter text using official DeepSeek cloud chat completions.
      * @param {object} params
      * @param {string} [params.apiKey]
      * @param {string} params.prompt
@@ -431,38 +285,36 @@
      * @param {number} [params.temperature=0.7]
      * @param {string} [params.provider]
      * @param {string} [params.baseUrl]
-     * @returns {Promise<{ translatedText: string, reasoningText?: string, modelUsed: string, usage?: object, costInfo?: object, isLocalBridge: boolean, isCustom: boolean }>}
+     * @returns {Promise<{ translatedText: string, reasoningText?: string, modelUsed: string, usage?: object, costInfo: object, isCustom: boolean, isLocalBridge: boolean }>}
      */
     async translateChapter({ apiKey, prompt, rawText, model = DEFAULT_MODEL, temperature = 0.7, provider, baseUrl }) {
-      const provConfig = await this.getProviderConfig();
-      const activeProvider = provider || provConfig.provider;
-      const isCustom = activeProvider === PROVIDER_CUSTOM || activeProvider === PROVIDER_LOCAL_BRIDGE;
-      const effectiveBaseUrl = (baseUrl || provConfig.baseUrl || (isCustom ? CUSTOM_DEFAULT_URL : OFFICIAL_BASE_URL)).replace(/\/+$/, '');
-      const isBridge = isCustom && (effectiveBaseUrl.includes('127.0.0.1') || effectiveBaseUrl.includes('localhost'));
+      // If caller requested custom provider or custom baseUrl, route to AIService
+      if (provider === 'custom' || provider === 'local_bridge' || (baseUrl && baseUrl !== OFFICIAL_BASE_URL)) {
+        const ai = resolveAIService();
+        if (ai && typeof ai.translateChapter === 'function') {
+          return ai.translateChapter({ apiKey, prompt, rawText, model, temperature, provider, baseUrl });
+        }
+      }
 
       let cleanKey = (apiKey || '').trim();
       if (!cleanKey) {
-        if (isCustom) {
-          cleanKey = provConfig.customApiKey || DEFAULT_LOCAL_KEY;
-        } else {
-          throw new Error('DeepSeek API Key is missing. Please enter your API key.');
-        }
+        const stored = await this.getApiKey();
+        cleanKey = stored.apiKey;
       }
+      if (!cleanKey) {
+        throw new Error('DeepSeek API Key is missing. Please enter your API key.');
+      }
+
       if (!rawText || !rawText.trim()) {
         throw new Error('Chapter text to translate is empty.');
       }
 
-      let activeModel = (model || '').trim();
-      if (!activeModel) {
-        activeModel = isCustom ? 'deepseek-chat' : DEFAULT_MODEL;
-      }
-
+      const activeModel = (model || '').trim() || DEFAULT_MODEL;
       const systemPrompt = (prompt || '').trim() ||
         'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
-      const timeoutMs = (isCustom || activeModel.includes('reasoner') || activeModel.includes('r1')) ? BRIDGE_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
       try {
         const payload = {
@@ -475,7 +327,7 @@
           temperature: typeof temperature === 'number' ? temperature : 0.7
         };
 
-        const res = await fetch(`${effectiveBaseUrl}/chat/completions`, {
+        const res = await fetch(`${OFFICIAL_BASE_URL}/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -495,10 +347,6 @@
             throw new Error('Insufficient account balance. Please top up your credits.');
           } else if (res.status === 429) {
             throw new Error('Rate limit exceeded. Please wait a moment before trying again.');
-          } else if (res.status === 502) {
-            throw new Error('Custom / Local Bridge: Service or automation browser is disconnected (502).');
-          } else if (res.status === 503) {
-            throw new Error('Custom / Local Bridge: Service challenge or temporarily unavailable (503).');
           }
 
           let errMsg = `HTTP Error ${res.status}`;
@@ -508,7 +356,7 @@
               errMsg = errData.error.message;
             }
           } catch (e) {}
-          throw new Error(`AI API error (${res.status}): ${errMsg}`);
+          throw new Error(`DeepSeek API error (${res.status}): ${errMsg}`);
         }
 
         const data = await res.json();
@@ -517,28 +365,10 @@
         const reasoningContent = choice && choice.message && choice.message.reasoning_content;
 
         if (!content || !content.trim()) {
-          throw new Error('AI API returned an empty translation response.');
+          throw new Error('DeepSeek API returned an empty translation response.');
         }
 
-        let costInfo;
-        if (isCustom) {
-          costInfo = {
-            costUSD: 0,
-            formattedCost: isBridge ? 'Free (Local Bridge)' : 'Custom API',
-            modelUsed: activeModel,
-            isPeak: false,
-            ratePeriod: isBridge ? 'Local Bridge (Free)' : 'Custom Endpoint',
-            discountPercent: 100,
-            promptTokens: data.usage?.prompt_tokens || 0,
-            completionTokens: data.usage?.completion_tokens || 0,
-            totalTokens: data.usage?.total_tokens || 0,
-            isCustom: true,
-            isLocalBridge: isBridge,
-            calculatedAt: Date.now()
-          };
-        } else {
-          costInfo = this.calculateCost(data.usage, activeModel);
-        }
+        const costInfo = this.calculateCost(data.usage, activeModel);
 
         return {
           translatedText: content.trim(),
@@ -546,13 +376,13 @@
           modelUsed: activeModel,
           usage: data.usage || null,
           costInfo,
-          isCustom,
-          isLocalBridge: isBridge
+          isCustom: false,
+          isLocalBridge: false
         };
       } catch (err) {
         clearTimeout(timeoutId);
         if (err.name === 'AbortError') {
-          throw new Error(`Translation request timed out after ${timeoutMs / 1000} seconds.`);
+          throw new Error(`Translation request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds.`);
         }
         throw err;
       }
@@ -588,8 +418,6 @@
 
     /**
      * Calculates the exact request cost in USD based on token usage, model, and Peak/Off-Peak schedule.
-     * Accounts for prompt tokens (system prompt instructions + raw chapter source), completion tokens,
-     * and context cache hits/misses.
      * @param {object} usage DeepSeek API usage object
      * @param {string} [model='deepseek-flash']
      * @param {Date|number} [date=new Date()]
@@ -729,7 +557,6 @@
         return this.clearApiKey();
       }
 
-      // Store in session storage (RAM only)
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
         await new Promise((resolve) => {
           chrome.storage.session.set({ quickconverter_deepseek_key: cleanKey }, () => resolve());
@@ -738,7 +565,6 @@
         sessionStorage.setItem('quickconverter_deepseek_key', cleanKey);
       }
 
-      // Handle remember on device
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         if (rememberOnDevice) {
           await new Promise((resolve) => {
@@ -786,7 +612,7 @@
     }
   };
 
-  // Export to global scope (Browser Window or Service Worker)
+  // Export to global scope
   if (typeof window !== 'undefined') {
     window.DeepSeekService = DeepSeekService;
   }

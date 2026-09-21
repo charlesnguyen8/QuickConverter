@@ -10,6 +10,7 @@ const testFiles = [
   'settings.test.js',
   'reader.test.js',
   'deepseek.test.js',
+  'custom-api.test.js',
   'bridge.test.js'
 ];
 

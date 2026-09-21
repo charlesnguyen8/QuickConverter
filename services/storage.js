@@ -707,12 +707,18 @@ const StorageService = {
       let { apiKey, prompt, model, provider, baseUrl } = options.translation;
       let cleanKey = (apiKey || '').trim();
 
+      const ai = (typeof window !== 'undefined' && window.AIService) ||
+        (typeof self !== 'undefined' && self.AIService) ||
+        (typeof AIService !== 'undefined' && AIService);
+
       const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
         (typeof self !== 'undefined' && self.DeepSeekService) ||
         (typeof DeepSeekService !== 'undefined' && DeepSeekService);
 
-      const provConfig = (deepseek && typeof deepseek.getProviderConfig === 'function')
-        ? await deepseek.getProviderConfig()
+      const client = ai || deepseek;
+
+      const provConfig = (client && typeof client.getProviderConfig === 'function')
+        ? await client.getProviderConfig()
         : { provider: 'official', baseUrl: 'https://api.deepseek.com', isLocalBridge: false };
 
       const activeProvider = provider || provConfig.provider;
@@ -730,21 +736,21 @@ const StorageService = {
       }
 
       if (!cleanKey) {
-        if (activeProvider === 'local_bridge' || (effectiveBaseUrl && (effectiveBaseUrl.includes('127.0.0.1') || effectiveBaseUrl.includes('localhost')))) {
+        if (activeProvider === 'custom' || activeProvider === 'local_bridge' || (effectiveBaseUrl && (effectiveBaseUrl.includes('127.0.0.1') || effectiveBaseUrl.includes('localhost')))) {
           cleanKey = 'sk-local';
         } else {
           throw new Error('DeepSeek API Key is required when translation is enabled.');
         }
       }
 
-      if (!deepseek || typeof deepseek.translateChapter !== 'function') {
-        throw new Error('DeepSeek translation service is not loaded.');
+      if (!client || typeof client.translateChapter !== 'function') {
+        throw new Error('AI translation service is not loaded.');
       }
 
       const effectivePrompt = prompt || novel.translationPrompt ||
         'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
-      const result = await deepseek.translateChapter({
+      const result = await client.translateChapter({
         apiKey: cleanKey,
         prompt: effectivePrompt,
         rawText: content.rawText,
