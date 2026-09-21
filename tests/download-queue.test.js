@@ -731,6 +731,32 @@ async function runTests() {
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
   });
 
+  // 16. Proportional 25% minimum delta test: verifies consecutive cooldown durations differ by at least 25% of span
+  await test('25% minimum delta between consecutive cooldowns without rounding or bucketing', async () => {
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 100, maxSec: 200 });
+    const span = 200 - 100;
+    const expectedDelta = Math.round(span * 0.25); // 25s
+
+    let prev = null;
+    for (let i = 0; i < 50; i++) {
+      DownloadQueueService.queue = [{ id: 'dummy', chapterNumber: i + 1 }];
+      DownloadQueueService._startCooldown();
+      const current = DownloadQueueService.cooldown.totalSeconds;
+      assert(current >= 100 && current <= 200, `Current duration ${current} must be in [100, 200]`);
+      if (prev !== null) {
+        const diff = Math.abs(current - prev);
+        assert(diff >= expectedDelta, `Consecutive durations ${prev} and ${current} must differ by >= ${expectedDelta}s (was ${diff}s)`);
+      }
+      prev = current;
+      DownloadQueueService._clearCooldownTimers();
+      DownloadQueueService.cooldown = null;
+    }
+
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
+  });
+
   console.log(`\n🎉 All ${passedCount} DownloadQueueService tests passed!`);
 }
 

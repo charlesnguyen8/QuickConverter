@@ -61,6 +61,7 @@
       this.cooldownEnabled = true;
       this.minCooldownSec = 180; // 3.0 minutes
       this.maxCooldownSec = 300; // 5.0 minutes
+      this._lastCooldownDurationSec = null;
 
       this._init();
     }
@@ -579,6 +580,7 @@
       this._isClearing = true;
       this._clearCooldownTimers();
       this.cooldown = null;
+      this._lastCooldownDurationSec = null;
       this.queue = [];
       const active = this.activeTask;
       this.activeTask = null;
@@ -701,7 +703,31 @@
       const nextTask = this.queue[0];
       const min = Math.max(1, Math.min(this.minCooldownSec, this.maxCooldownSec));
       const max = Math.max(min, this.maxCooldownSec);
-      const durationSec = Math.floor(Math.random() * (max - min + 1)) + min;
+      const span = max - min;
+
+      let durationSec;
+      if (span <= 0) {
+        durationSec = min;
+      } else {
+        const delta = Math.round(span * 0.25);
+        if (this._lastCooldownDurationSec !== null && delta > 0) {
+          const candidates = [];
+          for (let s = min; s <= max; s++) {
+            if (Math.abs(s - this._lastCooldownDurationSec) >= delta) {
+              candidates.push(s);
+            }
+          }
+          if (candidates.length > 0) {
+            durationSec = candidates[Math.floor(Math.random() * candidates.length)];
+          } else {
+            durationSec = Math.floor(Math.random() * (span + 1)) + min;
+          }
+        } else {
+          durationSec = Math.floor(Math.random() * (span + 1)) + min;
+        }
+      }
+
+      this._lastCooldownDurationSec = durationSec;
 
       this.cooldown = {
         active: true,
