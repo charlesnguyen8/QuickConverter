@@ -648,6 +648,89 @@ async function runTests() {
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
   });
 
+  // 15. Optional DeepSeek translation cooldown test: verifies raw downloads bypass cooldown and translation honors cooldown
+  await test('DeepSeek translation cooldown selectivity: raw downloads bypass cooldown, translation honors cooldown', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    mockDelayMs = 20;
+
+    // Enable cooldown globally with 1s duration
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 1, maxSec: 1 });
+
+    // A. Enqueue 2 raw chapters without translation (options.translation.enabled: false)
+    await DownloadQueueService.enqueueBatch([
+      {
+        novelId: 'raw-novel',
+        chapterNumber: 1,
+        options: { translation: { enabled: false } }
+      },
+      {
+        novelId: 'raw-novel',
+        chapterNumber: 2,
+        options: { translation: { enabled: false } }
+      }
+    ]);
+
+    // Wait until both raw chapters finish
+    await new Promise((resolve) => {
+      const waitDone = DownloadQueueService.subscribe((s) => {
+        if (s.totalCount === 0 && !s.isProcessing && !s.cooldown) {
+          waitDone();
+          resolve();
+        }
+      });
+    });
+
+    assert.strictEqual(downloadedTasks.length, 2, 'Both raw chapters should complete');
+    assert.strictEqual(DownloadQueueService.cooldown, null, 'Raw chapter downloads must NEVER trigger cooldown');
+
+    // B. Enqueue 2 translated chapters with cooldown enabled
+    downloadedTasks = [];
+    await DownloadQueueService.enqueueBatch([
+      {
+        novelId: 'trans-novel',
+        chapterNumber: 10,
+        options: { translation: { enabled: true, cooldown: true } }
+      },
+      {
+        novelId: 'trans-novel',
+        chapterNumber: 11,
+        options: { translation: { enabled: true, cooldown: true } }
+      }
+    ]);
+
+    // Wait for Chapter 10 to finish and verify cooldown triggers
+    await new Promise((resolve) => {
+      const checkUnsub = DownloadQueueService.subscribe((s) => {
+        if (s.cooldown && s.cooldown.active) {
+          checkUnsub();
+          resolve();
+        }
+      });
+    });
+
+    assert.strictEqual(downloadedTasks.length, 1, 'Chapter 10 finished');
+    assert(DownloadQueueService.cooldown && DownloadQueueService.cooldown.active, 'Translated chapter must trigger cooldown');
+    assert.strictEqual(DownloadQueueService.cooldown.nextChapterNumber, 11);
+
+    // Skip cooldown and let Chapter 11 finish
+    DownloadQueueService.skipCooldown();
+
+    await new Promise((resolve) => {
+      const waitDone = DownloadQueueService.subscribe((s) => {
+        if (s.totalCount === 0 && !s.isProcessing && !s.cooldown) {
+          waitDone();
+          resolve();
+        }
+      });
+    });
+
+    assert.strictEqual(downloadedTasks.length, 2, 'Chapter 11 finished after skip');
+
+    // Reset cooldown
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
+  });
+
   console.log(`\n🎉 All ${passedCount} DownloadQueueService tests passed!`);
 }
 

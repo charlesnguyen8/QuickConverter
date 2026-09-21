@@ -429,7 +429,72 @@ document.addEventListener('DOMContentLoaded', async () => {
         fieldsEl.classList.toggle('opacity-100', checked);
         fieldsEl.classList.toggle('opacity-60', !checked);
       }
+      if (cooldownToggleEl) {
+        const cooldownContainer = cooldownToggleEl.closest('.border-t');
+        if (cooldownContainer) {
+          cooldownContainer.classList.toggle('opacity-40', !checked);
+          cooldownContainer.classList.toggle('pointer-events-none', !checked);
+        }
+      }
     }
+
+    // --- Cooldown Elements in DeepSeek Panel ---
+    const cooldownToggleEl = document.getElementById('novel-cooldown-toggle');
+    const cooldownMinEl = document.getElementById('novel-cooldown-min');
+    const cooldownMaxEl = document.getElementById('novel-cooldown-max');
+    const cooldownBadgeEl = document.getElementById('novel-cooldown-badge');
+    const cooldownInputsRowEl = document.getElementById('novel-cooldown-inputs-row');
+
+    const updateCooldownUI = () => {
+      let cfg = { enabled: true, minSec: 180, maxSec: 300 };
+      try {
+        const raw = getStored('quickconverter_queue_cooldown', null);
+        if (raw) cfg = { ...cfg, ...JSON.parse(raw) };
+      } catch (e) {}
+
+      if (cooldownToggleEl) cooldownToggleEl.checked = cfg.enabled !== false;
+      if (cooldownMinEl) cooldownMinEl.value = cfg.minSec || 180;
+      if (cooldownMaxEl) cooldownMaxEl.value = cfg.maxSec || 300;
+
+      const isChecked = cooldownToggleEl ? cooldownToggleEl.checked : true;
+      if (cooldownBadgeEl) {
+        if (isChecked) {
+          const minM = Math.round((cfg.minSec || 180) / 60 * 10) / 10;
+          const maxM = Math.round((cfg.maxSec || 300) / 60 * 10) / 10;
+          cooldownBadgeEl.textContent = `${minM}m – ${maxM}m Randomized`;
+          cooldownBadgeEl.className = 'text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30';
+        } else {
+          cooldownBadgeEl.textContent = 'Disabled';
+          cooldownBadgeEl.className = 'text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 border border-slate-600';
+        }
+      }
+      if (cooldownInputsRowEl) {
+        cooldownInputsRowEl.classList.toggle('opacity-40', !isChecked);
+        cooldownInputsRowEl.classList.toggle('pointer-events-none', !isChecked);
+      }
+    };
+
+    const saveCooldownConfig = () => {
+      const enabled = cooldownToggleEl ? cooldownToggleEl.checked : true;
+      let min = cooldownMinEl ? parseInt(cooldownMinEl.value, 10) : 180;
+      let max = cooldownMaxEl ? parseInt(cooldownMaxEl.value, 10) : 300;
+      if (isNaN(min) || min < 10) min = 10;
+      if (isNaN(max) || max < min) max = min;
+
+      const cfg = { enabled, minSec: min, maxSec: max };
+      setStored('quickconverter_queue_cooldown', JSON.stringify(cfg));
+      const qService = (typeof window !== 'undefined' && window.DownloadQueueService) ||
+        (typeof DownloadQueueService !== 'undefined' && DownloadQueueService);
+      if (qService && typeof qService.setCooldownConfig === 'function') {
+        qService.setCooldownConfig(cfg);
+      }
+      updateCooldownUI();
+    };
+
+    updateCooldownUI();
+    if (cooldownToggleEl) cooldownToggleEl.addEventListener('change', saveCooldownConfig);
+    if (cooldownMinEl) cooldownMinEl.addEventListener('change', saveCooldownConfig);
+    if (cooldownMaxEl) cooldownMaxEl.addEventListener('change', saveCooldownConfig);
 
     updateState(isEnabled);
 
@@ -866,9 +931,12 @@ document.addEventListener('DOMContentLoaded', async () => {
               return;
             }
 
+            const isCooldownActive = cooldownToggleEl ? cooldownToggleEl.checked : true;
             const options = {
+              cooldown: isCooldownActive,
               translation: {
                 enabled: isTranslationEnabled,
+                cooldown: isCooldownActive,
                 apiKey: apiKey || (isCustomMode ? 'sk-local' : ''),
                 prompt: promptEl ? promptEl.value : '',
                 model: selectedModel,
@@ -1106,9 +1174,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
+        const isCooldownActive = cooldownToggleEl ? cooldownToggleEl.checked : true;
         const options = {
+          cooldown: isCooldownActive,
           translation: {
             enabled: isTranslationEnabled,
+            cooldown: isCooldownActive,
             apiKey: apiKey || (isCustomMode ? 'sk-local' : ''),
             prompt: promptEl ? promptEl.value : '',
             model: selectedModel,

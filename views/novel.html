@@ -357,6 +357,63 @@
               ></textarea>
             </div>
           </div>
+
+          <!-- Rate Limit Cooldown Row in DeepSeek Panel -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-700/60">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 flex-shrink-0 text-sm">
+                ⏳
+              </div>
+              <div class="flex flex-col">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs font-bold text-slate-200">Rate Limit Cooldown</span>
+                  <span id="novel-cooldown-badge" class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                    3m – 5m Randomized
+                  </span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-0.5">
+                  Pause 3 to 5 minutes between queued chapters to prevent API rate limits.
+                </p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3 self-end sm:self-auto">
+              <!-- Quick Duration Adjuster -->
+              <div id="novel-cooldown-inputs-row" class="flex items-center gap-1.5 text-xs text-slate-300">
+                <div class="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded-lg border border-slate-700 shadow-inner">
+                  <input
+                    type="number"
+                    id="novel-cooldown-min"
+                    min="10"
+                    max="600"
+                    step="5"
+                    value="180"
+                    class="w-12 bg-transparent text-right font-mono text-xs text-amber-300 focus:outline-none"
+                    title="Minimum cooldown in seconds"
+                  />
+                  <span class="text-[10px] text-slate-500 font-mono">s</span>
+                  <span class="text-slate-600 font-bold">~</span>
+                  <input
+                    type="number"
+                    id="novel-cooldown-max"
+                    min="10"
+                    max="1200"
+                    step="5"
+                    value="300"
+                    class="w-12 bg-transparent text-right font-mono text-xs text-amber-300 focus:outline-none"
+                    title="Maximum cooldown in seconds"
+                  />
+                  <span class="text-[10px] text-slate-500 font-mono">s</span>
+                </div>
+              </div>
+
+              <!-- Toggle Switch -->
+              <label class="relative inline-flex items-center cursor-pointer flex-shrink-0" title="Toggle randomized cooldown between translated chapters">
+                <input type="checkbox" id="novel-cooldown-toggle" class="sr-only peer" checked />
+                <div class="w-10 h-5.5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-amber-600"></div>
+              </label>
+            </div>
+          </div>
         </div>
 
         <!-- Chapters List -->

@@ -870,8 +870,17 @@
             this._sync();
             updateKeepAlive(false);
           } else {
-            // If cooldown is enabled and wait range > 0, wait before next chapter
-            if (this.cooldownEnabled && this.minCooldownSec > 0 && this.maxCooldownSec >= this.minCooldownSec) {
+            // Cooldown applies when enabled AND task was translated (or has cooldown: true).
+            // Raw chapter downloads without translation (options.translation.enabled: false) are not rate-limited and skip cooldown.
+            const isExplicitNoTranslation = task?.options?.translation && task.options.translation.enabled === false;
+            const isExplicitNoCooldown = task?.options?.cooldown === false || task?.options?.translation?.cooldown === false;
+            const shouldCooldown = this.cooldownEnabled &&
+              !isExplicitNoTranslation &&
+              !isExplicitNoCooldown &&
+              this.minCooldownSec > 0 &&
+              this.maxCooldownSec >= this.minCooldownSec;
+
+            if (shouldCooldown) {
               this._startCooldown();
             } else {
               this._processNext();

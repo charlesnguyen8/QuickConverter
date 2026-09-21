@@ -421,7 +421,60 @@ document.addEventListener('DOMContentLoaded', async () => {
         fieldsEl.classList.toggle('opacity-100', checked);
         fieldsEl.classList.toggle('opacity-60', !checked);
       }
+      if (popupCooldownToggleEl) {
+        const cooldownRow = popupCooldownToggleEl.closest('.border-t');
+        if (cooldownRow) {
+          cooldownRow.classList.toggle('opacity-40', !checked);
+          cooldownRow.classList.toggle('pointer-events-none', !checked);
+        }
+      }
     }
+
+    // Cooldown elements in popup DeepSeek panel
+    const popupCooldownToggleEl = document.getElementById('popup-cooldown-toggle');
+    const popupCooldownBadgeEl = document.getElementById('popup-cooldown-badge');
+
+    const updatePopupCooldownUI = () => {
+      let cfg = { enabled: true, minSec: 180, maxSec: 300 };
+      try {
+        const raw = getStored('quickconverter_queue_cooldown', null);
+        if (raw) cfg = { ...cfg, ...JSON.parse(raw) };
+      } catch (e) {}
+
+      const isChecked = cfg.enabled !== false;
+      if (popupCooldownToggleEl) popupCooldownToggleEl.checked = isChecked;
+      if (popupCooldownBadgeEl) {
+        if (isChecked) {
+          const minM = Math.round((cfg.minSec || 180) / 60);
+          const maxM = Math.round((cfg.maxSec || 300) / 60);
+          popupCooldownBadgeEl.textContent = `${minM}–${maxM}m`;
+          popupCooldownBadgeEl.className = 'text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30';
+        } else {
+          popupCooldownBadgeEl.textContent = 'Off';
+          popupCooldownBadgeEl.className = 'text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-slate-700 text-slate-400 border border-slate-600';
+        }
+      }
+    };
+
+    const savePopupCooldownConfig = () => {
+      let cfg = { enabled: true, minSec: 180, maxSec: 300 };
+      try {
+        const raw = getStored('quickconverter_queue_cooldown', null);
+        if (raw) cfg = { ...cfg, ...JSON.parse(raw) };
+      } catch (e) {}
+      cfg.enabled = popupCooldownToggleEl ? popupCooldownToggleEl.checked : true;
+
+      setStored('quickconverter_queue_cooldown', JSON.stringify(cfg));
+      const qService = (typeof window !== 'undefined' && window.DownloadQueueService) ||
+        (typeof DownloadQueueService !== 'undefined' && DownloadQueueService);
+      if (qService && typeof qService.setCooldownConfig === 'function') {
+        qService.setCooldownConfig(cfg);
+      }
+      updatePopupCooldownUI();
+    };
+
+    updatePopupCooldownUI();
+    if (popupCooldownToggleEl) popupCooldownToggleEl.addEventListener('change', savePopupCooldownConfig);
 
     updateState(isEnabled);
 
@@ -925,9 +978,12 @@ document.addEventListener('DOMContentLoaded', async () => {
               return;
             }
 
+            const isCooldownActive = popupCooldownToggleEl ? popupCooldownToggleEl.checked : true;
             const options = {
+              cooldown: isCooldownActive,
               translation: {
                 enabled: isTranslationEnabled,
+                cooldown: isCooldownActive,
                 apiKey: apiKey || (isCustomMode ? 'sk-local' : ''),
                 prompt: promptEl ? promptEl.value : '',
                 model: selectedModel,
@@ -1072,9 +1128,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
 
+      const isCooldownActive = popupCooldownToggleEl ? popupCooldownToggleEl.checked : true;
       const options = {
+        cooldown: isCooldownActive,
         translation: {
           enabled: isTranslationEnabled,
+          cooldown: isCooldownActive,
           apiKey: apiKey || (isCustomMode ? 'sk-local' : ''),
           prompt: promptEl ? promptEl.value : '',
           model: selectedModel,
