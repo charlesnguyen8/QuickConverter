@@ -870,6 +870,29 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
 
           rightCol.appendChild(activeBtn);
+        } else if (qStatus && qStatus.status === 'retry_pending') {
+          // Chapter is pending retry after error / rate-limit backoff
+          const retryBtn = document.createElement('button');
+          retryBtn.type = 'button';
+          retryBtn.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-rose-300 bg-rose-500/15 border border-rose-500/30 hover:bg-rose-500/25 transition shadow-sm cursor-pointer group/retrybtn';
+          retryBtn.title = `Retry Pending (Attempt ${qStatus.retryCount || 1}). Rate-limit backoff active. Click to retry now immediately.`;
+          retryBtn.innerHTML = `
+            <span class="group-hover/retrybtn:hidden">🔄 Retry Pending</span>
+            <span class="hidden group-hover/retrybtn:inline font-bold">Retry Now ⚡</span>
+          `;
+
+          retryBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (queueService) {
+              if (typeof queueService.retryNow === 'function') {
+                await queueService.retryNow();
+              } else if (typeof queueService.skipCooldown === 'function') {
+                await queueService.skipCooldown();
+              }
+            }
+          });
+
+          rightCol.appendChild(retryBtn);
         } else if (qStatus && qStatus.status === 'queued') {
           // Chapter is waiting in queue
           const queuedBtn = document.createElement('button');

@@ -907,6 +907,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (queueService) await queueService.remove(`${novel.id}_ch${chNum}`);
           });
           rightSection.appendChild(activeBtn);
+        } else if (qStatus && qStatus.status === 'retry_pending') {
+          const retryBtn = document.createElement('button');
+          retryBtn.type = 'button';
+          retryBtn.className = 'px-1.5 py-1 rounded text-[10px] font-mono text-rose-300 bg-rose-500/15 border border-rose-500/30 hover:bg-rose-500/25 transition cursor-pointer flex items-center gap-1';
+          retryBtn.title = `Retry Pending (Attempt ${qStatus.retryCount || 1}). Click to retry now.`;
+          retryBtn.innerHTML = `
+            <span>🔄 Retry</span>
+            <span class="font-bold text-rose-300">⚡</span>
+          `;
+          retryBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (queueService) {
+              if (typeof queueService.retryNow === 'function') {
+                await queueService.retryNow();
+              } else if (typeof queueService.skipCooldown === 'function') {
+                await queueService.skipCooldown();
+              }
+            }
+          });
+          rightSection.appendChild(retryBtn);
         } else if (qStatus && qStatus.status === 'queued') {
           const queuedBtn = document.createElement('button');
           queuedBtn.type = 'button';

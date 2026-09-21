@@ -294,30 +294,60 @@ async function runTests() {
     assert.strictEqual(startedTasks.length, 1, 'Subsequent chapters (51, 52) must NEVER be started or sent to API');
   });
 
-  // 8. Error resilience test (skips to next chapter on failure)
-  await test('Error resilience: failed chapter is skipped and queue proceeds with next chapter', async () => {
+  // 8. Rate limit backoff & head-of-queue retry on failure
+  await test('Failure response triggers rate-limit backoff, halts downloads, and places chapter at head of queue', async () => {
     downloadedTasks = [];
     DownloadQueueService.clearAll();
-    mockDelayMs = 30;
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+    mockDelayMs = 20;
     mockFailChapter = 61; // Ch 61 will fail
 
-    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 60 });
-    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 61 }); // fails
-    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 62 });
+    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 60, options: { translation: { enabled: false } } });
+    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 61, options: { translation: { enabled: false } } }); // fails
+    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 62, options: { translation: { enabled: false } } });
 
-    // Wait for queue to finish all
+    // Wait until Ch 61 fails and enters retry cooldown
     await new Promise((resolve) => {
       const unsub = DownloadQueueService.subscribe((s) => {
-        if (s.totalCount === 0 && !s.isProcessing) {
+        if (s.cooldown && s.cooldown.active && s.cooldown.type === 'retry') {
           unsub();
           resolve();
         }
       });
     });
 
-    assert.strictEqual(downloadedTasks.length, 2, 'Ch 60 and Ch 62 should be downloaded');
+    // Verify Ch 60 completed
+    assert.strictEqual(downloadedTasks.length, 1, 'Only Ch 60 should be downloaded');
     assert.strictEqual(downloadedTasks[0].chapterNumber, 60, 'Ch 60 downloaded');
-    assert.strictEqual(downloadedTasks[1].chapterNumber, 62, 'Ch 62 downloaded despite Ch 61 failing');
+
+    // Verify Ch 61 is placed back at the head of the queue
+    const state = DownloadQueueService.getState();
+    assert.strictEqual(state.isProcessing, false, 'Queue must stop downloading subsequent chapters');
+    assert(state.cooldown && state.cooldown.active, 'Cooldown must be active');
+    assert.strictEqual(state.cooldown.type, 'retry', 'Cooldown type must be retry');
+    assert.strictEqual(state.cooldown.totalSeconds, 4500, 'Error backoff must be 4500s (1h 15m)');
+    assert.strictEqual(state.cooldown.nextChapterNumber, 61, 'Next chapter must be Ch 61');
+    assert.strictEqual(state.queue.length, 2, 'Queue still has 2 chapters (61 at head, 62 waiting)');
+    assert.strictEqual(state.queue[0].chapterNumber, 61, 'Ch 61 is back at the head of the queue');
+    assert.strictEqual(state.queue[0].status, 'retry_pending', 'Ch 61 status is retry_pending');
+    assert.strictEqual(state.queue[1].chapterNumber, 62, 'Ch 62 is next in queue');
+
+    // Test manual skipFailedChapter: drops Ch 61 and proceeds with Ch 62
+    DownloadQueueService.skipFailedChapter();
+
+    await new Promise((resolve) => {
+      const unsub = DownloadQueueService.subscribe((s) => {
+        if (s.totalCount === 0 && !s.isProcessing && !s.cooldown) {
+          unsub();
+          resolve();
+        }
+      });
+    });
+
+    assert.strictEqual(downloadedTasks.length, 2, 'Ch 62 downloaded after skipping failed Ch 61');
+    assert.strictEqual(downloadedTasks[1].chapterNumber, 62, 'Ch 62 downloaded');
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
   });
 
   // 9. Cross-view persistence test
@@ -755,6 +785,148 @@ async function runTests() {
 
     DownloadQueueService.clearAll();
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
+  });
+
+  // 17. Manual override controls test: retryNow immediately retries head chapter during 1h 15m backoff
+  await test('retryNow immediately retries head chapter during rate-limit backoff', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+    mockDelayMs = 20;
+    mockFailChapter = 80;
+
+    await DownloadQueueService.enqueue({ novelId: 'novel-retry', chapterNumber: 80, options: { translation: { enabled: false } } });
+
+    // Wait for failure and retry cooldown
+    await new Promise((resolve) => {
+      const unsub = DownloadQueueService.subscribe((s) => {
+        if (s.cooldown && s.cooldown.active && s.cooldown.type === 'retry') {
+          unsub();
+          resolve();
+        }
+      });
+    });
+
+    assert.strictEqual(DownloadQueueService.cooldown.type, 'retry');
+    assert.strictEqual(DownloadQueueService.queue[0].chapterNumber, 80);
+
+    // Clear failure condition and trigger retryNow
+    mockFailChapter = null;
+    DownloadQueueService.retryNow();
+
+    await new Promise((resolve) => {
+      const unsub = DownloadQueueService.subscribe((s) => {
+        if (s.totalCount === 0 && !s.isProcessing && !s.cooldown) {
+          unsub();
+          resolve();
+        }
+      });
+    });
+
+    assert.strictEqual(downloadedTasks.length, 1, 'Ch 80 downloaded successfully upon retryNow');
+    assert.strictEqual(downloadedTasks[0].chapterNumber, 80);
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
+  });
+
+  // 18. Permanent error circuit breaker: 401/402 errors pause queue immediately without running 75m timer
+  await test('Permanent auth or balance error pauses queue immediately without 75m backoff timer', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+
+    // Mock storage to throw 401 Invalid API Key
+    const originalDownload = mockStorageService.downloadChapter;
+    mockStorageService.downloadChapter = async () => {
+      throw new Error('Invalid API key. Please check your key. (401)');
+    };
+
+    await DownloadQueueService.enqueue({ novelId: 'novel-auth', chapterNumber: 90 });
+
+    await new Promise((resolve) => {
+      let unsub;
+      unsub = DownloadQueueService.subscribe((s) => {
+        if (s.isPaused) {
+          if (unsub) unsub();
+          else setTimeout(() => unsub && unsub(), 0);
+          resolve();
+        }
+      });
+    });
+
+    const state = DownloadQueueService.getState();
+    assert.strictEqual(state.isPaused, true, 'Queue must pause immediately on 401/402');
+    assert.strictEqual(state.cooldown, null, 'No 75-minute cooldown timer should run for auth errors');
+    assert.strictEqual(state.queue.length, 1, 'Chapter remains at head of queue');
+    assert.strictEqual(state.queue[0].status, 'paused_error', 'Chapter status is paused_error');
+
+    // Restore mock
+    mockStorageService.downloadChapter = originalDownload;
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
+  });
+
+  // 19. Max retries circuit breaker: after exceeding maxRetries, chapter is marked failed and queue paused
+  await test('Exceeding maxRetries marks chapter permanently failed and pauses queue', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 2 });
+    mockFailChapter = 99; // Always fails
+
+    await DownloadQueueService.enqueue({ novelId: 'novel-loop', chapterNumber: 99 });
+
+    // Attempt 1 fails -> retry_pending (retryCount: 1)
+    await new Promise((r) => {
+      let unsub;
+      unsub = DownloadQueueService.subscribe((s) => {
+        if (s.cooldown && s.cooldown.active) {
+          if (unsub) unsub();
+          else setTimeout(() => unsub && unsub(), 0);
+          r();
+        }
+      });
+    });
+    assert.strictEqual(DownloadQueueService.queue[0].retryCount, 1);
+
+    // Trigger retry 1
+    DownloadQueueService.retryNow();
+
+    // Attempt 2 fails -> retry_pending (retryCount: 2)
+    await new Promise((r) => {
+      let unsub;
+      unsub = DownloadQueueService.subscribe((s) => {
+        if (s.cooldown && s.cooldown.active) {
+          if (unsub) unsub();
+          else setTimeout(() => unsub && unsub(), 0);
+          r();
+        }
+      });
+    });
+    assert.strictEqual(DownloadQueueService.queue[0].retryCount, 2);
+
+    // Trigger retry 2
+    DownloadQueueService.retryNow();
+
+    // Attempt 3 fails -> exceeds maxRetries (2) -> queue paused, cooldown null
+    await new Promise((r) => {
+      let unsub;
+      unsub = DownloadQueueService.subscribe((s) => {
+        if (s.isPaused) {
+          if (unsub) unsub();
+          else setTimeout(() => unsub && unsub(), 0);
+          r();
+        }
+      });
+    });
+
+    const state = DownloadQueueService.getState();
+    assert.strictEqual(state.isPaused, true, 'Queue is paused after exceeding max retries');
+    assert.strictEqual(state.cooldown, null, 'Cooldown is cleared');
+    assert.strictEqual(state.queue.length, 0, 'Permanently failed chapter is not re-queued');
+
+    mockFailChapter = null;
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
   });
 
   console.log(`\n🎉 All ${passedCount} DownloadQueueService tests passed!`);

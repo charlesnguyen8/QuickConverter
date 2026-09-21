@@ -515,15 +515,45 @@ async function initDeepSeekSettings() {
   const cooldownMin = document.getElementById('queue-cooldown-min');
   const cooldownMax = document.getElementById('queue-cooldown-max');
   const cooldownInputsContainer = document.getElementById('queue-cooldown-inputs-container');
+  const errorCooldownInput = document.getElementById('queue-error-cooldown');
+  const errorCooldownUnit = document.getElementById('queue-error-cooldown-unit');
+  const maxRetriesInput = document.getElementById('queue-max-retries');
+
+  const formatSecHuman = (sec) => {
+    const s = Math.max(0, Math.round(sec || 0));
+    if (s >= 3600) {
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      return m > 0 ? `sec (${h}h ${m}m)` : `sec (${h}h)`;
+    }
+    const m = Math.floor(s / 60);
+    return `sec (${m}m)`;
+  };
 
   const updateCooldownConfig = () => {
     const enabled = cooldownToggle ? cooldownToggle.checked : true;
     let min = cooldownMin ? parseInt(cooldownMin.value, 10) : 180;
     let max = cooldownMax ? parseInt(cooldownMax.value, 10) : 300;
+    let errorSec = errorCooldownInput ? parseInt(errorCooldownInput.value, 10) : 4500;
+    let maxRetries = maxRetriesInput ? parseInt(maxRetriesInput.value, 10) : 3;
+
     if (isNaN(min) || min < 10) min = 10;
     if (isNaN(max) || max < min) max = min;
+    if (isNaN(errorSec) || errorSec < 60) errorSec = 60;
+    if (isNaN(maxRetries) || maxRetries < 1) maxRetries = 1;
 
-    const config = { enabled, minSec: min, maxSec: max };
+    if (errorCooldownUnit) {
+      errorCooldownUnit.textContent = formatSecHuman(errorSec);
+    }
+
+    const config = {
+      enabled,
+      minSec: min,
+      maxSec: max,
+      errorCooldownSec: errorSec,
+      maxRetries: maxRetries
+    };
+
     if (typeof DownloadQueueService !== 'undefined') {
       DownloadQueueService.setCooldownConfig(config);
     } else {
@@ -538,7 +568,7 @@ async function initDeepSeekSettings() {
 
   // Load saved configuration
   const loadSavedCooldown = () => {
-    let cfg = { enabled: true, minSec: 180, maxSec: 300 };
+    let cfg = { enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 };
     try {
       const raw = localStorage.getItem('quickconverter_queue_cooldown');
       if (raw) cfg = { ...cfg, ...JSON.parse(raw) };
@@ -547,6 +577,10 @@ async function initDeepSeekSettings() {
     if (cooldownToggle) cooldownToggle.checked = cfg.enabled !== false;
     if (cooldownMin) cooldownMin.value = cfg.minSec || 180;
     if (cooldownMax) cooldownMax.value = cfg.maxSec || 300;
+    if (errorCooldownInput) errorCooldownInput.value = cfg.errorCooldownSec || 4500;
+    if (errorCooldownUnit) errorCooldownUnit.textContent = formatSecHuman(cfg.errorCooldownSec || 4500);
+    if (maxRetriesInput) maxRetriesInput.value = cfg.maxRetries || 3;
+
     if (cooldownInputsContainer) {
       cooldownInputsContainer.classList.toggle('opacity-50', !cooldownToggle.checked);
       cooldownInputsContainer.classList.toggle('pointer-events-none', !cooldownToggle.checked);
@@ -558,6 +592,8 @@ async function initDeepSeekSettings() {
   if (cooldownToggle) cooldownToggle.addEventListener('change', updateCooldownConfig);
   if (cooldownMin) cooldownMin.addEventListener('change', updateCooldownConfig);
   if (cooldownMax) cooldownMax.addEventListener('change', updateCooldownConfig);
+  if (errorCooldownInput) errorCooldownInput.addEventListener('change', updateCooldownConfig);
+  if (maxRetriesInput) maxRetriesInput.addEventListener('change', updateCooldownConfig);
 }
 
 function updateBalanceDisplay(data) {

@@ -278,6 +278,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.action === 'QUEUE_RETRY_NOW') {
+    if (typeof DownloadQueueService !== 'undefined') {
+      DownloadQueueService.retryNow();
+      sendResponse({ success: true, state: DownloadQueueService.getState() });
+    } else {
+      sendResponse({ success: false });
+    }
+    return false;
+  }
+
+  if (message.action === 'QUEUE_SKIP_FAILED_CHAPTER') {
+    if (typeof DownloadQueueService !== 'undefined') {
+      DownloadQueueService.skipFailedChapter();
+      sendResponse({ success: true, state: DownloadQueueService.getState() });
+    } else {
+      sendResponse({ success: false });
+    }
+    return false;
+  }
+
   if (message.action === 'QUEUE_SET_COOLDOWN_CONFIG') {
     if (typeof DownloadQueueService !== 'undefined') {
       DownloadQueueService.setCooldownConfig(message.config);
@@ -288,3 +308,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 });
+
+// Chrome alarms listener to wake up MV3 background service worker when cooldown or retry alarm fires
+if (typeof chrome !== 'undefined' && chrome.alarms && chrome.alarms.onAlarm) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm && alarm.name === 'QUEUE_COOLDOWN_ALARM') {
+      if (typeof DownloadQueueService !== 'undefined') {
+        DownloadQueueService.skipCooldown();
+      }
+    }
+  });
+}
+

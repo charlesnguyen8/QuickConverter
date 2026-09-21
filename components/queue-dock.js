@@ -14,6 +14,12 @@
 
   function formatCooldownTime(sec) {
     const s = Math.max(0, Math.round(sec || 0));
+    if (s >= 3600) {
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const rem = s % 60;
+      return `${h}h ${m}m ${rem < 10 ? '0' : ''}${rem}s`;
+    }
     const m = Math.floor(s / 60);
     const rem = s % 60;
     if (m > 0) {
@@ -133,7 +139,9 @@
         if (!this.isExpanded) {
           const textEl = this.container.querySelector('#queue-dock-pill-text');
           if (textEl) {
-            textEl.textContent = `⏳ Wait ${timeStr}`;
+            textEl.textContent = cooldown.type === 'retry'
+              ? `⚠️ Retry Ch. ${cooldown.nextChapterNumber || ''} in ${timeStr}`
+              : `⏳ Wait ${timeStr}`;
           }
           return true;
         } else {
@@ -252,25 +260,41 @@
       // Collapsed Pill View (Compact, 100% solid/opaque, non-obtrusive)
       if (!this.isExpanded) {
         const percent = active?.progress?.percent !== undefined ? active.progress.percent : (active ? 10 : 0);
+        const isRetry = isCooldown && cooldown.type === 'retry';
         let activeText = `${total} Queued`;
         if (isPaused) {
           activeText = '⏸ Paused';
         } else if (isCooldown) {
-          activeText = `⏳ Wait ${formatCooldownTime(cooldown.secondsRemaining)}`;
+          activeText = isRetry
+            ? `⚠️ Retry Ch. ${cooldown.nextChapterNumber || ''} in ${formatCooldownTime(cooldown.secondsRemaining)}`
+            : `⏳ Wait ${formatCooldownTime(cooldown.secondsRemaining)}`;
         } else if (active) {
           activeText = `Ch. ${active.chapterNumber} (${percent}%)`;
         }
+
+        const borderClass = isRetry
+          ? 'border-rose-500 hover:border-rose-400'
+          : (isCooldown ? 'border-amber-500 hover:border-amber-400' : 'border-indigo-500 hover:border-indigo-400');
+
+        const pillTextClass = isRetry
+          ? 'text-rose-300'
+          : (isCooldown ? 'text-amber-300' : 'text-slate-100');
 
         this.container.innerHTML = `
           <button
             type="button"
             id="queue-dock-expand-btn"
-            class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900 border ${isCooldown ? 'border-amber-500 hover:border-amber-400' : 'border-indigo-500 hover:border-indigo-400'} shadow-2xl text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer select-none"
+            class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900 border ${borderClass} shadow-2xl text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer select-none"
             title="Click to expand Download Queue details"
           >
             <div id="queue-dock-pill-ring" class="flex items-center justify-center flex-shrink-0">
               ${active && !isPaused ? renderProgressRing(percent, 20, 2.5, false) : (
-                isCooldown ? `
+                isRetry ? `
+                  <span class="flex h-2.5 w-2.5 relative flex-shrink-0">
+                    <span class="animate-ping bg-rose-400 absolute inline-flex h-full w-full rounded-full opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                  </span>
+                ` : (isCooldown ? `
                   <span class="flex h-2.5 w-2.5 relative flex-shrink-0">
                     <span class="animate-ping bg-amber-400 absolute inline-flex h-full w-full rounded-full opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
@@ -280,10 +304,10 @@
                     <span class="${isPaused ? 'bg-amber-400' : 'animate-ping bg-indigo-400'} absolute inline-flex h-full w-full rounded-full opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-indigo-500'}"></span>
                   </span>
-                `
+                `)
               )}
             </div>
-            <span id="queue-dock-pill-text" class="truncate max-w-[150px] sm:max-w-[200px] ${isCooldown ? 'text-amber-300' : 'text-slate-100'}">${activeText}</span>
+            <span id="queue-dock-pill-text" class="truncate max-w-[150px] sm:max-w-[200px] ${pillTextClass}">${activeText}</span>
             <span class="px-1.5 py-0.5 rounded-md bg-indigo-950 text-indigo-300 border border-indigo-500/40 text-[10px] font-mono font-bold flex-shrink-0">
               ${total}
             </span>
@@ -347,43 +371,96 @@
           </div>
         `;
       } else if (isCooldown) {
+        const isRetry = cooldown.type === 'retry';
         const timeStr = formatCooldownTime(cooldown.secondsRemaining);
-        const totalSec = cooldown.totalSeconds || 180;
+        const totalSec = cooldown.totalSeconds || (isRetry ? 4500 : 180);
         const progressPct = Math.max(0, Math.min(100, Math.round(((totalSec - cooldown.secondsRemaining) / totalSec) * 100)));
         const targetChapter = cooldown.nextChapterTitle || (cooldown.nextChapterNumber ? `Chapter ${cooldown.nextChapterNumber}` : 'next chapter');
 
-        activeHtml = `
-          <div class="p-2.5 sm:p-3 rounded-xl bg-amber-950/40 border border-amber-500/60 flex flex-col gap-2 shadow-md">
-            <div class="flex items-center justify-between gap-2.5">
-              <div class="flex items-center gap-2.5 min-w-0 flex-1">
-                <span class="text-xl flex-shrink-0 animate-pulse">⏳</span>
-                <div class="flex flex-col min-w-0">
-                  <div class="flex items-center gap-1.5 flex-wrap">
-                    <span class="text-xs font-bold text-amber-200">Rate Limit Cooldown</span>
-                    <span id="queue-dock-cooldown-time" class="text-[11px] font-mono font-extrabold text-amber-300 bg-amber-900/80 px-1.5 py-0.5 rounded border border-amber-500/40">
-                      ${timeStr}
+        if (isRetry) {
+          const retryCount = cooldown.retryCount || 1;
+          const maxRetries = cooldown.maxRetries || 3;
+          const errorMsg = cooldown.error || 'Rate limit or connection error';
+
+          activeHtml = `
+            <div class="p-2.5 sm:p-3 rounded-xl bg-rose-950/40 border border-rose-500/60 flex flex-col gap-2 shadow-md">
+              <div class="flex items-center justify-between gap-2.5">
+                <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                  <span class="text-xl flex-shrink-0 animate-pulse">⚠️</span>
+                  <div class="flex flex-col min-w-0">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span class="text-xs font-bold text-rose-200">Rate Limit / Failure Backoff</span>
+                      <span id="queue-dock-cooldown-time" class="text-[11px] font-mono font-extrabold text-rose-300 bg-rose-900/80 px-1.5 py-0.5 rounded border border-rose-500/40">
+                        ${timeStr}
+                      </span>
+                      <span class="text-[10px] font-mono text-rose-300/80 bg-rose-950 px-1.5 py-0.5 rounded border border-rose-800">
+                        Attempt ${retryCount}/${maxRetries}
+                      </span>
+                    </div>
+                    <span id="queue-dock-cooldown-subtitle" class="text-[11px] text-rose-300/90 truncate font-medium" title="${errorMsg}">
+                      ${targetChapter} failed: ${errorMsg}
                     </span>
                   </div>
-                  <span id="queue-dock-cooldown-subtitle" class="text-[11px] text-amber-300/80 truncate font-medium">
-                    Waiting before ${targetChapter}...
-                  </span>
+                </div>
+                <div class="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    type="button"
+                    id="queue-dock-retry-now-btn"
+                    class="px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 active:scale-95 shadow transition cursor-pointer flex items-center gap-1"
+                    title="Retry failed chapter immediately without waiting"
+                  >
+                    <span>Retry Now 🔄</span>
+                  </button>
+                  <button
+                    type="button"
+                    id="queue-dock-skip-chapter-btn"
+                    class="px-2 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 shadow transition cursor-pointer flex items-center gap-1"
+                    title="Discard this chapter and skip to remaining chapters"
+                  >
+                    <span>Skip ⏩</span>
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                id="queue-dock-skip-cooldown-btn"
-                class="px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:scale-95 shadow transition cursor-pointer flex items-center gap-1 flex-shrink-0"
-                title="Skip wait and start downloading next chapter immediately"
-              >
-                <span>Skip ⏩</span>
-              </button>
+              <!-- Cooldown progress bar -->
+              <div class="w-full bg-slate-900 rounded-full h-1 overflow-hidden border border-rose-500/30">
+                <div id="queue-dock-cooldown-bar" class="bg-rose-500 h-full rounded-full transition-all duration-1000" style="width: ${progressPct}%;"></div>
+              </div>
             </div>
-            <!-- Cooldown progress bar -->
-            <div class="w-full bg-slate-900 rounded-full h-1 overflow-hidden border border-amber-500/30">
-              <div id="queue-dock-cooldown-bar" class="bg-amber-400 h-full rounded-full transition-all duration-1000" style="width: ${progressPct}%;"></div>
+          `;
+        } else {
+          activeHtml = `
+            <div class="p-2.5 sm:p-3 rounded-xl bg-amber-950/40 border border-amber-500/60 flex flex-col gap-2 shadow-md">
+              <div class="flex items-center justify-between gap-2.5">
+                <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                  <span class="text-xl flex-shrink-0 animate-pulse">⏳</span>
+                  <div class="flex flex-col min-w-0">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span class="text-xs font-bold text-amber-200">Rate Limit Cooldown</span>
+                      <span id="queue-dock-cooldown-time" class="text-[11px] font-mono font-extrabold text-amber-300 bg-amber-900/80 px-1.5 py-0.5 rounded border border-amber-500/40">
+                        ${timeStr}
+                      </span>
+                    </div>
+                    <span id="queue-dock-cooldown-subtitle" class="text-[11px] text-amber-300/80 truncate font-medium">
+                      Waiting before ${targetChapter}...
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  id="queue-dock-skip-cooldown-btn"
+                  class="px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:scale-95 shadow transition cursor-pointer flex items-center gap-1 flex-shrink-0"
+                  title="Skip wait and start downloading next chapter immediately"
+                >
+                  <span>Skip ⏩</span>
+                </button>
+              </div>
+              <!-- Cooldown progress bar -->
+              <div class="w-full bg-slate-900 rounded-full h-1 overflow-hidden border border-amber-500/30">
+                <div id="queue-dock-cooldown-bar" class="bg-amber-400 h-full rounded-full transition-all duration-1000" style="width: ${progressPct}%;"></div>
+              </div>
             </div>
-          </div>
-        `;
+          `;
+        }
       } else if (isPaused) {
         activeHtml = `
           <div class="p-2.5 sm:p-3 rounded-xl bg-slate-800 border border-amber-500 text-xs text-amber-300 flex items-center gap-2 shadow-md">
@@ -518,6 +595,28 @@
           const q = (typeof window !== 'undefined' && window.DownloadQueueService);
           if (q && typeof q.skipCooldown === 'function') {
             q.skipCooldown();
+          }
+        };
+      }
+
+      const retryNowBtn = this.container.querySelector('#queue-dock-retry-now-btn');
+      if (retryNowBtn) {
+        retryNowBtn.onclick = () => {
+          const q = (typeof window !== 'undefined' && window.DownloadQueueService);
+          if (q && typeof q.retryNow === 'function') {
+            q.retryNow();
+          } else if (q && typeof q.skipCooldown === 'function') {
+            q.skipCooldown();
+          }
+        };
+      }
+
+      const skipChapterBtn = this.container.querySelector('#queue-dock-skip-chapter-btn');
+      if (skipChapterBtn) {
+        skipChapterBtn.onclick = () => {
+          const q = (typeof window !== 'undefined' && window.DownloadQueueService);
+          if (q && typeof q.skipFailedChapter === 'function') {
+            q.skipFailedChapter();
           }
         };
       }

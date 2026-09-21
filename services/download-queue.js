@@ -62,6 +62,8 @@
       this.minCooldownSec = 180; // 3.0 minutes
       this.maxCooldownSec = 300; // 5.0 minutes
       this._lastCooldownDurationSec = null;
+      this.errorCooldownSec = 4500; // 1 hour 15 minutes (75 mins)
+      this.maxRetries = 3;
 
       this._init();
     }
@@ -91,6 +93,10 @@
             this._notifySubscribers();
           } else if (msg && msg.action === 'QUEUE_SET_COOLDOWN_CONFIG' && msg.config) {
             this.setCooldownConfig(msg.config);
+          } else if (msg && msg.action === 'QUEUE_RETRY_NOW') {
+            this.retryNow();
+          } else if (msg && msg.action === 'QUEUE_SKIP_FAILED_CHAPTER') {
+            this.skipFailedChapter();
           }
         });
       }
@@ -173,9 +179,27 @@
 
         this.isPaused = !!saved.isPaused;
         this.isProcessing = false;
+
+        // Restore cooldown state if active
+        if (saved.cooldown && saved.cooldown.active) {
+          const retryAt = saved.cooldown.retryAt;
+          const remSec = retryAt ? Math.max(0, Math.round((retryAt - Date.now()) / 1000)) : (saved.cooldown.secondsRemaining || 0);
+          if (remSec <= 0) {
+            this.cooldown = null;
+            this._sync();
+            if (!this.isPaused && this.queue.length > 0) {
+              this._processNext();
+              return;
+            }
+          } else {
+            this.cooldown = { ...saved.cooldown, secondsRemaining: remSec };
+            this._startRestoredCooldownTick();
+          }
+        }
+
         this._notifySubscribers();
 
-        if (!this.isPaused && this.queue.length > 0) {
+        if (!this.isPaused && !this.cooldown && this.queue.length > 0) {
           this._processNext();
         }
       } else {
@@ -183,6 +207,13 @@
         this.queue = savedQueue;
         this.isPaused = !!saved.isPaused;
         this.isProcessing = !!this.activeTask;
+        if (saved.cooldown && saved.cooldown.active) {
+          const retryAt = saved.cooldown.retryAt;
+          const remSec = retryAt ? Math.max(0, Math.round((retryAt - Date.now()) / 1000)) : (saved.cooldown.secondsRemaining || 0);
+          this.cooldown = remSec > 0 ? { ...saved.cooldown, secondsRemaining: remSec } : null;
+        } else {
+          this.cooldown = null;
+        }
         this._notifySubscribers();
       }
     }
@@ -205,6 +236,7 @@
         status: task.status || 'queued',
         progress: task.progress || null,
         error: task.error || null,
+        retryCount: task.retryCount || 0,
         addedAt: task.addedAt || Date.now(),
         startedAt: task.startedAt || null
       };
@@ -310,7 +342,14 @@
       }
       const idx = this.queue.findIndex((t) => t.novelId === novelId && Number(t.chapterNumber) === num);
       if (idx !== -1) {
-        return { status: 'queued', queuePosition: idx + 1 };
+        const item = this.queue[idx];
+        const isRetry = item.status === 'retry_pending' || (this.cooldown && this.cooldown.active && this.cooldown.type === 'retry' && idx === 0);
+        return {
+          status: isRetry ? 'retry_pending' : 'queued',
+          queuePosition: idx + 1,
+          retryCount: item.retryCount || 1,
+          cooldown: isRetry ? this.cooldown : null
+        };
       }
       return null;
     }
@@ -582,6 +621,7 @@
       this.cooldown = null;
       this._lastCooldownDurationSec = null;
       this.queue = [];
+      this.isPaused = false;
       const active = this.activeTask;
       this.activeTask = null;
       this.isProcessing = false;
@@ -645,6 +685,62 @@
     }
 
     /**
+     * Bypasses the retry cooldown wait immediately and retries the head chapter right away.
+     */
+    retryNow() {
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        try {
+          chrome.runtime.sendMessage({ action: 'QUEUE_RETRY_NOW' }, (resp) => {
+            if (resp && resp.state) {
+              this.activeTask = resp.state.activeTask || null;
+              this.queue = resp.state.queue || [];
+              this.isPaused = !!resp.state.isPaused;
+              this.isProcessing = !!resp.state.isProcessing;
+              this.cooldown = resp.state.cooldown || null;
+              this._notifySubscribers();
+            }
+          });
+        } catch (e) {}
+        return;
+      }
+      this.skipCooldown();
+    }
+
+    /**
+     * Discards the failed chapter at the head of the queue during retry cooldown
+     * and proceeds immediately to the remaining chapters.
+     */
+    skipFailedChapter() {
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        try {
+          chrome.runtime.sendMessage({ action: 'QUEUE_SKIP_FAILED_CHAPTER' }, (resp) => {
+            if (resp && resp.state) {
+              this.activeTask = resp.state.activeTask || null;
+              this.queue = resp.state.queue || [];
+              this.isPaused = !!resp.state.isPaused;
+              this.isProcessing = !!resp.state.isProcessing;
+              this.cooldown = resp.state.cooldown || null;
+              this._notifySubscribers();
+            }
+          });
+        } catch (e) {}
+        return;
+      }
+
+      this._clearCooldownTimers();
+      this.cooldown = null;
+      if (this.queue.length > 0) {
+        this.queue.shift();
+      }
+      this._sync();
+      if (isExecutionOwner && !this.isPaused && this.queue.length > 0) {
+        this._processNext();
+      } else {
+        updateKeepAlive(false);
+      }
+    }
+
+    /**
      * Configures the cooldown duration range and toggle.
      */
     setCooldownConfig(config) {
@@ -659,10 +755,19 @@
         this.maxCooldownSec = Math.max(this.minCooldownSec, Math.round(config.maxSec));
       }
 
+      if (typeof config.errorCooldownSec === 'number' && config.errorCooldownSec > 0) {
+        this.errorCooldownSec = Math.round(config.errorCooldownSec);
+      }
+      if (typeof config.maxRetries === 'number' && config.maxRetries >= 0) {
+        this.maxRetries = Math.round(config.maxRetries);
+      }
+
       const toSave = {
         enabled: this.cooldownEnabled,
         minSec: this.minCooldownSec,
-        maxSec: this.maxCooldownSec
+        maxSec: this.maxCooldownSec,
+        errorCooldownSec: this.errorCooldownSec,
+        maxRetries: this.maxRetries
       };
 
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -687,6 +792,9 @@
       if (this._cooldownTickInterval) {
         clearInterval(this._cooldownTickInterval);
         this._cooldownTickInterval = null;
+      }
+      if (typeof chrome !== 'undefined' && chrome.alarms && typeof chrome.alarms.clear === 'function') {
+        try { chrome.alarms.clear('QUEUE_COOLDOWN_ALARM'); } catch (e) {}
       }
     }
 
@@ -729,15 +837,24 @@
 
       this._lastCooldownDurationSec = durationSec;
 
+      const retryAt = Date.now() + durationSec * 1000;
       this.cooldown = {
         active: true,
+        type: 'normal',
         totalSeconds: durationSec,
         secondsRemaining: durationSec,
+        retryAt,
         nextTaskId: nextTask?.id || null,
         nextChapterNumber: nextTask?.chapterNumber || null,
         nextNovelTitle: nextTask?.novelTitle || 'Novel',
         nextChapterTitle: nextTask?.chapterTitle || (nextTask?.chapterNumber ? `Chapter ${nextTask.chapterNumber}` : '')
       };
+
+      if (typeof chrome !== 'undefined' && chrome.alarms && typeof chrome.alarms.create === 'function') {
+        try {
+          chrome.alarms.create('QUEUE_COOLDOWN_ALARM', { when: retryAt });
+        } catch (e) {}
+      }
 
       updateKeepAlive(true);
       this._sync();
@@ -748,7 +865,124 @@
           return;
         }
 
-        this.cooldown.secondsRemaining -= 1;
+        if (this.cooldown.retryAt) {
+          this.cooldown.secondsRemaining = Math.max(0, Math.round((this.cooldown.retryAt - Date.now()) / 1000));
+        } else {
+          this.cooldown.secondsRemaining -= 1;
+        }
+
+        if (this.cooldown.secondsRemaining <= 0) {
+          this._clearCooldownTimers();
+          this.cooldown = null;
+          this._sync();
+          this._processNext();
+          return;
+        }
+
+        this._notifySubscribers();
+        if (isExtension && isExecutionOwner && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          try {
+            chrome.runtime.sendMessage({
+              action: 'QUEUE_COOLDOWN_TICK',
+              cooldown: this.cooldown
+            }, () => {
+              if (chrome.runtime.lastError) {}
+            });
+          } catch (e) {}
+        }
+      }, 1000);
+    }
+
+    /**
+     * Starts the automatic 1h 15m rate-limit and failure backoff timer on chapter failure.
+     * Keeps the failed task at the top of the queue and counts down until automatic retry.
+     */
+    _startRetryCooldown(task, errorMessage) {
+      this._clearCooldownTimers();
+
+      if (this.isPaused || this.queue.length === 0 || this._isClearing) {
+        this.cooldown = null;
+        this._sync();
+        updateKeepAlive(false);
+        return;
+      }
+
+      const durationSec = this.errorCooldownSec || 4500;
+      const retryAt = Date.now() + durationSec * 1000;
+
+      this.cooldown = {
+        active: true,
+        type: 'retry',
+        totalSeconds: durationSec,
+        secondsRemaining: durationSec,
+        retryAt,
+        error: errorMessage || 'Download failed',
+        retryCount: task.retryCount || 1,
+        maxRetries: this.maxRetries || 3,
+        nextTaskId: task.id || null,
+        nextChapterNumber: task.chapterNumber || null,
+        nextNovelTitle: task.novelTitle || 'Novel',
+        nextChapterTitle: task.chapterTitle || (task.chapterNumber ? `Chapter ${task.chapterNumber}` : '')
+      };
+
+      if (typeof chrome !== 'undefined' && chrome.alarms && typeof chrome.alarms.create === 'function') {
+        try {
+          chrome.alarms.create('QUEUE_COOLDOWN_ALARM', { when: retryAt });
+        } catch (e) {}
+      }
+
+      updateKeepAlive(true);
+      this._sync();
+
+      this._cooldownTickInterval = setInterval(() => {
+        if (!this.cooldown || !this.cooldown.active || this._isClearing || this.isPaused) {
+          this._clearCooldownTimers();
+          return;
+        }
+
+        if (this.cooldown.retryAt) {
+          this.cooldown.secondsRemaining = Math.max(0, Math.round((this.cooldown.retryAt - Date.now()) / 1000));
+        } else {
+          this.cooldown.secondsRemaining -= 1;
+        }
+
+        if (this.cooldown.secondsRemaining <= 0) {
+          this._clearCooldownTimers();
+          this.cooldown = null;
+          this._sync();
+          this._processNext();
+          return;
+        }
+
+        this._notifySubscribers();
+        if (isExtension && isExecutionOwner && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          try {
+            chrome.runtime.sendMessage({
+              action: 'QUEUE_COOLDOWN_TICK',
+              cooldown: this.cooldown
+            }, () => {
+              if (chrome.runtime.lastError) {}
+            });
+          } catch (e) {}
+        }
+      }, 1000);
+    }
+
+    _startRestoredCooldownTick() {
+      this._clearCooldownTimers();
+      updateKeepAlive(true);
+
+      this._cooldownTickInterval = setInterval(() => {
+        if (!this.cooldown || !this.cooldown.active || this._isClearing || this.isPaused) {
+          this._clearCooldownTimers();
+          return;
+        }
+
+        if (this.cooldown.retryAt) {
+          this.cooldown.secondsRemaining = Math.max(0, Math.round((this.cooldown.retryAt - Date.now()) / 1000));
+        } else {
+          this.cooldown.secondsRemaining -= 1;
+        }
 
         if (this.cooldown.secondsRemaining <= 0) {
           this._clearCooldownTimers();
@@ -889,6 +1123,58 @@
         if (this.activeTask === task) {
           this.activeTask = null;
           this.isProcessing = false;
+
+          // Check if this task experienced a genuine download/translation error (not user cancellation)
+          const isUserCancelled = task.status === 'cancelled';
+          const isGenuineFailure = task.status === 'failed';
+
+          if (isGenuineFailure && !this._isClearing) {
+            // Check for permanent authorization or zero-balance error
+            const errLower = (task.error || '').toLowerCase();
+            const isPermanentAuthOrBalance =
+              errLower.includes('invalid api key') ||
+              errLower.includes('insufficient account balance') ||
+              errLower.includes('top up') ||
+              errLower.includes('401') ||
+              errLower.includes('402');
+
+            if (isPermanentAuthOrBalance) {
+              // Place task back at top of queue, pause queue immediately, and notify
+              task.status = 'paused_error';
+              this.queue.unshift(task);
+              this.isPaused = true;
+              this._clearCooldownTimers();
+              this.cooldown = null;
+              this._sync();
+              this._notifySubscribers();
+              updateKeepAlive(false);
+              return;
+            }
+
+            // Error / rate-limit backoff handling
+            const currentRetries = (task.retryCount || 0) + 1;
+            task.retryCount = currentRetries;
+
+            if (currentRetries > (this.maxRetries || 3)) {
+              // Exceeded max retries: mark permanently failed, do not unshift, pause queue
+              task.status = 'failed';
+              this.isPaused = true;
+              this._clearCooldownTimers();
+              this.cooldown = null;
+              this._sync();
+              this._notifySubscribers();
+              updateKeepAlive(false);
+              return;
+            }
+
+            // Put failed task back to the top of the queue to be downloaded next!
+            task.status = 'retry_pending';
+            this.queue.unshift(task);
+
+            // Start 1 hour 15 minute backoff cooldown
+            this._startRetryCooldown(task, task.error);
+            return;
+          }
 
           if (this.isPaused || this.queue.length === 0) {
             this._clearCooldownTimers();

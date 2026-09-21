@@ -21,7 +21,8 @@
   "permissions": [
     "tabs",
     "storage",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "alarms"
   ],
   "host_permissions": [
     "*://wetriedtls.com/*",
