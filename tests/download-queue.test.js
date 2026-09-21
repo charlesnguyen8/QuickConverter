@@ -519,6 +519,46 @@ async function runTests() {
     assert.strictEqual(downloadedTasks.length, 1, 'Chapter should be downloaded');
   });
 
+  // 13. Standalone / Android WebView execution test (window & document defined, but no chrome.runtime.id)
+  await test('Standalone/Android environment: executes tasks in-memory without background worker delegation', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    mockDelayMs = 20;
+
+    // Simulate browser/WebView window and document existing
+    global.window = { StorageService: mockStorageService };
+    global.document = {};
+    const originalChromeId = global.chrome?.runtime?.id;
+    if (global.chrome && global.chrome.runtime) {
+      delete global.chrome.runtime.id;
+    }
+
+    try {
+      const res = await DownloadQueueService.enqueue({ novelId: 'novel-standalone', chapterNumber: 101 });
+      assert(res.success, 'Enqueue should succeed in standalone environment');
+
+      await new Promise((resolve) => {
+        const waitUnsub = DownloadQueueService.subscribe((s) => {
+          if (s.totalCount === 0 && !s.isProcessing) {
+            waitUnsub();
+            resolve();
+          }
+        });
+      });
+
+      assert.strictEqual(downloadedTasks.length, 1, 'Task should have executed directly in-memory');
+      assert.strictEqual(downloadedTasks[0].novelId, 'novel-standalone');
+      assert.strictEqual(downloadedTasks[0].chapterNumber, 101);
+    } finally {
+      // Clean up globals
+      delete global.window;
+      delete global.document;
+      if (originalChromeId && global.chrome && global.chrome.runtime) {
+        global.chrome.runtime.id = originalChromeId;
+      }
+    }
+  });
+
   console.log(`\n🎉 All ${passedCount} DownloadQueueService tests passed!`);
 }
 

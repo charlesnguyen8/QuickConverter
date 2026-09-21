@@ -38,27 +38,43 @@ const mockDatabase = {
   }
 };
 
-const testEnv = {
-  console,
-  setTimeout,
-  clearTimeout,
-  window: {},
-  self: {},
-  globalThis: {},
-  indexedDB: {
-    open: () => {
-      const req = {
-        result: mockDatabase,
-        onsuccess: null,
-        onerror: null
-      };
-      setTimeout(() => {
-        if (req.onsuccess) req.onsuccess();
-      }, 0);
-      return req;
+  const mockLocalStorage = {
+    data: {},
+    getItem(k) { return this.data[k] !== undefined ? this.data[k] : null; },
+    setItem(k, v) { this.data[k] = String(v); },
+    removeItem(k) { delete this.data[k]; }
+  };
+
+  const testEnv = {
+    console,
+    setTimeout,
+    clearTimeout,
+    localStorage: mockLocalStorage,
+    window: { localStorage: mockLocalStorage },
+    self: {},
+    globalThis: {},
+    chrome: {
+      storage: {
+        local: {
+          data: {},
+          set(items) { Object.assign(this.data, items); }
+        }
+      }
+    },
+    indexedDB: {
+      open: () => {
+        const req = {
+          result: mockDatabase,
+          onsuccess: null,
+          onerror: null
+        };
+        setTimeout(() => {
+          if (req.onsuccess) req.onsuccess();
+        }, 0);
+        return req;
+      }
     }
-  }
-};
+  };
 
 vm.createContext(testEnv);
 vm.runInContext(storageCode, testEnv);
@@ -125,6 +141,13 @@ async function runTests() {
   const chars = sampleEditedText.length;
   assert.strictEqual(chars, 94);
   console.log('✓ Reader paragraph parsing and word/character metric calculations verified');
+
+  // Test 5: StorageService Centralized Preference Storage
+  assert.strictEqual(StorageService.getPreference('missing_key', 'default_val'), 'default_val');
+  StorageService.setPreference('quickconverter_deepseek_model', 'deepseek-chat');
+  assert.strictEqual(StorageService.getPreference('quickconverter_deepseek_model', 'fallback'), 'deepseek-chat');
+  assert.strictEqual(testEnv.chrome.storage.local.data['quickconverter_deepseek_model'], 'deepseek-chat');
+  console.log('✓ StorageService preference methods (getPreference, setPreference) verified');
 
   console.log('🎉 Reader & Storage Flow Test Suite: ALL TESTS PASSED!\n');
 }

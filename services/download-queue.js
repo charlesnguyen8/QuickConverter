@@ -15,9 +15,16 @@
     return null;
   }
 
-  // In Chrome extension, UI views have window and document. Service worker (background) has neither.
-  // In Node.js testing, window and document are also undefined.
+  // In Chrome extension, chrome.runtime.id is present.
+  // UI views have window and document; background service worker has neither.
+  // In Android (Capacitor/WebView) or Electron standalone, chrome.runtime.id is not present.
+  // In Node.js testing, window and document are undefined.
+  const isExtension = typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
   const isBackgroundWorker = typeof window === 'undefined' && typeof document === 'undefined';
+  // Execution owner is the entity responsible for actively executing tasks in-memory:
+  // In Chrome extension: strictly the background service worker.
+  // In Standalone / Android / Node: the current execution context.
+  const isExecutionOwner = isBackgroundWorker || !isExtension;
 
   let keepAliveInterval = null;
   function updateKeepAlive(isWorking) {
@@ -56,8 +63,8 @@
       if (this._initialized) return;
       this._initialized = true;
 
-      // 1. Listen for runtime broadcasts across extension views (UI views only)
-      if (!isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+      // 1. Listen for runtime broadcasts across extension views (UI views in extension only)
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
         chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (msg && msg.action === 'QUEUE_STATE_CHANGED' && msg.state) {
             // Update local state in view from broadcast
@@ -70,8 +77,8 @@
         });
       }
 
-      // 2. Listen to storage changes so views navigating across pages immediately sync (UI views only)
-      if (!isBackgroundWorker && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+      // 2. Listen to storage changes so views navigating across pages immediately sync (UI views in extension only)
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {
           if (area === 'local' && changes[STORAGE_KEY] && changes[STORAGE_KEY].newValue) {
             const saved = changes[STORAGE_KEY].newValue;
@@ -84,49 +91,26 @@
         });
       }
 
-      // 3. Load initial state from chrome.storage
+      // 3. Load initial state from storage (chrome.storage or localStorage)
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         try {
           chrome.storage.local.get([STORAGE_KEY], (res) => {
             if (res && res[STORAGE_KEY]) {
-              const saved = res[STORAGE_KEY];
-              const savedQueue = saved.queue || [];
-
-              if (isBackgroundWorker) {
-                // Background worker: only restore from storage if not already running tasks in memory
-                if (this.activeTask || this.queue.length > 0 || this.isProcessing) {
-                  return;
-                }
-
-                if (saved.activeTask) {
-                  // If background service worker was terminated mid-stream, re-queue active task at front
-                  this.queue = [{ ...saved.activeTask, status: 'queued', progress: null }, ...savedQueue];
-                  this.activeTask = null;
-                } else {
-                  this.queue = savedQueue;
-                }
-
-                this.isPaused = !!saved.isPaused;
-                this.isProcessing = false;
-                this._notifySubscribers();
-
-                if (!this.isPaused && this.queue.length > 0) {
-                  this._processNext();
-                }
-              } else {
-                this.activeTask = saved.activeTask || null;
-                this.queue = savedQueue;
-                this.isPaused = !!saved.isPaused;
-                this.isProcessing = !!this.activeTask;
-                this._notifySubscribers();
-              }
+              this._restoreState(res[STORAGE_KEY]);
             }
           });
         } catch (e) {}
+      } else if (typeof localStorage !== 'undefined') {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            this._restoreState(JSON.parse(raw));
+          }
+        } catch (e) {}
       }
 
-      // 4. In UI views, query background worker directly for live authoritative state
-      if (!isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      // 4. In extension UI views, query background worker directly for live authoritative state
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         try {
           chrome.runtime.sendMessage({ action: 'QUEUE_GET_STATE' }, (resp) => {
             if (chrome.runtime.lastError || !resp) return;
@@ -137,6 +121,43 @@
             this._notifySubscribers();
           });
         } catch (e) {}
+      }
+    }
+
+    /**
+     * Restores saved queue state on initialization.
+     */
+    _restoreState(saved) {
+      if (!saved) return;
+      const savedQueue = saved.queue || [];
+
+      if (isExecutionOwner) {
+        // Execution owner: only restore from storage if not already running tasks in memory
+        if (this.activeTask || this.queue.length > 0 || this.isProcessing) {
+          return;
+        }
+
+        if (saved.activeTask) {
+          // If execution owner was terminated mid-stream, re-queue active task at front
+          this.queue = [{ ...saved.activeTask, status: 'queued', progress: null }, ...savedQueue];
+          this.activeTask = null;
+        } else {
+          this.queue = savedQueue;
+        }
+
+        this.isPaused = !!saved.isPaused;
+        this.isProcessing = false;
+        this._notifySubscribers();
+
+        if (!this.isPaused && this.queue.length > 0) {
+          this._processNext();
+        }
+      } else {
+        this.activeTask = saved.activeTask || null;
+        this.queue = savedQueue;
+        this.isPaused = !!saved.isPaused;
+        this.isProcessing = !!this.activeTask;
+        this._notifySubscribers();
       }
     }
 
@@ -176,8 +197,8 @@
     _sync() {
       const state = this.getState();
 
-      // Persist to chrome.storage.local and broadcast ONLY from background service worker
-      if (isBackgroundWorker) {
+      // Persist to storage and broadcast ONLY from execution owner
+      if (isExecutionOwner) {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
           try {
             chrome.storage.local.set({
@@ -188,10 +209,18 @@
               }
             });
           } catch (e) {}
+        } else if (typeof localStorage !== 'undefined') {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+              activeTask: state.activeTask,
+              queue: state.queue,
+              isPaused: state.isPaused
+            }));
+          } catch (e) {}
         }
 
-        // Broadcast to other open extension tabs
-        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        // Broadcast to other open extension tabs if running in extension
+        if (isExtension && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
           try {
             chrome.runtime.sendMessage({ action: 'QUEUE_STATE_CHANGED', state }, () => {
               if (chrome.runtime.lastError) {
@@ -294,7 +323,7 @@
       };
 
       // If running inside extension view, delegate to background service worker
-      if (!isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         try {
           const resp = await new Promise((resolve) => {
             chrome.runtime.sendMessage({ action: 'QUEUE_ENQUEUE', task: this._serializeTask(task) }, (r) => {
@@ -318,7 +347,7 @@
 
       this.queue.push(task);
       this._sync();
-      if (isBackgroundWorker) {
+      if (isExecutionOwner) {
         this._processNext();
       }
       return { success: true, task: this._serializeTask(task) };
@@ -335,7 +364,7 @@
       }
 
       // If running inside extension view, delegate to background service worker
-      if (!isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         try {
           const serializedTasks = tasks.map((t) => this._serializeTask(t)).filter(Boolean);
           const resp = await new Promise((resolve) => {
@@ -382,7 +411,7 @@
 
       if (addedCount > 0) {
         this._sync();
-        if (isBackgroundWorker && !this.isProcessing && !this.isPaused && this.queue.length > 0) {
+        if (isExecutionOwner && !this.isProcessing && !this.isPaused && this.queue.length > 0) {
           this._processNext();
         }
       }
@@ -398,8 +427,8 @@
     async remove(taskId) {
       if (!taskId) return false;
 
-      // In UI views, delegate to background service worker
-      if (!isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      // In extension UI views, delegate to background service worker
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         try {
           const resp = await new Promise((resolve) => {
             chrome.runtime.sendMessage({ action: 'QUEUE_REMOVE', taskId }, (r) => {
@@ -431,7 +460,7 @@
           this.activeTask = null;
           this.isProcessing = false;
           this._sync();
-          if (isBackgroundWorker) {
+          if (isExecutionOwner) {
             this._processNext();
           }
         }
@@ -454,7 +483,7 @@
      */
     pause() {
       this.isPaused = true;
-      if (!isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         try {
           chrome.runtime.sendMessage({ action: 'QUEUE_PAUSE' }, (resp) => {
             if (resp && resp.state) {
@@ -476,7 +505,7 @@
      */
     resume() {
       this.isPaused = false;
-      if (!isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         try {
           chrome.runtime.sendMessage({ action: 'QUEUE_RESUME' }, (resp) => {
             if (resp && resp.state) {
@@ -491,7 +520,7 @@
         return;
       }
       this._sync();
-      if (isBackgroundWorker) {
+      if (isExecutionOwner) {
         this._processNext();
       }
     }
@@ -500,7 +529,7 @@
      * Clear All: Empties waiting queue and immediately aborts active task.
      */
     clearAll() {
-      if (!isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         try {
           chrome.runtime.sendMessage({ action: 'QUEUE_CLEAR_ALL' }, (resp) => {
             if (resp && resp.state) {
@@ -534,8 +563,8 @@
      * Internal sequential processor (Processes 1 chapter at a time).
      */
     async _processNext() {
-      if (!isBackgroundWorker) {
-        // UI Views never process tasks directly - processing is exclusively done by background service worker
+      if (!isExecutionOwner) {
+        // UI Views in extension mode never process tasks directly - processing is delegated to background service worker
         return;
       }
 

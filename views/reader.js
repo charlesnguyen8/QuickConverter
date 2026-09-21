@@ -1103,21 +1103,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       const DEFAULT_PROMPT = 'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
       const getStored = (key, fallback) => {
-        try {
-          const val = localStorage.getItem(key);
-          return val !== null ? val : fallback;
-        } catch (e) {
-          return fallback;
-        }
+        return (window.StorageService && typeof window.StorageService.getPreference === 'function')
+          ? window.StorageService.getPreference(key, fallback)
+          : (typeof localStorage !== 'undefined' ? (localStorage.getItem(key) ?? fallback) : fallback);
       };
 
       const setStored = (key, val) => {
-        try {
-          localStorage.setItem(key, val);
-          if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-            chrome.storage.local.set({ [key]: val });
-          }
-        } catch (e) {}
+        if (window.StorageService && typeof window.StorageService.setPreference === 'function') {
+          window.StorageService.setPreference(key, val);
+        } else {
+          try {
+            if (typeof localStorage !== 'undefined') localStorage.setItem(key, String(val));
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+              chrome.storage.local.set({ [key]: String(val) });
+            }
+          } catch (e) {}
+        }
       };
 
       const isEnabled = getStored('quickconverter_deepseek_enabled', 'false') === 'true';

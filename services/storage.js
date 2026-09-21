@@ -852,6 +852,39 @@ const StorageService = {
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => reject(tx.error);
     });
+  },
+
+  /**
+   * Retrieves a lightweight user preference (synchronously with fallback).
+   * Reads from localStorage and works uniformly across Extension, Browser, and Mobile WebView.
+   * @param {string} key
+   * @param {any} [fallback=null]
+   * @returns {string|any}
+   */
+  getPreference(key, fallback = null) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const val = localStorage.getItem(key);
+        if (val !== null) return val;
+      }
+    } catch (e) {}
+    return fallback;
+  },
+
+  /**
+   * Stores a lightweight user preference across localStorage and chrome.storage.local (if available).
+   * @param {string} key
+   * @param {any} val
+   */
+  setPreference(key, val) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(key, String(val));
+      }
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ [key]: String(val) });
+      }
+    } catch (e) {}
   }
 };
 
