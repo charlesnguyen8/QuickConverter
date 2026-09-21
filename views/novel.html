@@ -22,14 +22,24 @@
       }
       /* Custom High-Contrast Cooldown Inputs & Amber Toggle */
       .cooldown-number-input {
-        background-color: #020617 !important;
+        background-color: transparent !important;
         color: #f8fafc !important;
-        border: 1px solid #334155 !important;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
       }
       .cooldown-number-input:focus {
-        border-color: #f59e0b !important;
-        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35) !important;
+        border: none !important;
         outline: none !important;
+        box-shadow: none !important;
+      }
+      .cooldown-number-input::-webkit-inner-spin-button,
+      .cooldown-number-input::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      .cooldown-number-input {
+        -moz-appearance: textfield;
       }
       #novel-cooldown-toggle:checked + .cooldown-slider-track {
         background-color: #d97706 !important;
@@ -414,7 +424,7 @@
                   <span class="font-semibold text-slate-300">Minimum Wait</span>
                   <span id="novel-cooldown-min-label" class="text-slate-400 font-mono font-medium">3 min</span>
                 </div>
-                <div class="relative flex items-center">
+                <div class="flex items-center rounded-lg border border-slate-700 bg-slate-950 overflow-hidden focus-within:border-amber-500 focus-within:ring-1 focus-within:ring-amber-500/40 transition">
                   <input
                     type="number"
                     id="novel-cooldown-min"
@@ -422,9 +432,11 @@
                     max="600"
                     step="5"
                     value="180"
-                    class="cooldown-number-input w-full px-3 py-1.5 rounded-lg text-xs font-mono font-bold"
+                    class="cooldown-number-input flex-1 min-w-0 px-3 py-1.5 text-xs font-mono font-bold"
                   />
-                  <span class="absolute right-3 text-xs text-slate-400 font-mono pointer-events-none select-none">seconds</span>
+                  <span class="px-2.5 py-1.5 text-[11px] font-mono font-semibold text-slate-400 bg-slate-900 border-l border-slate-700/80 select-none flex-shrink-0">
+                    seconds
+                  </span>
                 </div>
               </div>
 
@@ -434,7 +446,7 @@
                   <span class="font-semibold text-slate-300">Maximum Wait</span>
                   <span id="novel-cooldown-max-label" class="text-slate-400 font-mono font-medium">5 min</span>
                 </div>
-                <div class="relative flex items-center">
+                <div class="flex items-center rounded-lg border border-slate-700 bg-slate-950 overflow-hidden focus-within:border-amber-500 focus-within:ring-1 focus-within:ring-amber-500/40 transition">
                   <input
                     type="number"
                     id="novel-cooldown-max"
@@ -442,9 +454,11 @@
                     max="1200"
                     step="5"
                     value="300"
-                    class="cooldown-number-input w-full px-3 py-1.5 rounded-lg text-xs font-mono font-bold"
+                    class="cooldown-number-input flex-1 min-w-0 px-3 py-1.5 text-xs font-mono font-bold"
                   />
-                  <span class="absolute right-3 text-xs text-slate-400 font-mono pointer-events-none select-none">seconds</span>
+                  <span class="px-2.5 py-1.5 text-[11px] font-mono font-semibold text-slate-400 bg-slate-900 border-l border-slate-700/80 select-none flex-shrink-0">
+                    seconds
+                  </span>
                 </div>
               </div>
             </div>
