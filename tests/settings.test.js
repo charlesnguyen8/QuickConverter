@@ -38,11 +38,13 @@ const requiredSettingsIds = [
   'reader-font-size',
   'reader-line-height',
   'typography-preview-container',
-  'typography-preview-text',
-  'storage-used-display',
-  'storage-progress-bar',
-  'refresh-storage-btn'
+  'typography-preview-text'
 ];
+
+const storageTabSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'SettingsStorageTab.jsx'), 'utf8');
+for (const id of ['storage-used-display', 'storage-progress-bar', 'refresh-storage-btn']) {
+  assert(storageTabSrc.includes(`id="${id}"`), `Missing required element #${id} in components/react/SettingsStorageTab.jsx`);
+}
 
 for (const id of requiredSettingsIds) {
   assert(settingsHtml.includes(`id="${id}"`), `Missing required element #${id} in views/settings.html`);

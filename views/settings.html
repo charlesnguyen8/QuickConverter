@@ -856,134 +856,7 @@
         <!-- TAB 3: STORAGE & QUOTA MANAGEMENT -->
         <!-- ========================================== -->
         <section id="tab-content-storage" class="settings-tab-section hidden flex flex-col gap-6">
-          <div class="flex flex-col gap-1">
-            <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <span>💾</span>
-              <span>Storage & Quota Management</span>
-            </h2>
-            <p class="text-xs text-slate-400">
-              Overview of local IndexedDB disk usage and chapter caching for offline reading.
-            </p>
-          </div>
-
-          <!-- Disk Storage Usage Card -->
-          <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur flex flex-col gap-4">
-            <div class="flex items-center justify-between">
-              <div>
-                <h3 class="text-sm font-semibold text-slate-200">IndexedDB Storage Usage</h3>
-                <p class="text-xs text-slate-400">Total estimated disk space occupied by cached novel chapters and artwork.</p>
-              </div>
-              <button
-                type="button"
-                id="refresh-storage-btn"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition cursor-pointer"
-              >
-                <span>↻ Recalculate</span>
-              </button>
-            </div>
-
-            <!-- Progress Bar Container -->
-            <div class="flex flex-col gap-1.5">
-              <div class="flex items-center justify-between text-xs font-mono font-medium">
-                <span id="storage-used-display" class="text-indigo-400 font-bold">Calculating...</span>
-                <span id="storage-quota-display" class="text-slate-400">Quota: ~120 GB</span>
-              </div>
-              <div class="w-full h-3 bg-slate-900 rounded-full overflow-hidden border border-slate-700/80">
-                <div
-                  id="storage-progress-bar"
-                  class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300"
-                  style="width: 1%;"
-                ></div>
-              </div>
-              <span id="storage-percent-display" class="text-[11px] text-slate-500 text-right">0.01% utilized</span>
-            </div>
-
-            <!-- Metrics Grid -->
-            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-700/60">
-              <div class="flex flex-col gap-0.5 bg-slate-900/50 p-3 rounded-lg border border-slate-700/40">
-                <span class="text-[11px] text-slate-400">Managed Novels</span>
-                <span id="storage-novel-count" class="text-base font-bold text-slate-200">0</span>
-              </div>
-
-              <div class="flex flex-col gap-0.5 bg-slate-900/50 p-3 rounded-lg border border-slate-700/40">
-                <span class="text-[11px] text-slate-400">Downloaded Chapters</span>
-                <span id="storage-chapter-count" class="text-base font-bold text-indigo-400">0</span>
-              </div>
-
-              <div class="flex flex-col gap-0.5 bg-slate-900/50 p-3 rounded-lg border border-slate-700/40 col-span-2 sm:col-span-1">
-                <span class="text-[11px] text-slate-400">Storage Engine</span>
-                <span class="text-base font-bold text-emerald-400">IndexedDB</span>
-              </div>
-            </div>
-
-            <div class="pt-2 flex items-center justify-between">
-              <p class="text-xs text-slate-400">
-                Need to free up disk space? You can remove completed novels from your Library.
-              </p>
-              <a
-                href="library.html"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition"
-              >
-                <span>Go to Library →</span>
-              </a>
-            </div>
-          </div>
-
-          <!-- Cloud Backup (Google Drive) Card -->
-          <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur flex flex-col gap-4">
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                  <span>☁️</span>
-                  <span>Google Drive Backup</span>
-                </h3>
-                <p class="text-xs text-slate-400 mt-1">
-                  Back up your whole library (novels, chapters, name lists, prompts, settings) to your Google Drive. API keys are never uploaded.
-                </p>
-              </div>
-              <span id="cloud-sync-status" class="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-700 text-slate-300 border border-slate-600">
-                Checking...
-              </span>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                id="cloud-sync-signin-btn"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span>Sign in with Google</span>
-              </button>
-              <button
-                type="button"
-                id="cloud-sync-backup-btn"
-                disabled
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span>Backup now</span>
-              </button>
-              <button
-                type="button"
-                id="cloud-sync-restore-btn"
-                disabled
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span>Restore</span>
-              </button>
-              <button
-                type="button"
-                id="cloud-sync-signout-btn"
-                class="hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span>Sign out</span>
-              </button>
-            </div>
-
-            <div class="flex items-center justify-between gap-3 text-xs text-slate-400">
-              <span id="cloud-sync-last-backup">No backup yet.</span>
-              <span id="cloud-sync-feedback" class="font-medium"></span>
-            </div>
-          </div>
+          <div id="settings-storage-root" class="contents"></div>
         </section>
 
         <!-- ========================================== -->
@@ -1053,6 +926,7 @@
     <script src="../services/custom-api.js"></script>
     <script src="../services/deepseek.js"></script>
     <script src="../services/ai-service.js"></script>
+    <script type="module" src="../components/react/settings-storage-entry.jsx"></script>
     <script src="settings.js"></script>
   </body>
 </html>
