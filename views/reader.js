@@ -489,10 +489,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       // Navigation Shortcuts (Left / Right Arrow)
-      if ((e.key === 'ArrowLeft' || e.key === '[') && prevCh !== null) {
-        window.location.href = `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(prevCh)}`;
-      } else if ((e.key === 'ArrowRight' || e.key === ']') && nextCh !== null) {
-        window.location.href = `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(nextCh)}`;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === '[' || e.key === ']') {
+        const catalog = (novel.chapterList || []).slice().sort((a, b) => a.chapterNumber - b.chapterNumber);
+        const idx = catalog.findIndex((c) => Number(c.chapterNumber) === chapterNumber);
+        let target = null;
+        if (e.key === 'ArrowLeft' || e.key === '[') {
+          if (idx > 0) target = catalog[idx - 1].chapterNumber;
+          else if (chapterNumber > 1) target = chapterNumber - 1;
+        } else if (idx >= 0 && idx < catalog.length - 1) {
+          target = catalog[idx + 1].chapterNumber;
+        } else if (idx < 0 && (!novel.totalChapters || chapterNumber < novel.totalChapters)) {
+          target = chapterNumber + 1;
+        }
+        if (target !== null) {
+          e.preventDefault();
+          window.location.href = `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(target)}`;
+        }
       }
     });
 
