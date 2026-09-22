@@ -69,6 +69,17 @@
           return;
         }
         if (typeof global.open === 'function') global.open(url, '_blank');
+      },
+      async queryActiveTab() {
+        if (hasChromeArea('tabs') && typeof chrome.tabs.query === 'function') {
+          try {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            return tab ? { url: tab.url, title: tab.title } : null;
+          } catch (e) {
+            return null;
+          }
+        }
+        return null;
       }
     }
   };
@@ -157,6 +168,12 @@
       },
       openUrl(url) {
         if (typeof global.open === 'function') global.open(url, '_blank');
+      },
+      async queryActiveTab() {
+        return {
+          url: (typeof location !== 'undefined' && location.href) || null,
+          title: (typeof document !== 'undefined' && document.title) || ''
+        };
       }
     }
   };
