@@ -670,12 +670,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      // Hotkey: S toggles original source drawer (if source exists)
+      // Hotkey: S opens the original source drawer (if source exists)
       if ((e.key === 's' || e.key === 'S') && currentChapter && currentChapter.originalRawText) {
         e.preventDefault();
-        const isClosed = sourceDrawer.classList.contains('translate-x-full');
-        if (isClosed) openSourceDrawer();
-        else closeSourceDrawer();
+        openSourceDrawer();
         return;
       }
 
