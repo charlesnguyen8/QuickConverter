@@ -51,7 +51,7 @@ update them whenever an ID moves.
 
 ## 3. Milestones
 
-### M1 — Popup: detail view → React  ← **next**
+### M1 — Popup: detail view → React — **done**
 - `components/react/PopupNovelView.jsx`: thumbnail/title/domain/stats, chapter count, chapter rows
   (status badge, active/queued/download/retry/delete actions), Download All.
 - Port the chapter rendering + per-row actions from `popup.js` `renderPopupChapters` and the queue
@@ -61,7 +61,7 @@ update them whenever an ID moves.
 - `popup.js` keeps: DeepSeek panel init, `extractNovelInfo`, status detection, tab query, queue
   subscription.
 
-### M2 — Popup: DeepSeek panel + view deletion
+### M2 — Popup: DeepSeek panel + view deletion  ← **next**
 - Render the shared `AiConfigPanel` container from React (same element IDs, `compact` variant),
   passing `currentActiveNovel` prompt hooks as props/state.
 - Port the remaining `popup.js` glue (tab query, provider status) into React hooks; delete
