@@ -10,8 +10,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // --- Sidebar Tab Switching ---
   initTabs();
 
-  // --- DeepSeek AI Settings ---
-  await initDeepSeekSettings();
+  // --- DeepSeek AI Settings (rendered by React; wire once mounted) ---
+  window.addEventListener('settings-deepseek-mounted', () => {
+    initDeepSeekSettings();
+  });
 });
 
 // =========================================================================

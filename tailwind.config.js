@@ -2,7 +2,7 @@
 module.exports = {
   content: [
     "./views/**/*.{html,js}",
-    "./components/**/*.{html,js,jsx}",
+    "./components/**/*.{html,js,jsx,mjs}",
     "./dev/**/*.{html,js,jsx}",
     "./services/**/*.js",
     "./providers/**/*.js",

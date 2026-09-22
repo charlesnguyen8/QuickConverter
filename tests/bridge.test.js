@@ -70,11 +70,13 @@ assert(popupHtml.includes('id="popup-api-key-label"'), 'views/popup.html must ha
 console.log('✓ views/popup.html contains provider switcher buttons, custom URL input, and preset button');
 
 // Settings View
-assert(settingsHtml.includes('id="provider-radio-official"'), 'views/settings.html must have #provider-radio-official');
-assert(settingsHtml.includes('id="provider-radio-bridge"'), 'views/settings.html must have #provider-radio-bridge');
-assert(settingsHtml.includes('id="bridge-preset-btn"'), 'views/settings.html must have #bridge-preset-btn');
-assert(settingsHtml.includes('id="bridge-url-input"'), 'views/settings.html must have #bridge-url-input');
-assert(settingsHtml.includes('id="test-bridge-btn"'), 'views/settings.html must have #test-bridge-btn');
+const settingsDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'deepseekTabMarkup.mjs'), 'utf8');
+const settingsHas = (id) => settingsHtml.includes(`id="${id}"`) || settingsDeepseekSrc.includes(`id="${id}"`);
+assert(settingsHas('provider-radio-official'), 'settings must have #provider-radio-official');
+assert(settingsHas('provider-radio-bridge'), 'settings must have #provider-radio-bridge');
+assert(settingsHas('bridge-preset-btn'), 'settings must have #bridge-preset-btn');
+assert(settingsHas('bridge-url-input'), 'settings must have #bridge-url-input');
+assert(settingsHas('test-bridge-btn'), 'settings must have #test-bridge-btn');
 console.log('✓ views/settings.html contains AI provider radio choices, preset button, and test connection button');
 
 // Test 5: Verify live local bridge endpoint if running
