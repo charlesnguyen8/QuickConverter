@@ -93,14 +93,28 @@ update them whenever an ID moves (`bridge.test.js`, `settings.test.js`).
 the toast/save-pill; the tab components render as direct children. `views/settings.js` is deleted,
 `settings.html` is a shell with `#settings-root` + `settings-entry.jsx`, and the per-tab entries
 (storage/reader/deepseek/shell) are gone. Balance/toast helpers live in `components/settings-deepseek.js`.
-- `SettingsView.jsx` owns the tab shell, tab navigation, About tab, and save-indicator; delete
-  `views/settings.js` and `deepseekTabMarkup.mjs`; `settings.html` becomes a shell + entry.
 
-### M5 — Reader: finish the remaining pieces  ← **next**
-- Header + typography popover (`ReaderHeader.jsx` / `ReaderPrefsPopover.jsx`, owns prefs state),
-  translation panel container via `AiConfigPanel`, prefs application + `reader-prefs-updated`
-  handling, not-saved/download flow.
-- Delete `views/reader.js`; `reader.html` becomes a shell + entry.
+### M5 — Reader: finish the remaining pieces  ← **next** (5a)
+`views/reader.js` is ~701 lines with coupled subsystems; split into four slices. Each slice: convert
+markup with the same IDs, keep `reader.js` wiring (React renders once, so DOM refs stay valid —
+the bridge pattern used for the popup DeepSeek card), build + 13 suites + a `dist/` check.
+
+- **5a — Header markup (next)**: `components/react/ReaderHeader.jsx` + `reader-header-entry.jsx`
+  (flushSync mount).
+  - Convert `views/reader.html` **lines 469–794**: progress bar, back link, novel/chapter titles,
+    source-drawer toggle, A−/A+ font stepper, and the full typography popover.
+  - Watch: `class`→`className`, `style="width: 0%;"`→`style={{ width: '0%' }}`, theme-preset
+    `data-*` attributes stay as-is.
+  - `reader.html`: replace 468–794 with `<div id="reader-header-root"></div>`; add the entry script.
+  - `views/reader.js` unchanged.
+- **5b — Typography popover logic → React**: `ReaderPrefsPopover.jsx` owns the popover state and
+  `applyReaderPreferences`; move `initInReaderTypography` out of `reader.js`; keep the storage keys
+  and the `reader-prefs-updated` event contract.
+- **5c — Translation panel + source drawer**: render the `AiConfigPanel` container from React (same
+  IDs) and move `initDeepSeekUI` wiring; hook the source drawer to React state.
+- **5d — Chapter load / not-saved / download flow + toast + hotkeys**: port the remaining
+  `reader.js` logic (load chapter, download, save toast, keyboard shortcuts).
+- Finish: delete `views/reader.js`; `reader.html` becomes a shell + entry.
 
 ### M6 — Novel: finish the remaining pieces
 - Move panel init, sync/download-all, `enqueueChapterDownload`, `refreshChapterList`,
