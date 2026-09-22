@@ -167,6 +167,7 @@ function test(name, fn) {
     assert(header.includes('width:0%') && !header.includes("0%;"), 'progress bar must start at width:0% with no malformed style value');
     assert(header.includes('id="reading-progress-track"'), 'expected a fixed progress track behind the bar');
     assert(/id="reading-progress-percent" class="[^"]*fixed/.test(header), 'percentage must be positioned with the top progress bar');
+    assert(/id="reading-progress-percent" class="[^"]*transition-all/.test(header), 'percentage must animate at the same speed as the bar');
     assert(!header.includes('Reading progress'), 'percentage must not live in the header titles');
   });
 

@@ -17,7 +17,7 @@ export default function ReaderHeader() {
 
       <span
         id="reading-progress-percent"
-        className="fixed top-1.5 z-50 -translate-x-1/2 px-1.5 py-0.5 rounded-full bg-slate-800/95 border border-slate-700 text-[10px] font-mono font-semibold text-indigo-300 shadow-sm select-none pointer-events-none"
+        className="fixed top-1.5 z-50 -translate-x-1/2 px-1.5 py-0.5 rounded-full bg-slate-800/95 border border-slate-700 text-[10px] font-mono font-semibold text-indigo-300 shadow-sm select-none pointer-events-none transition-all duration-75"
         style={{ left: '1.25rem' }}
       >
         0%
