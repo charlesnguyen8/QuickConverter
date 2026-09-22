@@ -9,6 +9,11 @@
 changed → `npm run build:ext` → `npm test` green → commit → owner loads `dist/` for parity).
 No piecemeal approval requests. Commit per milestone so each is independently revertible.
 
+**Status (as of M1–M3):** Popup is fully React (`views/popup.js` + `popupMarkup.mjs` deleted); the
+Settings DeepSeek tab is JSX and its controller lives in `components/settings-deepseek.js`. Next is
+**M4** (Settings shell/tabs → React, delete `views/settings.js`), then M5 Reader, M6 Novel, M7
+cleanup; M8 (ESM/MV3) deferred.
+
 **Related docs:** `context.md`, `AGENTS.md`.
 
 ---
@@ -38,14 +43,25 @@ No piecemeal approval requests. Commit per milestone so each is independently re
 | Library | full (`LibraryView.jsx`) | — |
 | Novel | hero, chapters, name-list drawer, dock | `views/novel.js` ~400 lines: panel init, sync/download-all, `enqueueChapterDownload`, `refreshChapterList`, `novel-chapter-download` listener, balance/queue hook |
 | Reader | reading core, nav, source drawer | `views/reader.js` ~690 lines: header, typography popover, translation panel init, prefs application, not-saved/download flow |
-| Settings | Storage tab, Reader tab | DeepSeek tab is **bridged** (`deepseekTabMarkup.mjs` + `SettingsDeepSeekTab.jsx`); `settings.js` still runs `initDeepSeekSettings`, tab shell, About |
-| Popup | main view (`PopupMainView.jsx` + `PopupApp.jsx`) | detail view is **bridged** (`popupDetailHtml`); `views/popup.js` owns detail, chapters, DeepSeek panel, queue hooks |
+| Settings | Storage tab, Reader tab, DeepSeek tab (`SettingsDeepSeekTab.jsx`) | `views/settings.js` ~177 lines: nav, tab switching, balance display, toasts, About; DeepSeek controller now in `components/settings-deepseek.js` |
+| Popup | **fully React** (`PopupApp` + `PopupMainView` + `PopupNovelView` + `PopupDeepseekCard`) | `views/popup.js` and `popupMarkup.mjs` deleted; `popup.html` is a shell + entry |
 
-Bridge API currently in use (Popup): React→JS `window.__popupActions`, JS→React
-`window.__popupSetNovels/__popupSetStatus/__popupShowMain/__popupShowNovel`.
+Cross-view seams still in place:
+- Popup: React exposes `window.__popupActions`, main/detail are props-driven.
+- Settings: React entry calls `window.wireSettingsDeepseek()` (from `components/settings-deepseek.js`).
+- Other views render `SettingsStorageTab` / `SettingsReaderTab` / Novel/Reader components; those view
+  scripts (`novel.js`, `reader.js`) still own part of their logic (M5/M6).
 
-Tests: 12 suites green. Tests that grep HTML for moved IDs read the React/markup module instead —
-update them whenever an ID moves.
+Tests: 12 suites green. Tests that grep HTML for moved IDs read the React/JSX module instead —
+update them whenever an ID moves (`bridge.test.js`, `settings.test.js`).
+
+### Progress log
+
+| Milestone | Commits |
+|---|---|
+| M1 Popup detail → React | `e8e868c` (+ `ebe3b53` queue re-render, `deeb0f7` downloaded refresh, `f1b683b` null-novel guard) |
+| M2 Popup DeepSeek card → React, delete `popup.js` | `e083ef9`, `6d012f7` |
+| M3 Settings DeepSeek tab JSX + controller move | `48c0bdc`, `af464f5` (emoji/save), `710ab4b` (wiring), `ee6a31d` |
 
 ---
 
