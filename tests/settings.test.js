@@ -32,18 +32,17 @@ const requiredSettingsIds = [
   'bridge-config-panel',
   'bridge-url-input',
   'test-bridge-btn',
-  'model-radio-reasoner',
-  'reader-font-family',
-  'reader-column-width',
-  'reader-font-size',
-  'reader-line-height',
-  'typography-preview-container',
-  'typography-preview-text'
+  'model-radio-reasoner'
 ];
 
 const storageTabSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'SettingsStorageTab.jsx'), 'utf8');
 for (const id of ['storage-used-display', 'storage-progress-bar', 'refresh-storage-btn']) {
   assert(storageTabSrc.includes(`id="${id}"`), `Missing required element #${id} in components/react/SettingsStorageTab.jsx`);
+}
+
+const readerTabSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'SettingsReaderTab.jsx'), 'utf8');
+for (const id of ['reader-font-family', 'reader-column-width', 'reader-font-size', 'reader-line-height', 'typography-preview-container', 'typography-preview-text']) {
+  assert(readerTabSrc.includes(`id="${id}"`), `Missing required element #${id} in components/react/SettingsReaderTab.jsx`);
 }
 
 for (const id of requiredSettingsIds) {
