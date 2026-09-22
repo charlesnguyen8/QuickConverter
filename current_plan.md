@@ -88,11 +88,15 @@ update them whenever an ID moves (`bridge.test.js`, `settings.test.js`).
 - Replace the `deepseekTabMarkup.mjs` bridge with JSX + hooks wired to `AiConfigPanel`; delete
   `SettingsDeepSeekTab` bridge entry and `initDeepSeekSettings` from `settings.js`.
 
-### M4 — Settings: shell + remaining tabs → React  ← **next**
+### M4 — Settings: shell + remaining tabs → React — **done (logic)**
+Note: `settings.html` keeps its static shell markup; nav/tabs run from
+`components/react/settings-shell-entry.jsx` and the balance/toast helpers live in
+`components/settings-deepseek.js`. `views/settings.js` is deleted. Converting the shell markup to
+JSX is optional follow-up, not required.
 - `SettingsView.jsx` owns the tab shell, tab navigation, About tab, and save-indicator; delete
   `views/settings.js` and `deepseekTabMarkup.mjs`; `settings.html` becomes a shell + entry.
 
-### M5 — Reader: finish the remaining pieces
+### M5 — Reader: finish the remaining pieces  ← **next**
 - Header + typography popover (`ReaderHeader.jsx` / `ReaderPrefsPopover.jsx`, owns prefs state),
   translation panel container via `AiConfigPanel`, prefs application + `reader-prefs-updated`
   handling, not-saved/download flow.
