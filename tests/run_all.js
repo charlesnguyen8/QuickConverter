@@ -17,7 +17,8 @@ const testFiles = [
   'name-list.test.js',
   'platform.test.js',
   'backup.test.js',
-  'cloud-sync.test.js'
+  'cloud-sync.test.js',
+  'components.test.js'
 ];
 
 let allPassed = true;

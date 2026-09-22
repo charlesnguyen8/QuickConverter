@@ -8,7 +8,7 @@ for directory layout, porting rules, and feature checklists.
 
 ## Commands
 
-- `npm test` — run the full zero-dependency Node test suite (`tests/run_all.js`). Must pass before finishing a task.
+- `npm test` — run the full Node test suite (13 suites) (`tests/run_all.js`). Must pass before finishing a task.
 - `npm run build:css` — rebuild `styles/tailwind.css` from `styles/input.css` + scanned content.
 - `npm run watch:css` — watch mode while developing UI.
 
@@ -20,6 +20,16 @@ build, so the repo root is no longer a loadable target. `npm run dev` is for UI 
 introduces new utility classes, run `npm run build:css` (or the `watch` script). Missing
 classes silently break layout (e.g. a missing `justify-end` makes the drawer anchor left)
 because the committed `styles/tailwind.css` is stale.
+
+**Testing:** `npm test` runs 13 suites via `tests/run_all.js`. Twelve are zero-dependency Node
+suites (unit + static/contract, no DOM); the thirteenth, `tests/components.test.js`, renders the
+migrated React components with `react-dom/server` (`renderToString`) and asserts their markup.
+JSX is compiled for Node by `tests/helpers/render.js` using the `esbuild` devDependency
+(bundled to gitignored `tests/.tmp/`). Effects/`useEffect` do not run under `renderToString`, so
+the component suite covers prop → markup only; wiring/timing still needs a manual `dist/` check.
+When adding a component test: `const { default: View } = await loadComponent('components/react/X.jsx')`,
+then `render(h(View, props))` and assert on the returned string (React separates adjacent text
+nodes, so the helper's `render` strips `<!-- -->`).
 
 ## Architecture rules (see `context.md` for full detail)
 

@@ -15,7 +15,7 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 - **Dock UI**: Reusable solid, opaque floating dock React component (`components/react/QueueDock.jsx`) with expanded/collapsed modes, mounted via `components/react/queue-dock-entry.jsx`.
 - **AI Translation Coordinator**: `services/ai-service.js` routing between `services/deepseek.js` (Official Cloud API) and `services/custom-api.js` (Local Web Bridge / Custom OpenAI-compatible endpoints) with SSE streaming delta accumulation and DeepThink reasoning extraction/discarding.
 - **Shared View Modules**: `components/ai-config-panel.js` (`window.AiConfigPanel`) provides the single DeepSeek / AI-provider configuration panel used by the novel, popup, and reader views via `createAiConfigPanel({ variant, ids, capabilities, hooks })`. `components/ui-utils.js` (`window.UIUtils`) provides shared helpers (e.g. `escapeHtml`/`escapeAttr`). Loaded via classic `<script>` tags before the view script.
-- **Testing**: Zero-dependency automated Node test suite runner (`npm test` in `tests/run_all.js`).
+- **Testing**: `npm test` runs 13 suites via `tests/run_all.js` — twelve zero-dependency Node suites (unit + static/contract) plus `tests/components.test.js`, which renders the React components with `react-dom/server` (`renderToString`); JSX is compiled by the `esbuild` devDependency via `tests/helpers/render.js`. Effects don't run server-side, so component tests cover prop → markup only.
 
 ---
 
