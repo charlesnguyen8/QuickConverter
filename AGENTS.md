@@ -1,0 +1,35 @@
+# AGENTS.md
+
+QuickConverter is an offline-first web novel reader, downloader, and AI translator
+(Chrome MV3 extension; planned Android/Desktop ports via Capacitor/Electron/Tauri).
+
+**Read `context.md` first** — it is the living architecture doc and the source of truth
+for directory layout, porting rules, and feature checklists.
+
+## Commands
+
+- `npm test` — run the full zero-dependency Node test suite (`tests/run_all.js`). Must pass before finishing a task.
+- `npm run build:css` — rebuild `styles/tailwind.css` from `styles/input.css` + scanned content.
+- `npm run watch:css` — watch mode while developing UI.
+
+**CSS gotcha:** Tailwind is compiled and committed. After editing any markup/JS that
+introduces new utility classes, run `npm run build:css` (or the `watch` script). Missing
+classes silently break layout (e.g. a missing `justify-end` makes the drawer anchor left)
+because the committed `styles/tailwind.css` is stale.
+
+## Architecture rules (see `context.md` for full detail)
+
+1. **Platform API isolation** — never call `chrome.*` directly in `views/` or `components/`;
+   go through `services/` (e.g. `StorageService`) and guard with `typeof chrome !== 'undefined'`.
+2. **Web standards only** — `window.indexedDB`, `fetch`/`EventSource`/`ReadableStream`,
+   `TextDecoder`/`TextEncoder`/`crypto.subtle`. No Node-only deps in frontend code.
+3. **Mobile-first** — must render at 360px; touch targets >= 40x40px; never hide critical
+   actions behind `:hover` only.
+4. **Portable assets** — relative paths only, never hardcoded `chrome-extension://` URLs.
+5. **Offline-first** — reading must work with zero connectivity once downloaded.
+
+## Code style
+
+- Vanilla HTML/CSS/JS (ES6+). Follow existing patterns in neighboring files.
+- **Do not add comments unless asked.**
+- Keep `DownloadQueueService` runnable both in-thread and via background worker delegation.

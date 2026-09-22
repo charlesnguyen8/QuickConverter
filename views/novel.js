@@ -668,6 +668,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let nameList = [];
   let currentSort = 'time_desc';
   let currentSearch = '';
+  let editingId = null;
   let isDrawerInitialized = false;
 
   function parseChapterNumber(val) {
@@ -748,6 +749,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  function renderInlineEditRow(entry) {
+    const rawCh = entry.chapterFirstSeen;
+    const cleanCh = rawCh !== null && rawCh !== undefined && rawCh !== '' ? String(rawCh).replace(/^ch(?:apter)?\.?\s*/i, '') : '';
+    return `
+      <div class="flex flex-col gap-2 p-3 rounded-lg bg-slate-800/90 border border-indigo-500/60 ring-1 ring-indigo-500/25 transition" data-id="${entry.id}" data-inline-edit="1">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <input
+            type="text"
+            class="name-inline-original w-full min-w-0 px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            placeholder="Original Name"
+            value="${escapeHtml(entry.original)}"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <input
+            type="text"
+            class="name-inline-translation w-full min-w-0 px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-emerald-300 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            placeholder="Translated Name"
+            value="${escapeHtml(entry.translation)}"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+        <div class="flex items-center gap-2">
+          <input
+            type="text"
+            class="name-inline-chapter flex-1 min-w-0 px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            placeholder="Chapter First Seen (e.g. 1)"
+            value="${escapeHtml(cleanCh)}"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button
+            type="button"
+            class="name-inline-save-btn flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
+            title="Save changes (Enter)"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            class="name-inline-cancel-btn flex-shrink-0 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition cursor-pointer"
+            title="Cancel (Esc)"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
   function renderNameList() {
     const itemsContainer = document.getElementById('name-list-items');
     const heroCountBadge = document.getElementById('name-list-count-badge');
@@ -806,6 +858,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     itemsContainer.innerHTML = filtered.map((entry) => {
+      if (entry.id === editingId) {
+        return renderInlineEditRow(entry);
+      }
       const rawCh = entry.chapterFirstSeen;
       const cleanCh = rawCh !== null && rawCh !== undefined && rawCh !== '' ? String(rawCh).replace(/^ch(?:apter)?\.?\s*/i, '') : null;
       return `
@@ -853,8 +908,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     itemsContainer.querySelectorAll('.name-edit-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-id');
-        const entry = nameList.find((e) => e.id === id);
-        if (entry) showEditNameForm(entry);
+        if (!nameList.some((e) => e.id === id)) return;
+        editingId = id;
+        renderNameList();
       });
     });
 
@@ -862,6 +918,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
         if (!currentNovel || !id) return;
+        if (editingId === id) editingId = null;
         if (window.StorageService && typeof window.StorageService.deleteNameEntry === 'function') {
           await window.StorageService.deleteNameEntry(currentNovel.id, id);
         }
@@ -870,6 +927,82 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderNameList();
       });
     });
+
+    // Wire inline edit controls
+    const inlineRow = itemsContainer.querySelector('[data-inline-edit]');
+    if (inlineRow) {
+      const id = inlineRow.getAttribute('data-id');
+      const originalInput = inlineRow.querySelector('.name-inline-original');
+      const translationInput = inlineRow.querySelector('.name-inline-translation');
+      const chapterInput = inlineRow.querySelector('.name-inline-chapter');
+      const saveBtn = inlineRow.querySelector('.name-inline-save-btn');
+      const cancelBtn = inlineRow.querySelector('.name-inline-cancel-btn');
+
+      const cancelInline = () => {
+        editingId = null;
+        renderNameList();
+      };
+
+      const saveInline = async () => {
+        if (!currentNovel || !id) return;
+        const orig = originalInput ? originalInput.value.trim() : '';
+        const trans = translationInput ? translationInput.value.trim() : '';
+        const ch = chapterInput ? chapterInput.value.trim() : '';
+
+        if (!orig) {
+          if (originalInput) originalInput.focus();
+          return;
+        }
+        if (!trans) {
+          if (translationInput) translationInput.focus();
+          return;
+        }
+
+        let updated = null;
+        if (window.StorageService && typeof window.StorageService.updateNameEntry === 'function') {
+          updated = await window.StorageService.updateNameEntry(currentNovel.id, id, {
+            original: orig,
+            translation: trans,
+            chapterFirstSeen: ch || null
+          });
+        }
+
+        const idx = nameList.findIndex((x) => x.id === id);
+        if (idx !== -1) {
+          nameList[idx] = updated || {
+            ...nameList[idx],
+            original: orig,
+            translation: trans,
+            chapterFirstSeen: ch || null
+          };
+        }
+        currentNovel.nameList = nameList;
+        editingId = null;
+        renderNameList();
+      };
+
+      const handleKey = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          saveInline();
+        } else if (e.key === 'Escape') {
+          e.stopPropagation();
+          cancelInline();
+        }
+      };
+
+      [originalInput, translationInput, chapterInput].forEach((inp) => {
+        if (!inp) return;
+        inp.addEventListener('keydown', handleKey);
+      });
+      if (saveBtn) saveBtn.addEventListener('click', saveInline);
+      if (cancelBtn) cancelBtn.addEventListener('click', cancelInline);
+
+      if (originalInput) {
+        originalInput.focus();
+        originalInput.select();
+      }
+    }
   }
 
   function showAddNameForm() {
@@ -889,28 +1022,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (entryChapterInput) entryChapterInput.value = '';
     if (formTitle) formTitle.textContent = 'Add New Name';
     if (entrySubmitBtn) entrySubmitBtn.textContent = 'Save Entry';
-    formCard.classList.remove('hidden');
-    if (bulkCard) bulkCard.classList.add('hidden');
-    if (entryOriginalInput) entryOriginalInput.focus();
-  }
-
-  function showEditNameForm(entry) {
-    const formCard = document.getElementById('name-list-form-card');
-    const entryIdInput = document.getElementById('name-entry-id');
-    const entryOriginalInput = document.getElementById('name-entry-original');
-    const entryTranslationInput = document.getElementById('name-entry-translation');
-    const entryChapterInput = document.getElementById('name-entry-chapter');
-    const formTitle = document.getElementById('name-list-form-title');
-    const entrySubmitBtn = document.getElementById('name-entry-submit-btn');
-    const bulkCard = document.getElementById('name-list-bulk-card');
-
-    if (!formCard || !entry) return;
-    if (entryIdInput) entryIdInput.value = entry.id;
-    if (entryOriginalInput) entryOriginalInput.value = entry.original || '';
-    if (entryTranslationInput) entryTranslationInput.value = entry.translation || '';
-    if (entryChapterInput) entryChapterInput.value = entry.chapterFirstSeen !== null && entry.chapterFirstSeen !== undefined ? entry.chapterFirstSeen : '';
-    if (formTitle) formTitle.textContent = 'Edit Name';
-    if (entrySubmitBtn) entrySubmitBtn.textContent = 'Update Entry';
     formCard.classList.remove('hidden');
     if (bulkCard) bulkCard.classList.add('hidden');
     if (entryOriginalInput) entryOriginalInput.focus();
@@ -1033,6 +1144,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       drawerPanel.classList.remove('translate-x-0');
       drawerPanel.classList.add('translate-x-full');
       document.body.style.overflow = '';
+      editingId = null;
       setTimeout(() => {
         drawerBackdrop.classList.add('hidden');
       }, 300);
