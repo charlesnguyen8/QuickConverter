@@ -31,7 +31,8 @@ const readerHtml = fs.readFileSync(path.join(repoRoot, 'views', 'reader.html'), 
 assert(readerHtml.includes('href="../styles/tailwind.css"'), 'Missing ../styles/tailwind.css in views/reader.html');
 for (const font of fonts) {
   assert(readerHtml.includes(`font-family: '${font.name}'`), `Missing @font-face for ${font.name} in views/reader.html`);
-  assert(readerHtml.includes(`value="${font.key}"`), `Missing option value="${font.key}" in views/reader.html`);
+  const readerHeaderSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderHeader.jsx'), 'utf8');
+assert(readerHtml.includes(`value="${font.key}"`) || readerHeaderSrc.includes(`value="${font.key}"`), `Missing option value="${font.key}" in views/reader.html or ReaderHeader.jsx`);
 }
 assert(readerHtml.includes("url('../fonts/"), 'Font URLs in views/reader.html must use ../fonts/ prefix');
 console.log('✓ views/reader.html: verified stylesheet, @font-face rules, and font options');

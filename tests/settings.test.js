@@ -63,7 +63,10 @@ const popupHtml = fs.readFileSync(path.join(repoRoot, 'views', 'popup.html'), 'u
 
 assert(libraryViewSrc.includes('id="library-settings-btn"'), 'Missing #library-settings-btn in components/react/LibraryView.jsx');
 assert(novelHtml.includes('id="novel-settings-btn"'), 'Missing #novel-settings-btn in views/novel.html');
-assert(readerHtml.includes('id="reader-settings-btn"'), 'Missing #reader-settings-btn in views/reader.html');
+assert(
+  readerHtml.includes('id="reader-settings-btn"') || fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderHeader.jsx'), 'utf8').includes('id="reader-settings-btn"'),
+  'Missing #reader-settings-btn in views/reader.html or ReaderHeader.jsx'
+);
 assert(
   popupHtml.includes('id="settings-btn"') || fs.readFileSync(path.join(repoRoot, 'components', 'react', 'PopupMainView.jsx'), 'utf8').includes('id="settings-btn"'),
   'Missing #settings-btn in popup'

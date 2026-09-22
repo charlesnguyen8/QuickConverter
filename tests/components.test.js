@@ -153,6 +153,20 @@ function test(name, fn) {
     assert(shell.includes('About QuickConverter'), 'expected the About content');
   });
 
+  // --- ReaderHeader ---
+  const ReaderHeader = (await loadComponent('components/react/ReaderHeader.jsx')).default;
+  const header = render(h(ReaderHeader));
+  test('ReaderHeader renders nav, font stepper and typography popover', () => {
+    for (const id of ['reading-progress-bar', 'back-to-novel-btn', 'header-novel-title',
+      'header-chapter-title', 'toggle-source-drawer-btn', 'font-dec-btn', 'font-size-label',
+      'font-inc-btn', 'reader-typography-wrapper', 'reader-typography-popover',
+      'toggle-typography-popover-btn', 'reader-settings-btn']) {
+      assert(header.includes(`id="${id}"`), `missing #${id}`);
+    }
+    assert(header.includes('value="unkempt"'), 'expected the font family options');
+    assert(header.includes('width:0'), 'expected the progress bar width style');
+  });
+
   // --- PopupApp smoke ---
   const app = render(h(PopupApp));
   test('PopupApp renders both views', () => {
