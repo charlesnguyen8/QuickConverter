@@ -67,10 +67,12 @@ nodes, so the helper's `render` strips `<!-- -->`).
   from a per-view entry (`<view>-entry.jsx` → `#<view>-root`); `services/`, `providers/` and shared
   `components/*.js` stay classic global scripts.
 - **Do not add comments unless asked.**
-- Reuse shared view modules in `components/` (`AiConfigPanel`, `QueueDock`, `add-book-button`)
-  instead of duplicating provider/DeepSeek UI across views. React views render the panel container
-  (same element IDs) and call the global `window.*` module; its classic `<script>` still loads before
-  the view entry. Register new global-script modules the same way (IIFE + `window.*` export).
+- Reuse shared view modules (`components/react/shared/AiConfigPanel.jsx`, `QueueDock.jsx`,
+  `add-book-button`) instead of duplicating provider/DeepSeek UI across views. The AI panel is React:
+  wrap it with view-specific `variant`/`ids`/`hooks` and read it back through its imperative ref
+  (`getDownloadOptions`/`refreshBalance`). Remaining classic globals (`services/`, `providers/`,
+  `components/add-book.js`, `components/settings-deepseek.js`) still load via `<script>`; register new
+  ones as IIFE + `window.*` export.
 - Keep `DownloadQueueService` runnable both in-thread and via background worker delegation.
 
 ## View rewrite status

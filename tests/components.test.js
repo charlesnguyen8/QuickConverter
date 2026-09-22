@@ -265,6 +265,41 @@ function test(name, fn) {
     assert(novelCard.includes('Rate Limit Cooldown'), 'expected the cooldown section');
   });
 
+  // --- buildDownloadOptions (shared panel) ---
+  const { buildDownloadOptions } = await loadComponent('components/react/shared/aiConfigOptions.js');
+
+  test('buildDownloadOptions refuses official translation without a key', () => {
+    assert.strictEqual(buildDownloadOptions({ enabled: true, provider: 'official', apiKey: '' }), null);
+  });
+
+  test('buildDownloadOptions maps official config (no baseUrl)', () => {
+    const opts = buildDownloadOptions({ enabled: true, provider: 'official', apiKey: ' sk-abc ', model: 'deepseek-chat', prompt: 'P' });
+    assert.strictEqual(opts.translation.enabled, true);
+    assert.strictEqual(opts.translation.apiKey, 'sk-abc');
+    assert.strictEqual(opts.translation.model, 'deepseek-chat');
+    assert.strictEqual(opts.translation.provider, 'official');
+    assert.strictEqual(opts.translation.baseUrl, undefined);
+    assert.strictEqual(opts.cooldown, undefined);
+  });
+
+  test('buildDownloadOptions fills sk-local and baseUrl for custom provider', () => {
+    const opts = buildDownloadOptions({ enabled: true, provider: 'custom', customUrl: 'http://127.0.0.1:8000/v1', apiKey: '' });
+    assert.strictEqual(opts.translation.apiKey, 'sk-local');
+    assert.strictEqual(opts.translation.baseUrl, 'http://127.0.0.1:8000/v1');
+  });
+
+  test('buildDownloadOptions adds top-level cooldown on request and reflects the toggle', () => {
+    const withCooldown = buildDownloadOptions(
+      { enabled: true, provider: 'official', apiKey: 'sk', cooldown: { enabled: false, minSec: 180, maxSec: 300 } },
+      { includeTopLevelCooldown: true }
+    );
+    assert.strictEqual(withCooldown.cooldown, false);
+    assert.strictEqual(withCooldown.translation.cooldown, false);
+
+    const noTopLevel = buildDownloadOptions({ enabled: true, provider: 'official', apiKey: 'sk', cooldown: { enabled: true } });
+    assert.strictEqual('cooldown' in noTopLevel, false);
+  });
+
   // --- ReaderPrefsPopover ---
   const prefsMod = await loadComponent('components/react/reader/ReaderPrefsPopover.jsx');
   const ReaderPrefsPopover = prefsMod.default;

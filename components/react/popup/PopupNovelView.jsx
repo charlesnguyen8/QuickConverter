@@ -151,7 +151,7 @@ const ChapterRow = memo(function ChapterRow({ novel, chapter, downloadedChapter,
   );
 });
 
-export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings }) {
+export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings, deepseekRef }) {
   const [novel, setNovel] = useState(null);
   const [downloaded, setDownloaded] = useState([]);
   const [qState, setQState] = useState(null);
@@ -311,7 +311,7 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
         </div>
       ) : null}
 
-      <PopupDeepseekCard />
+        <PopupDeepseekCard ref={deepseekRef} novelId={novelId} />
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between px-0.5">

@@ -37,31 +37,29 @@ const popupHtml = fs.readFileSync(path.join(repoRoot, 'views', 'popup.html'), 'u
 const settingsHtml = fs.readFileSync(path.join(repoRoot, 'views', 'settings.html'), 'utf8');
 const readerSourceSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'reader', 'ReaderSourceDrawer.jsx'), 'utf8');
 const readerDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'reader', 'ReaderDeepseekCard.jsx'), 'utf8');
+const aiConfigSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'shared', 'AiConfigPanel.jsx'), 'utf8');
 
-// Reader View
+// Reader View — the wrapper owns the id map; the shared panel renders the switcher markup.
 for (const id of ['reader-provider-btn-official', 'reader-provider-btn-custom', 'reader-custom-base-url',
   'reader-bridge-preset-btn', 'reader-test-custom-btn', 'reader-api-key-label']) {
-  assert(readerDeepseekSrc.includes(`id="${id}"`), `ReaderDeepseekCard.jsx must have #${id}`);
+  assert(readerDeepseekSrc.includes(`'${id}'`), `ReaderDeepseekCard.jsx must map #${id}`);
 }
-assert(readerDeepseekSrc.includes('value="deepseek-reasoner"'), 'ReaderDeepseekCard.jsx must have deepseek-reasoner in model select');
 assert(readerSourceSrc.includes('id="source-reasoning-container"'), 'ReaderSourceDrawer.jsx must have #source-reasoning-container in source drawer');
 assert(readerSourceSrc.includes('DeepThink Reasoning Process'), 'ReaderSourceDrawer.jsx must have the DeepThink drawer section');
 console.log('✓ ReaderDeepseekCard.jsx & ReaderSourceDrawer.jsx contain provider switcher, custom URL, and DeepThink drawer section');
 
 // Novel View
 const novelDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'novel', 'NovelDeepseekCard.jsx'), 'utf8');
-assert(novelDeepseekSrc.includes('id="novel-provider-btn-official"'), 'NovelDeepseekCard.jsx must have #novel-provider-btn-official');
-assert(novelDeepseekSrc.includes('id="novel-provider-btn-custom"'), 'NovelDeepseekCard.jsx must have #novel-provider-btn-custom');
-assert(novelDeepseekSrc.includes('id="novel-custom-base-url"'), 'NovelDeepseekCard.jsx must have #novel-custom-base-url');
-assert(novelDeepseekSrc.includes('id="novel-bridge-preset-btn"'), 'NovelDeepseekCard.jsx must have #novel-bridge-preset-btn');
-assert(novelDeepseekSrc.includes('id="novel-test-custom-btn"'), 'NovelDeepseekCard.jsx must have #novel-test-custom-btn');
-assert(novelDeepseekSrc.includes('id="novel-api-key-label"'), 'NovelDeepseekCard.jsx must have #novel-api-key-label');
-assert(novelDeepseekSrc.includes('value="deepseek-reasoner"'), 'NovelDeepseekCard.jsx must have deepseek-reasoner in model select');
+for (const id of ['novel-provider-btn-official', 'novel-provider-btn-custom', 'novel-custom-base-url',
+  'novel-bridge-preset-btn', 'novel-test-custom-btn', 'novel-api-key-label']) {
+  assert(novelDeepseekSrc.includes(`'${id}'`), `NovelDeepseekCard.jsx must map #${id}`);
+}
+assert(aiConfigSrc.includes("'deepseek-reasoner'"), 'AiConfigPanel.jsx must offer the deepseek-reasoner model option');
 console.log('✓ NovelDeepseekCard.jsx contains provider switcher buttons, custom URL input, and reasoner model option');
 
 // Popup View
 const popupMarkupSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'popup', 'PopupDeepseekCard.jsx'), 'utf8');
-const popupHas = (id) => popupHtml.includes(`id="${id}"`) || popupMarkupSrc.includes(`id="${id}"`);
+const popupHas = (id) => popupHtml.includes(`id="${id}"`) || popupMarkupSrc.includes(`'${id}'`);
 assert(popupHas('popup-provider-btn-official'), 'popup must have #popup-provider-btn-official');
 assert(popupHas('popup-provider-btn-custom'), 'popup must have #popup-provider-btn-custom');
 assert(popupHas('popup-custom-base-url'), 'popup must have #popup-custom-base-url');

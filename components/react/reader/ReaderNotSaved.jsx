@@ -1,7 +1,7 @@
 import React from 'react';
 import ReaderDeepseekCard from './ReaderDeepseekCard.jsx';
 
-export default function ReaderNotSaved({ downloading = false, failed = false, translating = false, model = 'deepseek-flash', onDownload }) {
+export default function ReaderNotSaved({ downloading = false, failed = false, translating = false, model = 'deepseek-flash', onDownload, deepseekRef }) {
   let label = 'Download Chapter';
   if (failed) label = 'Failed. Click to Retry';
   else if (downloading) label = translating ? `Translating (${model})...` : 'Downloading Chapter...';
@@ -18,7 +18,7 @@ export default function ReaderNotSaved({ downloading = false, failed = false, tr
         </p>
       </div>
 
-      <ReaderDeepseekCard />
+      <ReaderDeepseekCard ref={deepseekRef} />
 
       <button
         type="button"

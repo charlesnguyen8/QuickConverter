@@ -9,9 +9,9 @@
 changed → `npm run build:ext` → `npm test` green → commit → owner loads `dist/` for parity).
 No piecemeal approval requests. Commit per milestone so each is independently revertible.
 
-**Status (as of M1–M7):** Popup, Settings, Reader and Novel are fully React; no `views/*.js` logic
-scripts remain and the dead ESM facade is gone. **M8** (next) converts the shared AI/DeepSeek panel
-and settings controller to React — the last classic logic modules.
+**Status (as of M1–M7 + M8a):** Popup, Settings, Reader and Novel are fully React; no `views/*.js`
+logic scripts remain. The shared AI panel is now React (**M8a** done). Next: **M8b** (Settings
+DeepSeek controller → React); `add-book.js` stays a classic custom element.
 
 **Related docs:** `context.md`, `AGENTS.md`.
 
@@ -22,10 +22,9 @@ and settings controller to React — the last classic logic modules.
 1. **Load from `dist/`** — `npm run build:ext`, then load unpacked from `dist/`. Repo root is not
    loadable (React pages need the bundle).
 2. **Static layers** — `services/` and `providers/` remain global scripts loaded via `<script>`
-   before the view entry (converting them to ESM is dropped — not needed for the rewrite). The
-   shared UI controllers `components/ai-config-panel.js` and `components/settings-deepseek.js` are
-   converted to React in **M8**; the `<add-book-button>` custom element stays classic (optional
-   follow-up).
+   before the view entry (converting them to ESM is dropped — not needed for the rewrite). The shared
+   AI panel is React as of **M8a**; `components/settings-deepseek.js` is converted in **M8b**; the
+   `<add-book-button>` custom element stays classic (optional follow-up).
 3. **Per-view entry** — `components/react/<view>/<view>-entry.jsx` mounts `<View>` into `#<view>-root`
    with `flushSync` (so sibling classic scripts that run at `DOMContentLoaded` still find DOM).
 4. **No `chrome.*` in `views/` or React components** — go through `services/` (platform/storage).
@@ -156,35 +155,29 @@ Removed the unused ESM facade (`services/index.mjs`, `components/index.mjs`) and
 plus the dead `window.QueueDockReact` and `window.AddBookButton` globals. Confirmed `views/` holds
 only HTML shells (no `*.js`). Updated `context.md` + `AGENTS.md` and rebuilt `styles/tailwind.css`.
 
-### M8 — Shared AI panel + Settings controller → React
-The last classic logic modules. Replace the four duplicated DeepSeek card markups and the
-imperative `components/ai-config-panel.js` (`createAiConfigPanel({ids, capabilities, hooks})`) /
-`components/settings-deepseek.js` controllers with one React panel. **Behavior-preserving** —
-characterization tests first (owner rules), then keep them green.
+### M8a — Shared AI panel (Novel/Reader/Popup) → React — **done**
+Replaced `components/ai-config-panel.js` (844-line imperative controller) with
+`components/react/shared/AiConfigPanel.jsx` — one React component (variants `full`/`compact`,
+`capabilities`/`options`/`copy`/`ids`/`hooks`) owning provider, API key, model, prompt, cooldown and
+balance state. `NovelDeepseekCard`/`ReaderDeepseekCard`/`PopupDeepseekCard` are now thin `forwardRef`
+wrappers that map their ids and pass `prompt`/hooks; the duplicated card JSX is gone.
+`NovelApp`/`ReaderApp`/`PopupApp` read the panel via an imperative handle
+(`getDownloadOptions({includeTopLevelCooldown})`, `refreshBalance(force)`, `getConfig()`) instead of
+`getElementById`. The pure option builder lives in `shared/aiConfigOptions.js` (unit-tested). Deleted
+`components/ai-config-panel.js` + `window.AiConfigPanel` and its `<script>` tags; 26/26 component
+tests (added 4 option-builder tests).
 
-- **New `components/react/shared/AiConfigPanel.jsx`** — the single markup + state source for
-  provider (official/custom), API key, model, prompt, cooldown and balance. Props: `variant`
-  (`full`/`compact`), `capabilities`, copy overrides, and `hooks` (`getPrompt`/`savePrompt`/
-  `onPromptSaved`). Expose an imperative handle (`useImperativeHandle`):
-  `getDownloadOptions()`, `getProviderConfig()`, `refreshBalance(force)`, `showSaveIndicator()`.
-- **View consumers** — `shared/NovelDeepseekCard`, `shared/ReaderDeepseekCard`,
-  `popup/PopupDeepseekCard` and `settings/SettingsDeepSeekTab` become thin wrappers that render
-  `<AiConfigPanel>` with view-specific copy/capabilities; the duplicated card JSX is deleted.
-- **Download-option resolution** — `novel/NovelApp.jsx` (`resolveDownloadOptions`),
-  `reader/ReaderApp.jsx` (`handleDownload`) and `popup/PopupApp.jsx` stop reading panel DOM ids
-  (`getElementById('deepseek-toggle')` etc.) and use the panel ref instead; one shared option
-  builder (or the handle) replaces the per-view copies.
-- **Balance / toast** — `updateBalanceDisplay` and `triggerSaveIndicator` (currently
-  `window.*`) move into React state; the storage tab already owns cloud sync, so
-  `settings-deepseek.js` has no other job.
-- **Delete** `components/ai-config-panel.js` and `components/settings-deepseek.js`; drop their
-  `<script>` tags from novel/popup/reader/settings; remove `window.AiConfigPanel`,
-  `window.wireSettingsDeepseek`, `window.triggerSaveIndicator`, `window.updateBalanceDisplay`,
-  `window.__settingsDeepseekWired`.
-- **Tests** — repoint the ID-contract suites (`bridge.test.js`, `settings.test.js`,
-  `components.test.js`) to the shared component and add behavior tests: provider switch reflects in
-  `getDownloadOptions()`, cooldown toggle, prompt edit/save, key show/hide. Report every changed
-  expectation as a proxy move.
+**Deliberate correction:** `SettingsDeepSeekTab` is a *different layout* (provider/model radio cards,
+balance card, its own prompt + cooldown/backoff section) wired by `settings-deepseek.js` — it does
+not share the panel markup, so folding it in would break parity. Split out to M8b below.
+
+### M8b — Settings DeepSeek controller → React
+Convert `components/settings-deepseek.js` (`window.wireSettingsDeepseek`) + the
+`settings/SettingsDeepSeekTab.jsx` markup into a React controller (own layout, not the shared panel).
+Move `updateBalanceDisplay`/`triggerSaveIndicator` into React state; delete the classic module,
+`window.wireSettingsDeepseek`/`window.__settingsDeepseekWired`/`window.triggerSaveIndicator`/
+`window.updateBalanceDisplay`, and drop the `<script>` tag from `settings.html`. Behavior-preserving;
+keep balance/cooldown/cloud-sync behavior.
 
 Out of scope: `components/add-book.js` (`<add-book-button>`) — independent custom element; convert
 later only if wanted.

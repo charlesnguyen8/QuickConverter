@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import NovelHero from './NovelHero.jsx';
 import NovelDeepseekCard from './NovelDeepseekCard.jsx';
 import NovelChapters from './NovelChapters.jsx';
@@ -22,82 +22,13 @@ function Spinner({ className }) {
   );
 }
 
-async function resolveDownloadOptions() {
-  const toggleEl = document.getElementById('deepseek-toggle');
-  const keyEl = document.getElementById('deepseek-api-key');
-  const promptEl = document.getElementById('deepseek-prompt');
-  const modelSelectEl = document.getElementById('deepseek-model-select');
-  const cooldownToggleEl = document.getElementById('novel-cooldown-toggle');
-
-  const isTranslationEnabled = !!(toggleEl && toggleEl.checked);
-  let apiKey = keyEl ? keyEl.value.trim() : '';
-  const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
-
-  const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) || null;
-
-  let curProvConfig = { provider: 'official', customUrl: 'http://127.0.0.1:8000/v1' };
-  if (deepseek && typeof deepseek.getProviderConfig === 'function') {
-    try {
-      curProvConfig = await deepseek.getProviderConfig();
-    } catch (e) {}
-  }
-  const isCustomMode = curProvConfig.provider !== 'official';
-  const customUrlInputEl = document.getElementById('novel-custom-base-url');
-  const effectiveCustomUrl = customUrlInputEl
-    ? (customUrlInputEl.value.trim() || curProvConfig.customUrl || 'http://127.0.0.1:8000/v1')
-    : (curProvConfig.customUrl || 'http://127.0.0.1:8000/v1');
-
-  if (isTranslationEnabled && !apiKey) {
-    if (isCustomMode) {
-      apiKey = 'sk-local';
-    } else if (deepseek && typeof deepseek.getApiKey === 'function') {
-      try {
-        const stored = await deepseek.getApiKey();
-        if (stored && stored.apiKey) {
-          apiKey = stored.apiKey.trim();
-          if (keyEl) keyEl.value = apiKey;
-          const clearKeyBtn = document.getElementById('clear-deepseek-btn');
-          if (clearKeyBtn) clearKeyBtn.classList.remove('hidden');
-        }
-      } catch (e) {}
-    }
-  }
-
-  if (isTranslationEnabled && !apiKey && !isCustomMode) {
-    if (keyEl) {
-      keyEl.focus();
-      keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');
-      setTimeout(() => {
-        keyEl.classList.remove('border-rose-500', 'ring-1', 'ring-rose-500/50');
-      }, 2500);
-    }
-    alert('Please enter your DeepSeek API Key before translating.');
-    return null;
-  }
-
-  const isCooldownActive = cooldownToggleEl ? cooldownToggleEl.checked : true;
-  const options = {
-    cooldown: isCooldownActive,
-    translation: {
-      enabled: isTranslationEnabled,
-      cooldown: isCooldownActive,
-      apiKey: apiKey || (isCustomMode ? 'sk-local' : ''),
-      prompt: promptEl ? promptEl.value : '',
-      model: selectedModel,
-      provider: curProvConfig.provider,
-      baseUrl: isCustomMode ? effectiveCustomUrl : undefined
-    }
-  };
-
-  return { options, isTranslationEnabled, isCustomMode, selectedModel, provider: curProvConfig.provider };
-}
-
 export default function NovelApp() {
   const [novelId] = useState(getNovelId);
   const [novel, setNovel] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [queuing, setQueuing] = useState(false);
   const [stats, setStats] = useState(null);
+  const panelRef = useRef(null);
 
   useEffect(() => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -127,8 +58,8 @@ export default function NovelApp() {
 
   const enqueueChapterDownload = useCallback(async (chNum, chapterTitle) => {
     if (!novel) return;
-    const resolved = await resolveDownloadOptions();
-    if (!resolved) return;
+    const options = panelRef.current ? panelRef.current.getDownloadOptions({ includeTopLevelCooldown: true }) : null;
+    if (!options) return;
 
     const queueService = getQueueService();
     if (queueService && typeof queueService.enqueue === 'function') {
@@ -137,14 +68,14 @@ export default function NovelApp() {
         novelTitle: novel.title,
         chapterNumber: chNum,
         chapterTitle: chapterTitle || `Chapter ${chNum}`,
-        options: resolved.options
+        options
       });
       refreshChapterList();
     } else {
       try {
-        await window.StorageService.downloadChapter(novel.id, chNum, resolved.options);
-        if (resolved.isTranslationEnabled && !resolved.isCustomMode) {
-          window.dispatchEvent(new Event('novel-refresh-balance'));
+        await window.StorageService.downloadChapter(novel.id, chNum, options);
+        if (options.translation.enabled && options.translation.provider === 'official' && panelRef.current) {
+          panelRef.current.refreshBalance(true);
         }
         refreshChapterList();
       } catch (err) {
@@ -169,7 +100,7 @@ export default function NovelApp() {
     const unsubscribe = queueService.subscribe((state) => {
       const hasActive = !!(state && state.activeTask);
       if (hadActiveTask && !hasActive) {
-        window.dispatchEvent(new Event('novel-refresh-balance'));
+        if (panelRef.current) panelRef.current.refreshBalance(true);
       }
       hadActiveTask = hasActive;
     });
@@ -221,12 +152,12 @@ export default function NovelApp() {
       return;
     }
 
-    const resolved = await resolveDownloadOptions();
-    if (!resolved) return;
+    const options = panelRef.current ? panelRef.current.getDownloadOptions({ includeTopLevelCooldown: true }) : null;
+    if (!options) return;
 
     if (unqueuedMissing.length > 5) {
-      const transDetail = resolved.isTranslationEnabled
-        ? `with translation enabled (${resolved.selectedModel}, provider: ${resolved.provider})`
+      const transDetail = options.translation.enabled
+        ? `with translation enabled (${options.translation.model}, provider: ${options.translation.provider})`
         : `without translation (raw text)`;
       const confirmed = confirm(`You are about to queue ${unqueuedMissing.length} chapters for download ${transDetail}.\n\nDo you wish to proceed?`);
       if (!confirmed) return;
@@ -239,7 +170,7 @@ export default function NovelApp() {
         novelTitle: novel.title,
         chapterNumber: chNum,
         chapterTitle: c.title || `Chapter ${chNum}`,
-        options: resolved.options
+        options
       };
     });
 
@@ -371,7 +302,7 @@ export default function NovelApp() {
             </div>
           </div>
 
-          <NovelDeepseekCard />
+          <NovelDeepseekCard ref={panelRef} />
 
           <NovelChapters />
         </section>

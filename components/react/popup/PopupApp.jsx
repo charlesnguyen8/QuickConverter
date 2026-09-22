@@ -3,45 +3,12 @@ import PopupMainView from './PopupMainView.jsx';
 import PopupNovelView from './PopupNovelView.jsx';
 
 const storage = () => (typeof window !== 'undefined' ? window.StorageService : null);
-const deepseek = () => (typeof window !== 'undefined' ? window.DeepSeekService : null);
 const platform = () => (typeof window !== 'undefined' ? window.Platform : null);
 
 const CHECKING = {
   variant: 'checking',
   host: '',
   subtitle: 'Detecting current page compatibility...'
-};
-
-const PANEL_IDS = {
-  toggle: 'deepseek-toggle',
-  toggleBadge: 'deepseek-toggle-badge',
-  providerBadge: 'popup-provider-badge',
-  providerBtnOfficial: 'popup-provider-btn-official',
-  providerBtnCustom: 'popup-provider-btn-custom',
-  customRow: 'popup-custom-api-row',
-  customUrl: 'popup-custom-base-url',
-  presetBtn: 'popup-bridge-preset-btn',
-  testCustomBtn: 'popup-test-custom-btn',
-  testCustomStatus: 'popup-custom-test-status',
-  apiKeyLabel: 'popup-api-key-label',
-  apiKey: 'deepseek-api-key',
-  rememberKey: 'remember-deepseek-key',
-  clearKeyBtn: 'clear-deepseek-btn',
-  prompt: 'deepseek-prompt',
-  visibilityBtn: 'toggle-key-visibility',
-  fields: 'deepseek-config-fields',
-  editPromptBtn: 'edit-prompt-btn',
-  modelSelect: 'deepseek-model-select',
-  testBtn: 'test-deepseek-btn',
-  testStatus: 'deepseek-test-status',
-  balanceBadge: 'deepseek-balance-badge',
-  balanceText: 'deepseek-balance-text',
-  refreshBalanceBtn: 'deepseek-refresh-balance-btn',
-  refreshBalanceIcon: 'deepseek-refresh-balance-icon',
-  pricingBadge: 'deepseek-pricing-badge',
-  cooldownToggle: 'popup-cooldown-toggle',
-  cooldownToggleLabel: 'popup-cooldown-toggle-label',
-  cooldownBadge: 'popup-cooldown-badge'
 };
 
 function formatSlugToTitle(slug) {
@@ -231,7 +198,6 @@ export default function PopupApp() {
     const novel = await S.getNovelById(novelId);
     if (!novel) return;
     activeNovelRef.current = novel;
-    if (panelRef.current) panelRef.current.setPrompt(novel.translationPrompt || undefined);
     setDetailNovelId(novelId);
     setShowDetail(true);
   }, []);
@@ -245,66 +211,8 @@ export default function PopupApp() {
   }, [loadNovels, refreshStatus]);
 
   const buildDownloadOptions = useCallback(async () => {
-    const toggleEl = document.getElementById('deepseek-toggle');
-    const keyEl = document.getElementById('deepseek-api-key');
-    const promptEl = document.getElementById('deepseek-prompt');
-    const modelSelectEl = document.getElementById('deepseek-model-select');
-
-    const isTranslationEnabled = !!(toggleEl && toggleEl.checked);
-    let apiKey = keyEl ? keyEl.value.trim() : '';
-    const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
-    const ds = deepseek();
-
-    let curProvConfig = { provider: 'official', customUrl: 'http://127.0.0.1:8000/v1' };
-    if (ds && typeof ds.getProviderConfig === 'function') {
-      try { curProvConfig = await ds.getProviderConfig(); } catch (e) {}
-    }
-    const isCustomMode = curProvConfig.provider !== 'official';
-    const customUrlInputEl = document.getElementById('popup-custom-base-url');
-    const effectiveCustomUrl = customUrlInputEl
-      ? (customUrlInputEl.value.trim() || curProvConfig.customUrl || 'http://127.0.0.1:8000/v1')
-      : (curProvConfig.customUrl || 'http://127.0.0.1:8000/v1');
-
-    if (isTranslationEnabled && !apiKey) {
-      if (isCustomMode) {
-        apiKey = 'sk-local';
-      } else if (ds && typeof ds.getApiKey === 'function') {
-        try {
-          const stored = await ds.getApiKey();
-          if (stored && stored.apiKey) {
-            apiKey = stored.apiKey.trim();
-            if (keyEl) keyEl.value = apiKey;
-            const clearKeyBtn = document.getElementById('clear-deepseek-btn');
-            if (clearKeyBtn) clearKeyBtn.classList.remove('hidden');
-          }
-        } catch (e) {}
-      }
-    }
-
-    if (isTranslationEnabled && !apiKey && !isCustomMode) {
-      if (keyEl) {
-        keyEl.focus();
-        keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');
-        setTimeout(() => keyEl.classList.remove('border-rose-500', 'ring-1', 'ring-rose-500/50'), 2500);
-      }
-      alert('Please enter your DeepSeek API Key before translating.');
-      return null;
-    }
-
-    const popupCooldownToggleEl = document.getElementById('popup-cooldown-toggle');
-    const isCooldownActive = popupCooldownToggleEl ? popupCooldownToggleEl.checked : true;
-    return {
-      cooldown: isCooldownActive,
-      translation: {
-        enabled: isTranslationEnabled,
-        cooldown: isCooldownActive,
-        apiKey: apiKey || (isCustomMode ? 'sk-local' : ''),
-        prompt: promptEl ? promptEl.value : '',
-        model: selectedModel,
-        provider: curProvConfig.provider,
-        baseUrl: isCustomMode ? effectiveCustomUrl : undefined
-      }
-    };
+    if (!panelRef.current) return null;
+    return panelRef.current.getDownloadOptions({ includeTopLevelCooldown: true });
   }, []);
 
   const downloadChapter = useCallback(async (chNum, chapterTitle, onDone) => {
@@ -441,28 +349,6 @@ export default function PopupApp() {
       await loadNovels();
       refreshStatus();
     })();
-
-    if (typeof window !== 'undefined' && window.AiConfigPanel && typeof window.AiConfigPanel.create === 'function') {
-      panelRef.current = window.AiConfigPanel.create({
-        variant: 'compact',
-        ids: PANEL_IDS,
-        hooks: {
-          getPrompt: () => (activeNovelRef.current && activeNovelRef.current.translationPrompt) || null,
-          savePrompt: async (text) => {
-            const novel = activeNovelRef.current;
-            if (!novel) return;
-            novel.translationPrompt = text;
-            const S = storage();
-            if (S && typeof S.updateNovel === 'function') {
-              await S.updateNovel(novel.id, { translationPrompt: text });
-            }
-          }
-        }
-      });
-      if (panelRef.current) panelRef.current.refresh();
-    } else {
-      console.warn('[PopupApp] AiConfigPanel not loaded; DeepSeek panel disabled.');
-    }
   }, [loadNovels, refreshStatus]);
 
   console.log('[PopupApp] render', { novels: novels.length, variant: status.variant, showDetail, addBusy });
@@ -485,6 +371,7 @@ export default function PopupApp() {
         novelId={detailNovelId}
         onBack={backToMain}
         onOpenSettings={openSettings}
+        deepseekRef={panelRef}
       />
     </>
   );

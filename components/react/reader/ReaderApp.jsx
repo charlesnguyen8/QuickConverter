@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ReaderHeader from './ReaderHeader.jsx';
 import ReaderChapter from './ReaderChapter.jsx';
 import ReaderNav from './ReaderNav.jsx';
@@ -22,6 +22,7 @@ export default function ReaderApp() {
   const [failed, setFailed] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [model, setModel] = useState('deepseek-flash');
+  const panelRef = useRef(null);
 
   const load = useCallback(async () => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -119,75 +120,20 @@ export default function ReaderApp() {
 
   const handleDownload = useCallback(async () => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
-    const deepseek = typeof window !== 'undefined' ? window.DeepSeekService : null;
     if (!storage || !novel) return;
 
-    const toggleEl = document.getElementById('reader-deepseek-toggle');
-    const keyEl = document.getElementById('reader-deepseek-api-key');
-    const promptEl = document.getElementById('reader-deepseek-prompt');
-    const modelSelectEl = document.getElementById('reader-deepseek-model-select');
-
-    const isTranslationEnabled = !!(toggleEl && toggleEl.checked);
-    let apiKey = keyEl ? keyEl.value.trim() : '';
-    const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
-
-    let curProvConfig = { provider: 'official', customUrl: 'http://127.0.0.1:8000/v1' };
-    if (deepseek && typeof deepseek.getProviderConfig === 'function') {
-      try { curProvConfig = await deepseek.getProviderConfig(); } catch (e) {}
-    }
-    const isCustomMode = curProvConfig.provider !== 'official';
-    const customUrlInputEl = document.getElementById('reader-custom-base-url');
-    const effectiveCustomUrl = customUrlInputEl
-      ? (customUrlInputEl.value.trim() || curProvConfig.customUrl || 'http://127.0.0.1:8000/v1')
-      : (curProvConfig.customUrl || 'http://127.0.0.1:8000/v1');
-
-    if (isTranslationEnabled && !apiKey) {
-      if (isCustomMode) {
-        apiKey = 'sk-local';
-      } else if (deepseek && typeof deepseek.getApiKey === 'function') {
-        try {
-          const stored = await deepseek.getApiKey();
-          if (stored && stored.apiKey) {
-            apiKey = stored.apiKey.trim();
-            if (keyEl) keyEl.value = apiKey;
-            const clearKeyBtn = document.getElementById('reader-clear-deepseek-btn');
-            if (clearKeyBtn) clearKeyBtn.classList.remove('hidden');
-          }
-        } catch (e) {}
-      }
-    }
-
-    if (isTranslationEnabled && !apiKey && !isCustomMode) {
-      if (keyEl) {
-        keyEl.focus();
-        keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');
-        setTimeout(() => {
-          keyEl.classList.remove('border-rose-500', 'ring-1', 'ring-rose-500/50');
-        }, 2500);
-      }
-      alert('Please enter your DeepSeek API Key before translating.');
-      return;
-    }
+    const options = panelRef.current ? panelRef.current.getDownloadOptions() : null;
+    if (!options) return;
 
     setFailed(false);
-    setTranslating(isTranslationEnabled);
-    setModel(selectedModel);
+    setTranslating(options.translation.enabled);
+    setModel(options.translation.model);
     setDownloading(true);
 
     try {
-      const options = {
-        translation: {
-          enabled: isTranslationEnabled,
-          apiKey: apiKey || (isCustomMode ? 'sk-local' : ''),
-          prompt: promptEl ? promptEl.value : '',
-          model: selectedModel,
-          provider: curProvConfig.provider,
-          baseUrl: isCustomMode ? effectiveCustomUrl : undefined
-        }
-      };
       await storage.downloadChapter(novel.id, ch, options);
-      if (isTranslationEnabled && !isCustomMode) {
-        window.dispatchEvent(new Event('reader-refresh-balance'));
+      if (options.translation.enabled && options.translation.provider === 'official' && panelRef.current) {
+        panelRef.current.refreshBalance(true);
       }
       setDownloading(false);
       window.dispatchEvent(new Event('reader-chapter-refresh'));
@@ -259,6 +205,7 @@ export default function ReaderApp() {
             translating={translating}
             model={model}
             onDownload={handleDownload}
+            deepseekRef={panelRef}
           />
         ) : null}
       </main>
