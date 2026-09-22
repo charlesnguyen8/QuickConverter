@@ -61,7 +61,7 @@ assert(novelHtml.includes('value="deepseek-reasoner"'), 'views/novel.html must h
 console.log('✓ views/novel.html contains provider switcher buttons, custom URL input, and reasoner model option');
 
 // Popup View
-const popupMarkupSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'popupMarkup.mjs'), 'utf8');
+const popupMarkupSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'PopupDeepseekCard.jsx'), 'utf8');
 const popupHas = (id) => popupHtml.includes(`id="${id}"`) || popupMarkupSrc.includes(`id="${id}"`);
 assert(popupHas('popup-provider-btn-official'), 'popup must have #popup-provider-btn-official');
 assert(popupHas('popup-provider-btn-custom'), 'popup must have #popup-provider-btn-custom');

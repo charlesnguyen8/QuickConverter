@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { popupDeepseekHtml } from './popupMarkup.mjs';
+import PopupDeepseekCard from './PopupDeepseekCard.jsx';
 
 const storage = () => (typeof window !== 'undefined' ? window.StorageService : null);
 const queue = () => (typeof window !== 'undefined' ? window.DownloadQueueService : null);
@@ -311,7 +311,7 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
         </div>
       ) : null}
 
-      <div dangerouslySetInnerHTML={{ __html: popupDeepseekHtml }} />
+      <PopupDeepseekCard />
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between px-0.5">
