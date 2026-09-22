@@ -392,6 +392,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
       const progress = scrollHeight > 0 ? Math.min(100, Math.max(0, (window.scrollY / scrollHeight) * 100)) : 0;
       progressBar.style.width = `${progress}%`;
+      const percentEl = document.getElementById('reading-progress-percent');
+      if (percentEl) percentEl.textContent = `${Math.round(progress)}%`;
     },
     { passive: true }
   );

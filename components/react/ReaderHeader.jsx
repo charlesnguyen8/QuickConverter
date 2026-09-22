@@ -5,10 +5,15 @@ export default function ReaderHeader() {
     <>
     
     <div
-      id="reading-progress-bar"
-      className="fixed top-0 left-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 z-50 transition-all duration-75"
-      style={{ width: '0%' }}
-    ></div>
+      id="reading-progress-track"
+      className="fixed top-0 left-0 right-0 h-1 bg-slate-800/80 z-50"
+    >
+      <div
+        id="reading-progress-bar"
+        className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-75"
+        style={{ width: '0%' }}
+      ></div>
+    </div>
 
     
     <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40 px-4 sm:px-8 py-3">
@@ -34,6 +39,9 @@ export default function ReaderHeader() {
           </span>
           <span id="header-chapter-title" className="text-xs sm:text-sm font-bold text-slate-200 truncate max-w-[240px] sm:max-w-md">
             Loading chapter...
+          </span>
+          <span id="reading-progress-percent" className="text-[10px] font-mono text-slate-500 mt-0.5">
+            0%
           </span>
         </div>
 
