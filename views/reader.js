@@ -401,11 +401,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     { passive: true }
   );
 
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
+  const escapeHtml = window.UIUtils.escapeHtml;
 
   function updateMetricsFromDom() {
     if (!chapterBody) return;
