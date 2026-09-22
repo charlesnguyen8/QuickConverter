@@ -18,6 +18,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // --- Storage & Quota Management ---
   await initStorageStats();
+
+  // --- Google Drive Cloud Backup ---
+  await initCloudSync();
 });
 
 // =========================================================================
@@ -922,6 +925,120 @@ async function loadStorageData() {
     console.error('Failed to load storage data:', err);
     if (usedDisplay) usedDisplay.textContent = 'Storage unavailable';
   }
+}
+
+// =========================================================================
+// 5b. Google Drive Cloud Backup Controller
+// =========================================================================
+async function initCloudSync() {
+  const CloudSync = window.CloudSyncService;
+  const statusEl = document.getElementById('cloud-sync-status');
+  const lastEl = document.getElementById('cloud-sync-last-backup');
+  const feedbackEl = document.getElementById('cloud-sync-feedback');
+  const signinBtn = document.getElementById('cloud-sync-signin-btn');
+  const signoutBtn = document.getElementById('cloud-sync-signout-btn');
+  const backupBtn = document.getElementById('cloud-sync-backup-btn');
+  const restoreBtn = document.getElementById('cloud-sync-restore-btn');
+
+  if (!CloudSync || !statusEl) return;
+
+  const STATUS_CONNECTED = 'flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+  const STATUS_OFFLINE = 'flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-700 text-slate-300 border border-slate-600';
+  const FEEDBACK_OK = 'text-xs font-medium text-emerald-400';
+  const FEEDBACK_ERR = 'text-xs font-medium text-rose-400';
+  const FEEDBACK_INFO = 'text-xs font-medium text-slate-400';
+
+  const setFeedback = (text, cls) => {
+    if (!feedbackEl) return;
+    feedbackEl.textContent = text;
+    feedbackEl.className = cls || FEEDBACK_INFO;
+  };
+
+  const formatWhen = (iso) => {
+    const date = new Date(iso);
+    if (isNaN(date.getTime())) return iso;
+    return date.toLocaleString();
+  };
+
+  const setButtons = (connected) => {
+    if (signinBtn) signinBtn.classList.toggle('hidden', connected);
+    if (signoutBtn) signoutBtn.classList.toggle('hidden', !connected);
+    if (backupBtn) backupBtn.disabled = !connected;
+    if (restoreBtn) restoreBtn.disabled = !connected;
+  };
+
+  async function refresh() {
+    let status = { connected: false, lastBackupAt: null };
+    try {
+      status = await CloudSync.getStatus();
+    } catch (e) {}
+    setButtons(status.connected);
+    statusEl.textContent = status.connected ? 'Connected' : 'Not signed in';
+    statusEl.className = status.connected ? STATUS_CONNECTED : STATUS_OFFLINE;
+    if (lastEl) {
+      lastEl.textContent = status.lastBackupAt ? `Last backup: ${formatWhen(status.lastBackupAt)}` : 'No backup yet.';
+    }
+  }
+
+  if (signinBtn) {
+    signinBtn.addEventListener('click', async () => {
+      setFeedback('Requesting Google sign-in...');
+      try {
+        await CloudSync.connect();
+        setFeedback('Signed in ✓', FEEDBACK_OK);
+      } catch (e) {
+        setFeedback(e.message || 'Sign-in failed', FEEDBACK_ERR);
+      }
+      await refresh();
+    });
+  }
+
+  if (backupBtn) {
+    backupBtn.addEventListener('click', async () => {
+      backupBtn.disabled = true;
+      setFeedback('Backing up...');
+      try {
+        const result = await CloudSync.backup();
+        setFeedback(`Backed up ${result.novels} novels, ${result.chapters} chapters ✓`, FEEDBACK_OK);
+      } catch (e) {
+        setFeedback(e.message || 'Backup failed', FEEDBACK_ERR);
+      } finally {
+        backupBtn.disabled = false;
+      }
+      await refresh();
+    });
+  }
+
+  if (restoreBtn) {
+    restoreBtn.addEventListener('click', async () => {
+      if (!window.confirm('Restore from Google Drive? This replaces ALL local novels, chapters and settings. This cannot be undone.')) return;
+      restoreBtn.disabled = true;
+      setFeedback('Restoring...');
+      try {
+        const result = await CloudSync.restore();
+        setFeedback(`Restored ${result.novels} novels, ${result.chapters} chapters ✓`, FEEDBACK_OK);
+      } catch (e) {
+        setFeedback(e.message || 'Restore failed', FEEDBACK_ERR);
+      } finally {
+        restoreBtn.disabled = false;
+      }
+      await refresh();
+    });
+  }
+
+  if (signoutBtn) {
+    signoutBtn.addEventListener('click', async () => {
+      try {
+        await CloudSync.signOut();
+        setFeedback('Signed out', FEEDBACK_INFO);
+      } catch (e) {
+        setFeedback(e.message || 'Sign-out failed', FEEDBACK_ERR);
+      }
+      await refresh();
+    });
+  }
+
+  await refresh();
 }
 
 // =========================================================================

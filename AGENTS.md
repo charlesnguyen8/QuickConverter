@@ -12,6 +12,9 @@ for directory layout, porting rules, and feature checklists.
 - `npm run build:css` — rebuild `styles/tailwind.css` from `styles/input.css` + scanned content.
 - `npm run watch:css` — watch mode while developing UI.
 
+**Loading the extension:** load unpacked from the repo root in `chrome://extensions`.
+`dist/` will become the Vite build output once the migration in `current_plan.md` lands.
+
 **CSS gotcha:** Tailwind is compiled and committed. After editing any markup/JS that
 introduces new utility classes, run `npm run build:css` (or the `watch` script). Missing
 classes silently break layout (e.g. a missing `justify-end` makes the drawer anchor left)
@@ -32,4 +35,7 @@ because the committed `styles/tailwind.css` is stale.
 
 - Vanilla HTML/CSS/JS (ES6+). Follow existing patterns in neighboring files.
 - **Do not add comments unless asked.**
+- Reuse shared view modules in `components/` (`AiConfigPanel`, `UIUtils`, `QueueDock`, `AddBookButton`)
+  instead of duplicating provider/DeepSeek UI across views; load them via `<script>` before the view script.
+  Register new global-script modules the same way (IIFE + `window.*` export).
 - Keep `DownloadQueueService` runnable both in-thread and via background worker delegation.

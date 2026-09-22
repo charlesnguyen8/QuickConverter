@@ -928,6 +928,62 @@
               </a>
             </div>
           </div>
+
+          <!-- Cloud Backup (Google Drive) Card -->
+          <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur flex flex-col gap-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                  <span>☁️</span>
+                  <span>Google Drive Backup</span>
+                </h3>
+                <p class="text-xs text-slate-400 mt-1">
+                  Back up your whole library (novels, chapters, name lists, prompts, settings) to your Google Drive. API keys are never uploaded.
+                </p>
+              </div>
+              <span id="cloud-sync-status" class="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-700 text-slate-300 border border-slate-600">
+                Checking...
+              </span>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                id="cloud-sync-signin-btn"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>Sign in with Google</span>
+              </button>
+              <button
+                type="button"
+                id="cloud-sync-backup-btn"
+                disabled
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>Backup now</span>
+              </button>
+              <button
+                type="button"
+                id="cloud-sync-restore-btn"
+                disabled
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>Restore</span>
+              </button>
+              <button
+                type="button"
+                id="cloud-sync-signout-btn"
+                class="hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>Sign out</span>
+              </button>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 text-xs text-slate-400">
+              <span id="cloud-sync-last-backup">No backup yet.</span>
+              <span id="cloud-sync-feedback" class="font-medium"></span>
+            </div>
+          </div>
         </section>
 
         <!-- ========================================== -->
@@ -993,6 +1049,7 @@
     <script src="../providers/wetriedtls.js"></script>
     <script src="../providers/registry.js"></script>
     <script src="../services/storage.js"></script>
+    <script src="../services/cloud-sync.js"></script>
     <script src="../services/custom-api.js"></script>
     <script src="../services/deepseek.js"></script>
     <script src="../services/ai-service.js"></script>

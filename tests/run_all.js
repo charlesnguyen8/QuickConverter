@@ -14,7 +14,10 @@ const testFiles = [
   'bridge.test.js',
   'download-queue.test.js',
   'add-book.test.js',
-  'name-list.test.js'
+  'name-list.test.js',
+  'platform.test.js',
+  'backup.test.js',
+  'cloud-sync.test.js'
 ];
 
 let allPassed = true;

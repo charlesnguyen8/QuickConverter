@@ -4,6 +4,14 @@
 const DB_NAME = 'QuickConverterDB';
 const DB_VERSION = 1;
 
+const BACKUP_FORMAT = 'quickconverter-backup';
+const BACKUP_VERSION = 1;
+const BACKUP_EXCLUDED_KEYS = [
+  'quickconverter_deepseek_key',
+  'quickconverter_deepseek_key_storage',
+  'quickconverter_custom_api_key'
+];
+
 const INITIAL_NOVELS = [
   {
     id: "novel-1",
@@ -74,6 +82,15 @@ function openDatabase() {
   });
 
   return dbPromise;
+}
+
+function getAllFromStore(db, storeName) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readonly');
+    const request = tx.objectStore(storeName).getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
 }
 
 const StorageService = {
@@ -980,6 +997,81 @@ const StorageService = {
         chrome.storage.local.set({ [key]: String(val) });
       }
     } catch (e) {}
+  },
+
+  async exportAll() {
+    const db = await openDatabase();
+    const novels = await getAllFromStore(db, 'novels');
+    const chapters = await getAllFromStore(db, 'chapters');
+
+    const preferences = {};
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      try {
+        const stored = await new Promise((resolve) => chrome.storage.local.get(null, (r) => resolve(r || {})));
+        Object.keys(stored).forEach((key) => {
+          if (key.indexOf('quickconverter_') !== 0) return;
+          if (BACKUP_EXCLUDED_KEYS.indexOf(key) !== -1) return;
+          preferences[key] = stored[key];
+        });
+      } catch (e) {}
+    }
+    try {
+      if (typeof localStorage !== 'undefined') {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (!key || key.indexOf('quickconverter_') !== 0) continue;
+          if (BACKUP_EXCLUDED_KEYS.indexOf(key) !== -1) continue;
+          preferences[key] = localStorage.getItem(key);
+        }
+      }
+    } catch (e) {}
+
+    return {
+      format: BACKUP_FORMAT,
+      version: BACKUP_VERSION,
+      exportedAt: new Date().toISOString(),
+      novels,
+      chapters,
+      preferences
+    };
+  },
+
+  async importAll(data, options = {}) {
+    if (!data || data.format !== BACKUP_FORMAT || data.version !== BACKUP_VERSION) {
+      throw new Error('Unsupported backup format or version');
+    }
+    const replace = options.replace !== false;
+    const novels = Array.isArray(data.novels) ? data.novels : [];
+    const chapters = Array.isArray(data.chapters) ? data.chapters : [];
+
+    const db = await openDatabase();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(['novels', 'chapters'], 'readwrite');
+      const novelStore = tx.objectStore('novels');
+      const chapterStore = tx.objectStore('chapters');
+      if (replace) {
+        novelStore.clear();
+        chapterStore.clear();
+      }
+      novels.forEach((novel) => novelStore.put(novel));
+      chapters.forEach((chapter) => chapterStore.put(chapter));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+
+    const preferences = data.preferences || {};
+    Object.keys(preferences).forEach((key) => {
+      if (BACKUP_EXCLUDED_KEYS.indexOf(key) !== -1) return;
+      const value = preferences[key];
+      if (typeof value === 'string') {
+        this.setPreference(key, value);
+      } else if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        try { chrome.storage.local.set({ [key]: value }); } catch (e) {}
+      }
+    });
+
+    await this._setDbInitialized();
+    return { novels: novels.length, chapters: chapters.length };
   }
 };
 

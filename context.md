@@ -14,6 +14,7 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 - **Queue & Background**: Centralized sequential FIFO queue (`services/download-queue.js`) with concurrency control (strictly 1 task at a time), pause/resume, individual item cancellation, and live circular progress.
 - **Dock UI**: Reusable solid, opaque floating dock component (`components/queue-dock.js`) with expanded/collapsed modes.
 - **AI Translation Coordinator**: `services/ai-service.js` routing between `services/deepseek.js` (Official Cloud API) and `services/custom-api.js` (Local Web Bridge / Custom OpenAI-compatible endpoints) with SSE streaming delta accumulation and DeepThink reasoning extraction/discarding.
+- **Shared View Modules**: `components/ai-config-panel.js` (`window.AiConfigPanel`) provides the single DeepSeek / AI-provider configuration panel used by the novel, popup, and reader views via `createAiConfigPanel({ variant, ids, capabilities, hooks })`. `components/ui-utils.js` (`window.UIUtils`) provides shared helpers (e.g. `escapeHtml`/`escapeAttr`). Loaded via classic `<script>` tags before the view script.
 - **Testing**: Zero-dependency automated Node test suite runner (`npm test` in `tests/run_all.js`).
 
 ---
@@ -22,12 +23,12 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 
 ```text
 QuickConverter/
-├── components/          # Reusable UI web components (e.g. QueueDock)
+├── components/          # Reusable UI modules (QueueDock, AddBookButton, AiConfigPanel, UIUtils)
 ├── fonts/               # 11 offline web font binaries (Merriweather, Inter, etc.)
 ├── icons/               # Extension icons (16, 48, 128px)
 ├── providers/           # Web scraping catalog & content extractors (wetriedtls.js)
 ├── scripts/             # Chrome extension background service workers
-├── services/            # Core business logic (Storage, AI, Queue, Custom API)
+├── services/            # Core business logic (Storage, AI, Queue, Custom API, Cloud Sync)
 ├── styles/              # input.css and tailwind.css build output
 ├── tests/               # Automated unit & integration tests
 ├── views/               # Application pages (library, novel, reader, settings, popup)

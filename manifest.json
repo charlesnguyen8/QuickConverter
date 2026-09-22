@@ -22,13 +22,21 @@
     "tabs",
     "storage",
     "unlimitedStorage",
-    "alarms"
+    "alarms",
+    "identity"
   ],
+  "oauth2": {
+    "client_id": "438493947438-003cf2s30kfu33fespdmd3ac31rhenef.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/drive.appdata"
+    ]
+  },
   "host_permissions": [
     "*://wetriedtls.com/*",
     "*://www.wetriedtls.com/*",
     "*://*.wetriedtls.com/*",
     "https://api.deepseek.com/*",
+    "https://www.googleapis.com/*",
     "http://127.0.0.1:*/*",
     "http://localhost:*/*"
   ],
