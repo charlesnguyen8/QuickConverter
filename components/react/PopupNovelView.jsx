@@ -186,6 +186,18 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
     return typeof unsub === 'function' ? unsub : undefined;
   }, []);
 
+  // Whenever the queue structure changes (a task starts, finishes or is
+  // cleared), re-read the downloaded chapters so finished rows flip to Saved.
+  useEffect(() => {
+    const S = storage();
+    if (!novelId || !S) return undefined;
+    let cancelled = false;
+    S.getNovelChapters(novelId)
+      .then((ch) => { if (!cancelled) setDownloaded(Array.isArray(ch) ? ch : []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [qState, novelId]);
+
   const catalog = (novel && novel.chapterList) || [];
   const downloadedMap = useMemo(
     () => new Map(downloaded.map((c) => [Number(c.chapterNumber), c])),
