@@ -42,7 +42,7 @@ cleanup; M8 (ESM/MV3) deferred.
 |---|---|---|
 | Library | full (`LibraryView.jsx`) | — |
 | Novel | hero, chapters, name-list drawer, dock | `views/novel.js` ~400 lines: panel init, sync/download-all, `enqueueChapterDownload`, `refreshChapterList`, `novel-chapter-download` listener, balance/queue hook |
-| Reader | reading core, nav, source drawer | `views/reader.js` ~690 lines: header, typography popover, translation panel init, prefs application, not-saved/download flow |
+| Reader | reading core, nav, source drawer, header, typography popover | `views/reader.js` ~384 lines: translation panel init, not-saved/download flow, chapter load, source drawer toggle, hotkeys |
 | Settings | Storage tab, Reader tab, DeepSeek tab (`SettingsDeepSeekTab.jsx`) | `views/settings.js` ~177 lines: nav, tab switching, balance display, toasts, About; DeepSeek controller now in `components/settings-deepseek.js` |
 | Popup | **fully React** (`PopupApp` + `PopupMainView` + `PopupNovelView` + `PopupDeepseekCard`) | `views/popup.js` and `popupMarkup.mjs` deleted; `popup.html` is a shell + entry |
 
@@ -62,6 +62,9 @@ update them whenever an ID moves (`bridge.test.js`, `settings.test.js`).
 | M1 Popup detail → React | `e8e868c` (+ `ebe3b53` queue re-render, `deeb0f7` downloaded refresh, `f1b683b` null-novel guard) |
 | M2 Popup DeepSeek card → React, delete `popup.js` | `e083ef9`, `6d012f7` |
 | M3 Settings DeepSeek tab JSX + controller move | `48c0bdc`, `af464f5` (emoji/save), `710ab4b` (wiring), `ee6a31d` |
+| M4 Settings shell → React, delete `settings.js` | `c3cedee`, `e755efc` |
+| M5a Reader header → React | `6bf390a` |
+| M5b Reader typography popover → React | `ReaderPrefsPopover.jsx` (this milestone) |
 
 ---
 
@@ -94,17 +97,22 @@ the toast/save-pill; the tab components render as direct children. `views/settin
 `settings.html` is a shell with `#settings-root` + `settings-entry.jsx`, and the per-tab entries
 (storage/reader/deepseek/shell) are gone. Balance/toast helpers live in `components/settings-deepseek.js`.
 
-### M5 — Reader: finish the remaining pieces  ← **next** (5b)
-`views/reader.js` is ~701 lines with coupled subsystems; split into four slices. Each slice: convert
+### M5 — Reader: finish the remaining pieces  ← **next** (5c)
+`views/reader.js` is ~384 lines with coupled subsystems; split into four slices. Each slice: convert
 markup with the same IDs, keep `reader.js` wiring (React renders once, so DOM refs stay valid —
 the bridge pattern used for the popup DeepSeek card), build + 13 suites + a `dist/` check.
 
 - **5a — Header markup — done**: `components/react/ReaderHeader.jsx` + `reader-header-entry.jsx`
   (flushSync); `views/reader.html` lines 469–794 replaced with `#reader-header-root`; `reader.js`
   unchanged (bridge pattern). Tests read `ReaderHeader.jsx` for the moved ids/options.
-- **5b — Typography popover logic → React**: `ReaderPrefsPopover.jsx` owns the popover state and
-  `applyReaderPreferences`; move `initInReaderTypography` out of `reader.js`; keep the storage keys
-  and the `reader-prefs-updated` event contract.
+- **5b — Typography popover logic → React — done**: `components/react/ReaderPrefsPopover.jsx`
+  owns prefs state (`readPrefs`/`writePrefs`/`applyReaderPreferences`) and the popover open state.
+  `ReaderHeader` stays stateless (renders `<ReaderPrefsPopover />`, keeping the font stepper + popover
+  siblings) so React never re-renders over `reader.js`'s DOM mutations. `reader.js` lost the
+  typography block and now seams the T/Esc hotkeys through `reader-toggle-typography` /
+  `reader-close-typography` window events. The shared storage keys and `reader-prefs-updated`
+  contract are unchanged; `applyReaderPreferences` sets column width + `body[data-theme]` and emits
+  the event (chapter body/title colors stay in `ReaderChapter`).
 - **5c — Translation panel + source drawer**: render the `AiConfigPanel` container from React (same
   IDs) and move `initDeepSeekUI` wiring; hook the source drawer to React state.
 - **5d — Chapter load / not-saved / download flow + toast + hotkeys**: port the remaining

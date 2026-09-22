@@ -13,9 +13,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const headerNovelTitle = document.getElementById('header-novel-title');
   const headerChapterTitle = document.getElementById('header-chapter-title');
   const toggleSourceDrawerBtn = document.getElementById('toggle-source-drawer-btn');
-  const fontDecBtn = document.getElementById('font-dec-btn');
-  const fontIncBtn = document.getElementById('font-inc-btn');
-  const fontSizeLabel = document.getElementById('font-size-label');
   const readerSettingsBtn = document.getElementById('reader-settings-btn');
 
   // Article / Reader Elements
@@ -27,7 +24,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const novelBadge = document.getElementById('novel-badge');
   const chapterBadge = document.getElementById('chapter-badge');
   const chapterMainTitle = document.getElementById('chapter-main-title');
-  const chapterBody = document.getElementById('chapter-body');
 
   // Bottom Navigation
 
@@ -64,324 +60,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (readerSettingsBtn && novelId && !isNaN(chapterNumber)) {
     readerSettingsBtn.href = `settings.html?from=reader&id=${encodeURIComponent(novelId)}&ch=${encodeURIComponent(chapterNumber)}`;
-  }
-
-  // --- Reader Typography, Appearance & Theme Preferences ---
-  const FONT_KEY = 'quickconverter_reader_font_size';
-  const FONT_FAMILY_KEY = 'quickconverter_reader_font_family';
-  const LINE_HEIGHT_KEY = 'quickconverter_reader_line_height';
-  const WIDTH_KEY = 'quickconverter_reader_column_width';
-  const THEME_KEY = 'quickconverter_reader_theme';
-
-  const readerMainEl = document.querySelector('main');
-  const readerHeaderEl = document.querySelector('header');
-
-  function resolveFontFamilyCss(fontKey) {
-    switch (fontKey) {
-      case 'serif':
-      case 'georgia':
-        return 'Georgia, Cambria, "Times New Roman", Times, serif';
-      case 'garamond':
-        return 'Garamond, "EB Garamond", "Baskerville", "Times New Roman", serif';
-      case 'palatino':
-        return '"Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", Georgia, serif';
-      case 'charter':
-        return 'Charter, "Bitstream Charter", "Sitka Text", Cambria, serif';
-      case 'baskerville':
-        return 'Baskerville, "Baskerville Old Face", "Hoefler Text", Garamond, serif';
-      case 'times':
-        return '"Times New Roman", Times, Georgia, serif';
-      case 'verdana':
-        return 'Verdana, Geneva, "DejaVu Sans", sans-serif';
-      case 'trebuchet':
-        return '"Trebuchet MS", "Lucida Grande", "Lucida Sans Unicode", sans-serif';
-      case 'unkempt':
-        return "'Unkempt', cursive, sans-serif";
-      case 'patrick-hand':
-        return "'Patrick Hand', cursive, sans-serif";
-      case 'merienda':
-        return "'Merienda', cursive, serif";
-      case 'pangolin':
-        return "'Pangolin', cursive, sans-serif";
-      case 'playwrite-vn':
-        return "'Playwrite VN', cursive, sans-serif";
-      case 'sedgwick-ave':
-        return "'Sedgwick Ave Display', cursive, sans-serif";
-      case 'mynerve':
-        return "'Mynerve', cursive, sans-serif";
-      case 'fuzzy-bubbles':
-        return "'Fuzzy Bubbles', cursive, sans-serif";
-      case 'mono':
-        return 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Cascadia Code", "Courier New", monospace';
-      case 'sans':
-      default:
-        return 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-    }
-  }
-
-  function applyReaderPreferences() {
-    const fontSize = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
-    const fontFamily = localStorage.getItem(FONT_FAMILY_KEY) || 'sans';
-    const lineHeight = localStorage.getItem(LINE_HEIGHT_KEY) || 'relaxed';
-    const columnWidth = localStorage.getItem(WIDTH_KEY) || 'standard';
-    const theme = localStorage.getItem(THEME_KEY) || 'slate';
-
-    // Apply font size
-    if (chapterBody) {
-      chapterBody.style.fontSize = `${fontSize}px`;
-    }
-    if (fontSizeLabel) {
-      fontSizeLabel.textContent = `${fontSize}px`;
-    }
-    const inReaderFontVal = document.getElementById('in-reader-font-val');
-    if (inReaderFontVal) {
-      inReaderFontVal.textContent = `${fontSize}px`;
-    }
-    const inReaderFontSlider = document.getElementById('in-reader-font-slider');
-    if (inReaderFontSlider) {
-      inReaderFontSlider.value = fontSize;
-    }
-
-    // Apply font family
-    if (chapterBody) {
-      chapterBody.style.fontFamily = resolveFontFamilyCss(fontFamily);
-    }
-    const inReaderFontSelect = document.getElementById('in-reader-font-family');
-    if (inReaderFontSelect) {
-      inReaderFontSelect.value = fontFamily;
-    }
-
-    // Apply line height
-    if (chapterBody) {
-      if (lineHeight === 'compact') {
-        chapterBody.style.lineHeight = '1.5';
-      } else if (lineHeight === 'spacious') {
-        chapterBody.style.lineHeight = '2.0';
-      } else {
-        chapterBody.style.lineHeight = '1.75';
-      }
-    }
-    document.querySelectorAll('.in-reader-line-btn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.lineChoice === lineHeight);
-    });
-
-    // Apply column width
-    if (readerMainEl) {
-      readerMainEl.classList.remove('max-w-2xl', 'max-w-3xl', 'max-w-4xl', 'max-w-5xl');
-      if (columnWidth === 'compact') readerMainEl.classList.add('max-w-2xl');
-      else if (columnWidth === 'wide') readerMainEl.classList.add('max-w-4xl');
-      else if (columnWidth === 'full') readerMainEl.classList.add('max-w-5xl');
-      else readerMainEl.classList.add('max-w-3xl');
-    }
-    document.querySelectorAll('.in-reader-width-btn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.widthChoice === columnWidth);
-    });
-
-    // Apply Theme attribute and colors
-    document.body.setAttribute('data-theme', theme);
-
-    // Sync theme buttons in popover
-    document.querySelectorAll('.in-reader-theme-btn').forEach((btn) => {
-      const isSelected = btn.dataset.themeChoice === theme;
-      btn.classList.toggle('active', isSelected);
-      const checkEl = btn.querySelector('.theme-check');
-      if (checkEl) checkEl.style.opacity = isSelected ? '1' : '0';
-    });
-
-    if (theme === 'sepia') {
-      document.body.style.backgroundColor = '#fbf0d9';
-      document.body.style.color = '#2d231b';
-      if (chapterBody) chapterBody.style.color = '#2d231b';
-      if (chapterMainTitle) chapterMainTitle.style.color = '#2d231b';
-      if (readerHeaderEl) {
-        readerHeaderEl.style.backgroundColor = 'rgba(251, 240, 217, 0.95)';
-        readerHeaderEl.style.borderColor = '#e5d5be';
-      }
-    } else if (theme === 'oled') {
-      document.body.style.backgroundColor = '#000000';
-      document.body.style.color = '#f4f4f5';
-      if (chapterBody) chapterBody.style.color = '#f4f4f5';
-      if (chapterMainTitle) chapterMainTitle.style.color = '#f4f4f5';
-      if (readerHeaderEl) {
-        readerHeaderEl.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
-        readerHeaderEl.style.borderColor = '#27272a';
-      }
-    } else if (theme === 'forest') {
-      document.body.style.backgroundColor = '#0d1712';
-      document.body.style.color = '#e2f2e9';
-      if (chapterBody) chapterBody.style.color = '#e2f2e9';
-      if (chapterMainTitle) chapterMainTitle.style.color = '#e2f2e9';
-      if (readerHeaderEl) {
-        readerHeaderEl.style.backgroundColor = 'rgba(13, 23, 18, 0.95)';
-        readerHeaderEl.style.borderColor = '#1a3325';
-      }
-    } else {
-      // Default slate
-      document.body.style.backgroundColor = '';
-      document.body.style.color = '';
-      if (chapterBody) chapterBody.style.color = '#e2e8f0';
-      if (chapterMainTitle) chapterMainTitle.style.color = '#f8fafc';
-      if (readerHeaderEl) {
-        readerHeaderEl.style.backgroundColor = '';
-        readerHeaderEl.style.borderColor = '';
-      }
-    }
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('reader-prefs-updated'));
-    }
-  }
-
-  // --- In-Reader Typography Popover Controller ---
-  function initInReaderTypography() {
-    const popoverBtn = document.getElementById('toggle-typography-popover-btn');
-    const popoverEl = document.getElementById('reader-typography-popover');
-    const closeBtn = document.getElementById('close-typography-popover-btn');
-    const wrapperEl = document.getElementById('reader-typography-wrapper');
-    const fontSlider = document.getElementById('in-reader-font-slider');
-    const inReaderFontDec = document.getElementById('in-reader-font-dec');
-    const inReaderFontInc = document.getElementById('in-reader-font-inc');
-    const fullSettingsLink = document.getElementById('popover-full-settings-link');
-
-    if (fullSettingsLink && novelId && !isNaN(chapterNumber)) {
-      fullSettingsLink.href = `settings.html?from=reader&id=${encodeURIComponent(novelId)}&ch=${encodeURIComponent(chapterNumber)}`;
-    }
-
-    function openPopover() {
-      if (!popoverEl) return;
-      popoverEl.classList.remove('hidden');
-      if (popoverBtn) popoverBtn.setAttribute('aria-expanded', 'true');
-    }
-
-    function closePopover() {
-      if (!popoverEl) return;
-      popoverEl.classList.add('hidden');
-      if (popoverBtn) popoverBtn.setAttribute('aria-expanded', 'false');
-    }
-
-    function togglePopover() {
-      if (!popoverEl) return;
-      if (popoverEl.classList.contains('hidden')) openPopover();
-      else closePopover();
-    }
-
-    if (popoverBtn) {
-      popoverBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        togglePopover();
-      });
-    }
-
-    if (closeBtn) {
-      closeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closePopover();
-      });
-    }
-
-    // Close when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!popoverEl || popoverEl.classList.contains('hidden')) return;
-      if (wrapperEl && !wrapperEl.contains(e.target)) {
-        closePopover();
-      }
-    });
-
-    // Theme preset buttons
-    document.querySelectorAll('.in-reader-theme-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const choice = btn.dataset.themeChoice;
-        if (choice) {
-          localStorage.setItem(THEME_KEY, choice);
-          applyReaderPreferences();
-        }
-      });
-    });
-
-    // Font Family dropdown select
-    const fontSelect = document.getElementById('in-reader-font-family');
-    if (fontSelect) {
-      fontSelect.addEventListener('change', (e) => {
-        const choice = e.target.value;
-        if (choice) {
-          localStorage.setItem(FONT_FAMILY_KEY, choice);
-          applyReaderPreferences();
-        }
-      });
-    }
-
-    // Line Spacing buttons
-    document.querySelectorAll('.in-reader-line-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const choice = btn.dataset.lineChoice;
-        if (choice) {
-          localStorage.setItem(LINE_HEIGHT_KEY, choice);
-          applyReaderPreferences();
-        }
-      });
-    });
-
-    // Column Width buttons
-    document.querySelectorAll('.in-reader-width-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const choice = btn.dataset.widthChoice;
-        if (choice) {
-          localStorage.setItem(WIDTH_KEY, choice);
-          applyReaderPreferences();
-        }
-      });
-    });
-
-    // Font Size Slider
-    if (fontSlider) {
-      fontSlider.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        localStorage.setItem(FONT_KEY, val.toString());
-        applyReaderPreferences();
-      });
-    }
-
-    // Popover Font Steppers
-    if (inReaderFontDec) {
-      inReaderFontDec.addEventListener('click', () => {
-        const cur = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
-        const next = Math.max(14, cur - 1);
-        localStorage.setItem(FONT_KEY, next.toString());
-        applyReaderPreferences();
-      });
-    }
-
-    if (inReaderFontInc) {
-      inReaderFontInc.addEventListener('click', () => {
-        const cur = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
-        const next = Math.min(28, cur + 1);
-        localStorage.setItem(FONT_KEY, next.toString());
-        applyReaderPreferences();
-      });
-    }
-
-    return { openPopover, closePopover, togglePopover };
-  }
-
-  const inReaderTypography = initInReaderTypography();
-  applyReaderPreferences();
-
-  if (fontDecBtn) {
-    fontDecBtn.addEventListener('click', () => {
-      const cur = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
-      const next = Math.max(14, cur - 2);
-      localStorage.setItem(FONT_KEY, next.toString());
-      applyReaderPreferences();
-    });
-  }
-
-  if (fontIncBtn) {
-    fontIncBtn.addEventListener('click', () => {
-      const cur = parseInt(localStorage.getItem(FONT_KEY), 10) || 18;
-      const next = Math.min(28, cur + 2);
-      localStorage.setItem(FONT_KEY, next.toString());
-      applyReaderPreferences();
-    });
   }
 
   // --- Scroll Reading Progress ---
@@ -464,10 +142,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       // If inside an input or textarea
       if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
 
-      // Hotkey: T toggles reader typography popover
+      // Hotkey: T toggles reader typography popover (React owns the popover)
       if (e.key === 't' || e.key === 'T') {
         e.preventDefault();
-        if (inReaderTypography) inReaderTypography.togglePopover();
+        window.dispatchEvent(new Event('reader-toggle-typography'));
         return;
       }
 
@@ -475,7 +153,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const typographyPopoverEl = document.getElementById('reader-typography-popover');
       if (e.key === 'Escape' && typographyPopoverEl && !typographyPopoverEl.classList.contains('hidden')) {
         e.preventDefault();
-        if (inReaderTypography) inReaderTypography.closePopover();
+        window.dispatchEvent(new Event('reader-close-typography'));
         return;
       }
 

@@ -31,8 +31,8 @@ const readerHtml = fs.readFileSync(path.join(repoRoot, 'views', 'reader.html'), 
 assert(readerHtml.includes('href="../styles/tailwind.css"'), 'Missing ../styles/tailwind.css in views/reader.html');
 for (const font of fonts) {
   assert(readerHtml.includes(`font-family: '${font.name}'`), `Missing @font-face for ${font.name} in views/reader.html`);
-  const readerHeaderSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderHeader.jsx'), 'utf8');
-assert(readerHtml.includes(`value="${font.key}"`) || readerHeaderSrc.includes(`value="${font.key}"`), `Missing option value="${font.key}" in views/reader.html or ReaderHeader.jsx`);
+  const readerPrefsSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderPrefsPopover.jsx'), 'utf8');
+assert(readerPrefsSrc.includes(`['${font.key}',`), `Missing font option '${font.key}' in components/react/ReaderPrefsPopover.jsx`);
 }
 assert(readerHtml.includes("url('../fonts/"), 'Font URLs in views/reader.html must use ../fonts/ prefix');
 console.log('✓ views/reader.html: verified stylesheet, @font-face rules, and font options');
@@ -48,16 +48,16 @@ for (const font of fonts) {
 assert(settingsHtml.includes("url('../fonts/"), 'Font URLs in views/settings.html must use ../fonts/ prefix');
 console.log('✓ views/settings.html: verified stylesheet, @font-face rules, and font options');
 
-// 4. Inspect views/reader.js & views/settings.js font resolvers
-const readerJs = fs.readFileSync(path.join(repoRoot, 'views', 'reader.js'), 'utf8');
+// 4. Inspect ReaderChapter.jsx & SettingsReaderTab.jsx font resolvers
+const readerChapterSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderChapter.jsx'), 'utf8');
 for (const font of fonts) {
-  assert(readerJs.includes(`case '${font.key}':`), `Missing case '${font.key}' in views/reader.js`);
-  assert(readerJs.includes(`return "${font.css}"`), `Missing return "${font.css}" in views/reader.js`);
+  assert(readerChapterSrc.includes(`case '${font.key}':`), `Missing case '${font.key}' in components/react/ReaderChapter.jsx`);
+  assert(readerChapterSrc.includes(`return "${font.css}"`), `Missing return "${font.css}" in components/react/ReaderChapter.jsx`);
 
   assert(settingsReaderSrc.includes(`case '${font.key}':`), `Missing case '${font.key}' in SettingsReaderTab.jsx`);
   assert(settingsReaderSrc.includes(`return "${font.css}"`), `Missing return "${font.css}" in SettingsReaderTab.jsx`);
 }
-console.log('✓ views/reader.js & SettingsReaderTab.jsx: verified font CSS family resolution mapping');
+console.log('✓ ReaderChapter.jsx & SettingsReaderTab.jsx: verified font CSS family resolution mapping');
 
 // 5. Inspect manifest.json
 const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'manifest.json'), 'utf8'));

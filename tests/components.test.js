@@ -171,6 +171,81 @@ function test(name, fn) {
     assert(!header.includes('Reading progress'), 'percentage must not live in the header titles');
   });
 
+  // --- ReaderPrefsPopover ---
+  const prefsMod = await loadComponent('components/react/ReaderPrefsPopover.jsx');
+  const ReaderPrefsPopover = prefsMod.default;
+  const readerPrefs = { fontSize: 22, fontFamily: 'serif', lineHeight: 'spacious', columnWidth: 'wide', theme: 'sepia' };
+  const prevLocalStorage = global.localStorage;
+  global.localStorage = {
+    data: Object.fromEntries(Object.entries({
+      quickconverter_reader_font_size: String(readerPrefs.fontSize),
+      quickconverter_reader_font_family: readerPrefs.fontFamily,
+      quickconverter_reader_line_height: readerPrefs.lineHeight,
+      quickconverter_reader_column_width: readerPrefs.columnWidth,
+      quickconverter_reader_theme: readerPrefs.theme
+    })),
+    getItem(k) { return k in this.data ? this.data[k] : null; }
+  };
+  const popover = render(h(ReaderPrefsPopover));
+  global.localStorage = prevLocalStorage;
+
+  test('ReaderPrefsPopover renders the typography controls reflecting prefs', () => {
+    for (const id of ['reader-typography-wrapper', 'toggle-typography-popover-btn', 'reader-typography-popover',
+      'close-typography-popover-btn', 'in-reader-font-slider', 'in-reader-font-val', 'in-reader-font-family',
+      'in-reader-font-dec', 'in-reader-font-inc', 'popover-full-settings-link']) {
+      assert(popover.includes(`id="${id}"`), `missing #${id}`);
+    }
+    assert(popover.includes('22px'), 'font size label must reflect prefs');
+    assert(popover.includes('value="unkempt"') && popover.includes('value="mono"'), 'font family options must render');
+    assert(/data-theme-choice="sepia"[^>]*active/.test(popover), 'selected theme must be marked active');
+    assert(/data-line-choice="spacious"[^>]*active/.test(popover), 'selected line spacing must be marked active');
+    assert(/data-width-choice="wide"[^>]*active/.test(popover), 'selected width must be marked active');
+    assert(/id="reader-typography-popover" class="[^"]*hidden/.test(popover), 'popover must start closed');
+  });
+
+  test('readPrefs maps the shared reader storage keys', () => {
+    const prev = global.localStorage;
+    const data = {
+      quickconverter_reader_font_size: '24',
+      quickconverter_reader_font_family: 'mono',
+      quickconverter_reader_line_height: 'spacious',
+      quickconverter_reader_column_width: 'full',
+      quickconverter_reader_theme: 'oled'
+    };
+    global.localStorage = { getItem: (k) => (k in data ? data[k] : null) };
+    try {
+      assert.deepStrictEqual(prefsMod.readPrefs(), {
+        fontSize: 24, fontFamily: 'mono', lineHeight: 'spacious', columnWidth: 'full', theme: 'oled'
+      });
+    } finally {
+      global.localStorage = prev;
+    }
+  });
+
+  test('applyReaderPreferences sets the column width, theme and emits reader-prefs-updated', () => {
+    const classes = new Set();
+    const events = [];
+    let theme = null;
+    const prevDoc = global.document;
+    const prevWin = global.window;
+    global.document = {
+      querySelector: (sel) => (sel === 'main'
+        ? { classList: { remove: (...c) => c.forEach((x) => classes.delete(x)), add: (c) => classes.add(c) } }
+        : null),
+      body: { setAttribute: (k, v) => { if (k === 'data-theme') theme = v; } }
+    };
+    global.window = { dispatchEvent: (e) => events.push(e.type) };
+    try {
+      prefsMod.applyReaderPreferences({ fontSize: 18, fontFamily: 'sans', lineHeight: 'relaxed', columnWidth: 'wide', theme: 'forest' });
+      assert(classes.has('max-w-4xl'), 'wide must map to max-w-4xl');
+      assert.strictEqual(theme, 'forest', 'theme must be written to body[data-theme]');
+      assert(events.includes('reader-prefs-updated'), 'must emit reader-prefs-updated');
+    } finally {
+      global.document = prevDoc;
+      global.window = prevWin;
+    }
+  });
+
   // --- PopupApp smoke ---
   const app = render(h(PopupApp));
   test('PopupApp renders both views', () => {

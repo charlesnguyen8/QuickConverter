@@ -73,13 +73,13 @@ assert(
 );
 console.log('✓ All 4 views have dedicated settings button anchors');
 
-// Test 4: Dynamic link generation in novel.js & reader.js
+// Test 4: Contextual settings links in novel.js & the React reader popover
 const novelJs = fs.readFileSync(path.join(repoRoot, 'views', 'novel.js'), 'utf8');
-const readerJs = fs.readFileSync(path.join(repoRoot, 'views', 'reader.js'), 'utf8');
+const readerPrefsSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderPrefsPopover.jsx'), 'utf8');
 
 assert(novelJs.includes('settings.html?from=novel'), 'novel.js must dynamically wire settings button with contextual return');
-assert(readerJs.includes('settings.html?from=reader'), 'reader.js must dynamically wire settings button with contextual return');
-console.log('✓ novel.js and reader.js dynamically configure settings return URLs');
+assert(readerPrefsSrc.includes('settings.html?from=reader'), 'ReaderPrefsPopover.jsx must link the settings page back to the reader');
+console.log('✓ novel.js and ReaderPrefsPopover.jsx configure settings return URLs');
 
 // Test 5: Navigation URL query parser simulation
 function simulateReturnNavigation(search) {
