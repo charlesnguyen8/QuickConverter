@@ -68,11 +68,11 @@ update them whenever an ID moves.
   `views/popup.js`; `views/popup.html` becomes a shell + React entry.
 - Drop `window.__popup*` globals.
 
-### M3 — Settings: DeepSeek tab → React (real JSX)  ← **next**
+### M3 — Settings: DeepSeek tab → React (real JSX) — **done**
 - Replace the `deepseekTabMarkup.mjs` bridge with JSX + hooks wired to `AiConfigPanel`; delete
   `SettingsDeepSeekTab` bridge entry and `initDeepSeekSettings` from `settings.js`.
 
-### M4 — Settings: shell + remaining tabs → React
+### M4 — Settings: shell + remaining tabs → React  ← **next**
 - `SettingsView.jsx` owns the tab shell, tab navigation, About tab, and save-indicator; delete
   `views/settings.js` and `deepseekTabMarkup.mjs`; `settings.html` becomes a shell + entry.
 
