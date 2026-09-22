@@ -230,7 +230,6 @@ export default function NovelChapters() {
     setDownloadedMap(map);
     setLoading(false);
 
-    // Update hero stats (static markup) until the hero is converted (Phase 3b)
     const downloadedMapLocal = map;
     const queueService = getQueueService();
     const unqueuedMissing = list.filter((c) => {
@@ -241,19 +240,9 @@ export default function NovelChapters() {
     }).length;
 
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('novel-stats-updated', { detail: { downloaded: downloaded.length, total } }));
-    }
-    const badgeEl = document.getElementById('chapters-badge');
-    if (badgeEl) badgeEl.textContent = `${downloaded.length} / ${total} Saved`;
-
-    const downloadAllBtn = document.getElementById('download-all-btn');
-    if (downloadAllBtn) {
-      const disabled = list.length === 0 || unqueuedMissing === 0;
-      downloadAllBtn.classList.toggle('opacity-50', disabled);
-      downloadAllBtn.classList.toggle('pointer-events-none', disabled);
-      downloadAllBtn.title = disabled
-        ? 'All chapters are already downloaded or queued'
-        : `Download and translate all ${unqueuedMissing} missing chapters`;
+      window.dispatchEvent(new CustomEvent('novel-stats-updated', {
+        detail: { downloaded: downloaded.length, total, unqueuedMissing, hasCatalog: list.length > 0 }
+      }));
     }
   }, [novelId]);
 

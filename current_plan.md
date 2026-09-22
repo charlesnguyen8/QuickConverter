@@ -9,9 +9,8 @@
 changed → `npm run build:ext` → `npm test` green → commit → owner loads `dist/` for parity).
 No piecemeal approval requests. Commit per milestone so each is independently revertible.
 
-**Status (as of M1–M5):** Popup (`views/popup.js`), Settings (`views/settings.js`) and Reader
-(`views/reader.js`) are fully React; `ReaderApp` is the single reader entry. Next is **M6** (Novel →
-React, delete `views/novel.js`), then M7 cleanup; M8 (ESM/MV3) deferred.
+**Status (as of M1–M6):** Popup, Settings, Reader and Novel are fully React; no `views/*.js` logic
+scripts remain. Next is **M7** cleanup; M8 (ESM/MV3) deferred.
 
 **Related docs:** `context.md`, `AGENTS.md`.
 
@@ -40,7 +39,7 @@ React, delete `views/novel.js`), then M7 cleanup; M8 (ESM/MV3) deferred.
 | View | React-owned | Still classic |
 |---|---|---|
 | Library | full (`LibraryView.jsx`) | — |
-| Novel | hero, chapters, name-list drawer, dock | `views/novel.js` ~400 lines: panel init, sync/download-all, `enqueueChapterDownload`, `refreshChapterList`, `novel-chapter-download` listener, balance/queue hook |
+| Novel | **fully React** (`NovelApp` + hero, chapters list, DeepSeek card, name-list drawer, dock) | `views/novel.js` deleted; `novel.html` is a shell + `novel-entry.jsx` |
 | Reader | **fully React** (`ReaderApp` + header, chapter, nav, source drawer, popover, DeepSeek card, toast) | `views/reader.js` deleted; `reader.html` is a shell + `reader-entry.jsx` |
 | Settings | Storage tab, Reader tab, DeepSeek tab (`SettingsDeepSeekTab.jsx`) | `views/settings.js` ~177 lines: nav, tab switching, balance display, toasts, About; DeepSeek controller now in `components/settings-deepseek.js` |
 | Popup | **fully React** (`PopupApp` + `PopupMainView` + `PopupNovelView` + `PopupDeepseekCard`) | `views/popup.js` and `popupMarkup.mjs` deleted; `popup.html` is a shell + entry |
@@ -48,7 +47,10 @@ React, delete `views/novel.js`), then M7 cleanup; M8 (ESM/MV3) deferred.
 Cross-view seams still in place:
 - Popup: React exposes `window.__popupActions`, main/detail are props-driven.
 - Settings: React entry calls `window.wireSettingsDeepseek()` (from `components/settings-deepseek.js`).
-- Novel still owns part of its logic in `views/novel.js` (M6); Reader is fully React (`ReaderApp`).
+- Novel: `NovelDeepseekCard` registers `AiConfigPanel` and answers `novel-refresh-balance`;
+  `NovelChapters` publishes `novel-stats-updated` (`{downloaded, total, unqueuedMissing, hasCatalog}`)
+  so `NovelApp` renders the badge/Download-All state instead of mutating DOM; chapter rows dispatch
+  `novel-chapter-download`, which `NovelApp` handles.
 
 Tests: 13 suites green. Tests that grep HTML for moved IDs read the React/JSX module instead —
 update them whenever an ID moves (`bridge.test.js`, `settings.test.js`).
@@ -64,7 +66,8 @@ update them whenever an ID moves (`bridge.test.js`, `settings.test.js`).
 | M5a Reader header → React | `6bf390a` |
 | M5b Reader typography popover → React | `ReaderPrefsPopover.jsx` |
 | M5c Reader DeepSeek card → React | `ReaderDeepseekCard.jsx` |
-| M5d Reader app controller → React, delete `reader.js` | `ReaderApp.jsx` (this milestone) |
+| M5d Reader app controller → React, delete `reader.js` | `ReaderApp.jsx` |
+| M6 Novel app controller → React, delete `novel.js` | `NovelApp.jsx`, `NovelDeepseekCard.jsx` (this milestone) |
 
 ---
 
@@ -128,14 +131,21 @@ the bridge pattern used for the popup DeepSeek card), build + 13 suites + a `dis
   failed/translating/model` state), owns the hotkeys and `document.title`, and renders `ReaderHeader`,
   `ReaderChapter`, `ReaderNav`, `ReaderNotSaved` (heading + `ReaderDeepseekCard` + download button),
   `ReaderSourceDrawer` and `ReaderToast`. `ReaderHeader` is now props-driven (titles/back/settings/
-  `hasSource`) with its own scroll-progress state; `ReaderToast` owns the `reader-show-toast`
-  contract. Deleted `views/reader.js` and the per-section `reader-*-entry.jsx` files;
+  `hasSource`) and drives the progress bar/percent by writing the DOM via refs (no per-scroll
+  re-render); `ReaderToast` owns the `reader-show-toast` contract. Deleted `views/reader.js` and the
+  per-section `reader-*-entry.jsx` files;
   `reader.html` is a shell (`#reader-root`) + `reader-entry.jsx`.
 
-### M6 — Novel: finish the remaining pieces
-- Move panel init, sync/download-all, `enqueueChapterDownload`, `refreshChapterList`,
-  `novel-chapter-download` listener and the balance/queue hook into React.
-- Delete `views/novel.js`; `novel.html` becomes a shell + entry.
+### M6 — Novel: finish the remaining pieces — **done**
+`components/react/NovelApp.jsx` is the single novel entry (`novel-entry.jsx` → `#novel-root`). It
+owns the header (contextual Settings link), the chapters section (badge, Download All, Sync Catalog),
+the `novel-chapter-download` listener, `enqueueChapterDownload`, `refreshChapterList`, and the
+queue/balance hook (dispatches `novel-refresh-balance`). `components/react/NovelDeepseekCard.jsx`
+renders the DeepSeek card (same IDs, incl. the cooldown section) and registers `AiConfigPanel` with
+the novel prompt hooks. `NovelChapters` now publishes `unqueuedMissing`/`hasCatalog` in
+`novel-stats-updated` instead of mutating `#chapters-badge`/`#download-all-btn` directly. Deleted
+`views/novel.js` and the per-section `novel-hero-entry`/`novel-chapters-entry`/`name-list-entry`
+files; `novel.html` is a shell (`#novel-root`) + `novel-entry.jsx`.
 
 ### M7 — Cleanup
 - Remove facade entries/globals no longer used; update `context.md` + `AGENTS.md`; rebuild

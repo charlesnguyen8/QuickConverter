@@ -57,12 +57,12 @@ console.log(`✓ views/settings.html contains all ${requiredSettingsIds.length} 
 
 // Test 3: Settings button presence in views
 const libraryViewSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'LibraryView.jsx'), 'utf8');
-const novelHtml = fs.readFileSync(path.join(repoRoot, 'views', 'novel.html'), 'utf8');
+const novelAppSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'NovelApp.jsx'), 'utf8');
 const readerHtml = fs.readFileSync(path.join(repoRoot, 'views', 'reader.html'), 'utf8');
 const popupHtml = fs.readFileSync(path.join(repoRoot, 'views', 'popup.html'), 'utf8');
 
 assert(libraryViewSrc.includes('id="library-settings-btn"'), 'Missing #library-settings-btn in components/react/LibraryView.jsx');
-assert(novelHtml.includes('id="novel-settings-btn"'), 'Missing #novel-settings-btn in views/novel.html');
+assert(novelAppSrc.includes('id="novel-settings-btn"'), 'Missing #novel-settings-btn in components/react/NovelApp.jsx');
 assert(
   readerHtml.includes('id="reader-settings-btn"') || fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderHeader.jsx'), 'utf8').includes('id="reader-settings-btn"'),
   'Missing #reader-settings-btn in views/reader.html or ReaderHeader.jsx'
@@ -73,13 +73,13 @@ assert(
 );
 console.log('✓ All 4 views have dedicated settings button anchors');
 
-// Test 4: Contextual settings links in novel.js & the React reader popover
-const novelJs = fs.readFileSync(path.join(repoRoot, 'views', 'novel.js'), 'utf8');
+// Test 4: Contextual settings links in NovelApp.jsx & the React reader popover
+const novelAppJsx = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'NovelApp.jsx'), 'utf8');
 const readerPrefsSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderPrefsPopover.jsx'), 'utf8');
 
-assert(novelJs.includes('settings.html?from=novel'), 'novel.js must dynamically wire settings button with contextual return');
+assert(novelAppJsx.includes('settings.html?from=novel'), 'NovelApp.jsx must dynamically wire settings button with contextual return');
 assert(readerPrefsSrc.includes('settings.html?from=reader'), 'ReaderPrefsPopover.jsx must link the settings page back to the reader');
-console.log('✓ novel.js and ReaderPrefsPopover.jsx configure settings return URLs');
+console.log('✓ NovelApp.jsx and ReaderPrefsPopover.jsx configure settings return URLs');
 
 // Test 5: Navigation URL query parser simulation
 function simulateReturnNavigation(search) {

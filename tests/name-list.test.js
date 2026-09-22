@@ -97,7 +97,7 @@ vm.runInContext(storageCode, sandbox);
 
 const StorageService = sandbox.window.StorageService || sandbox.StorageService;
 
-// Helpers mirroring novel.js sorting and parsing
+// Helpers mirroring NameListDrawer.jsx sorting and parsing
 function parseChapterNumber(val) {
   if (val === null || val === undefined || val === '') return Infinity;
   if (typeof val === 'number') return val;

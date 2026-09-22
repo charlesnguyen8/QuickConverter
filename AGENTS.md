@@ -63,9 +63,17 @@ nodes, so the helper's `render` strips `<!-- -->`).
 
 ## Code style
 
-- Vanilla HTML/CSS/JS (ES6+). Follow existing patterns in neighboring files.
+- **Views are React** (`components/react/*.jsx`), mounted from a per-view entry (`<view>-entry.jsx` →
+  `#<view>-root`); `services/`, `providers/` and shared `components/*.js` stay classic global scripts.
 - **Do not add comments unless asked.**
 - Reuse shared view modules in `components/` (`AiConfigPanel`, `UIUtils`, `QueueDock`, `AddBookButton`)
-  instead of duplicating provider/DeepSeek UI across views; load them via `<script>` before the view script.
-  Register new global-script modules the same way (IIFE + `window.*` export).
+  instead of duplicating provider/DeepSeek UI across views. React views render the panel container
+  (same element IDs) and call the global `window.*` module; its classic `<script>` still loads before
+  the view entry. Register new global-script modules the same way (IIFE + `window.*` export).
 - Keep `DownloadQueueService` runnable both in-thread and via background worker delegation.
+
+## View rewrite status
+
+Popup, Settings, Reader and Novel are fully React (no `views/*.js` logic scripts remain).
+`current_plan.md` tracks the milestones (M7 cleanup next). Shells are `views/<view>.html` +
+`components/react/<view>-entry.jsx`.

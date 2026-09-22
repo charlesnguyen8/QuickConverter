@@ -233,6 +233,38 @@ function test(name, fn) {
     assert(!readerApp.includes('id="reader-content-view"'), 'content view must not render while loading');
   });
 
+  // --- NovelApp / NovelDeepseekCard ---
+  const NovelApp = (await loadComponent('components/react/NovelApp.jsx')).default;
+  const novelApp = render(h(NovelApp));
+  test('NovelApp renders the header, hero, chapters controls and DeepSeek panel', () => {
+    for (const id of ['novel-settings-btn', 'novel-hero', 'chapters-badge', 'download-all-btn',
+      'sync-chapters-btn', 'deepseek-toggle', 'novel-cooldown-toggle', 'name-list-drawer-panel']) {
+      assert(novelApp.includes(`id="${id}"`), `missing #${id}`);
+    }
+    assert(novelApp.includes('Back to Library'), 'expected the back link');
+    assert(novelApp.includes('Download All') && novelApp.includes('Sync Catalog'), 'expected the chapter action labels');
+  });
+
+  const NovelDeepseekCard = (await loadComponent('components/react/NovelDeepseekCard.jsx')).default;
+  const novelCard = render(h(NovelDeepseekCard));
+  test('NovelDeepseekCard renders the AiConfigPanel ids and cooldown controls', () => {
+    for (const id of ['deepseek-toggle', 'deepseek-toggle-badge', 'novel-provider-badge',
+      'novel-provider-btn-official', 'novel-provider-btn-custom', 'novel-custom-api-row',
+      'novel-custom-base-url', 'novel-bridge-preset-btn', 'novel-test-custom-btn', 'novel-api-key-label',
+      'deepseek-api-key', 'remember-deepseek-key', 'clear-deepseek-btn', 'deepseek-prompt',
+      'toggle-key-visibility', 'deepseek-config-fields', 'edit-prompt-btn', 'deepseek-model-select',
+      'test-deepseek-btn', 'deepseek-test-status', 'deepseek-balance-badge', 'deepseek-balance-text',
+      'deepseek-refresh-balance-btn', 'deepseek-refresh-balance-icon', 'deepseek-pricing-badge',
+      'novel-cooldown-toggle', 'novel-cooldown-toggle-label', 'novel-cooldown-min', 'novel-cooldown-max',
+      'novel-cooldown-min-label', 'novel-cooldown-max-label', 'novel-cooldown-badge',
+      'novel-cooldown-inputs-container']) {
+      assert(novelCard.includes(`id="${id}"`), `missing #${id}`);
+    }
+    assert(novelCard.includes('value="deepseek-reasoner"'), 'expected the reasoner model option');
+    assert(novelCard.includes('DeepSeek Translation on Download'), 'expected the card heading');
+    assert(novelCard.includes('Rate Limit Cooldown'), 'expected the cooldown section');
+  });
+
   // --- ReaderPrefsPopover ---
   const prefsMod = await loadComponent('components/react/ReaderPrefsPopover.jsx');
   const ReaderPrefsPopover = prefsMod.default;

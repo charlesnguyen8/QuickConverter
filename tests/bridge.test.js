@@ -33,7 +33,6 @@ console.log('✓ services/storage.js supports reasoningText and local bridge aut
 
 // Test 4: Verify Translation on Download cards have Official vs Custom API switcher across all views
 const readerHtml = fs.readFileSync(path.join(repoRoot, 'views', 'reader.html'), 'utf8');
-const novelHtml = fs.readFileSync(path.join(repoRoot, 'views', 'novel.html'), 'utf8');
 const popupHtml = fs.readFileSync(path.join(repoRoot, 'views', 'popup.html'), 'utf8');
 const settingsHtml = fs.readFileSync(path.join(repoRoot, 'views', 'settings.html'), 'utf8');
 const readerSourceSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderSourceDrawer.jsx'), 'utf8');
@@ -50,14 +49,15 @@ assert(readerSourceSrc.includes('DeepThink Reasoning Process'), 'ReaderSourceDra
 console.log('✓ ReaderDeepseekCard.jsx & ReaderSourceDrawer.jsx contain provider switcher, custom URL, and DeepThink drawer section');
 
 // Novel View
-assert(novelHtml.includes('id="novel-provider-btn-official"'), 'views/novel.html must have #novel-provider-btn-official');
-assert(novelHtml.includes('id="novel-provider-btn-custom"'), 'views/novel.html must have #novel-provider-btn-custom');
-assert(novelHtml.includes('id="novel-custom-base-url"'), 'views/novel.html must have #novel-custom-base-url');
-assert(novelHtml.includes('id="novel-bridge-preset-btn"'), 'views/novel.html must have #novel-bridge-preset-btn');
-assert(novelHtml.includes('id="novel-test-custom-btn"'), 'views/novel.html must have #novel-test-custom-btn');
-assert(novelHtml.includes('id="novel-api-key-label"'), 'views/novel.html must have #novel-api-key-label');
-assert(novelHtml.includes('value="deepseek-reasoner"'), 'views/novel.html must have deepseek-reasoner in model select');
-console.log('✓ views/novel.html contains provider switcher buttons, custom URL input, and reasoner model option');
+const novelDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'NovelDeepseekCard.jsx'), 'utf8');
+assert(novelDeepseekSrc.includes('id="novel-provider-btn-official"'), 'NovelDeepseekCard.jsx must have #novel-provider-btn-official');
+assert(novelDeepseekSrc.includes('id="novel-provider-btn-custom"'), 'NovelDeepseekCard.jsx must have #novel-provider-btn-custom');
+assert(novelDeepseekSrc.includes('id="novel-custom-base-url"'), 'NovelDeepseekCard.jsx must have #novel-custom-base-url');
+assert(novelDeepseekSrc.includes('id="novel-bridge-preset-btn"'), 'NovelDeepseekCard.jsx must have #novel-bridge-preset-btn');
+assert(novelDeepseekSrc.includes('id="novel-test-custom-btn"'), 'NovelDeepseekCard.jsx must have #novel-test-custom-btn');
+assert(novelDeepseekSrc.includes('id="novel-api-key-label"'), 'NovelDeepseekCard.jsx must have #novel-api-key-label');
+assert(novelDeepseekSrc.includes('value="deepseek-reasoner"'), 'NovelDeepseekCard.jsx must have deepseek-reasoner in model select');
+console.log('✓ NovelDeepseekCard.jsx contains provider switcher buttons, custom URL input, and reasoner model option');
 
 // Popup View
 const popupMarkupSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'PopupDeepseekCard.jsx'), 'utf8');
