@@ -557,6 +557,11 @@ async function initDeepSeekSettings() {
   };
 
   const updateCooldownConfig = () => {
+    console.log('[settings] updateCooldownConfig fired', {
+      toggle: cooldownToggle ? cooldownToggle.checked : null,
+      min: cooldownMin ? cooldownMin.value : null,
+      max: cooldownMax ? cooldownMax.value : null
+    });
     const enabled = cooldownToggle ? cooldownToggle.checked : true;
     let min = cooldownMin ? parseInt(cooldownMin.value, 10) : 180;
     let max = cooldownMax ? parseInt(cooldownMax.value, 10) : 300;
@@ -585,6 +590,7 @@ async function initDeepSeekSettings() {
     } else {
       localStorage.setItem('quickconverter_queue_cooldown', JSON.stringify(config));
     }
+    console.log('[settings] updateCooldownConfig saved', config);
     if (cooldownInputsContainer) {
       cooldownInputsContainer.classList.toggle('opacity-50', !enabled);
       cooldownInputsContainer.classList.toggle('pointer-events-none', !enabled);
