@@ -45,12 +45,30 @@ function themeTitleColor(theme) {
   return '#f8fafc';
 }
 
+function readPrefs() {
+  if (typeof localStorage === 'undefined') {
+    return { fontSize: 18, fontFamilyCss: resolveFontFamilyCss('sans'), lineHeight: '1.75', contentColor: '#e2e8f0', titleColor: '#f8fafc' };
+  }
+  const fontSize = parseInt(localStorage.getItem('quickconverter_reader_font_size'), 10) || 18;
+  const fontFamily = localStorage.getItem('quickconverter_reader_font_family') || 'sans';
+  const lhKey = localStorage.getItem('quickconverter_reader_line_height') || 'relaxed';
+  const theme = localStorage.getItem('quickconverter_reader_theme') || 'slate';
+  const lineHeight = lhKey === 'compact' ? '1.5' : (lhKey === 'spacious' ? '2.0' : '1.75');
+  return {
+    fontSize,
+    fontFamilyCss: resolveFontFamilyCss(fontFamily),
+    lineHeight,
+    contentColor: themeContentColor(theme),
+    titleColor: themeTitleColor(theme)
+  };
+}
+
 export default function ReaderChapter() {
   const [params] = useState(getParams);
   const [novel, setNovel] = useState(null);
   const [chapter, setChapter] = useState(null);
   const [loadDone, setLoadDone] = useState(false);
-  const bodyRef = useRef(null);
+  const [prefs, setPrefs] = useState(readPrefs);
   const titleRef = useRef(null);
   const paragraphRefs = useRef([]);
 
@@ -79,32 +97,11 @@ export default function ReaderChapter() {
     return () => window.removeEventListener('reader-chapter-refresh', onRefresh);
   }, [load]);
 
-  const applyPrefs = useCallback(() => {
-    if (typeof localStorage === 'undefined') return;
-    const fontSize = parseInt(localStorage.getItem('quickconverter_reader_font_size'), 10) || 18;
-    const fontFamily = localStorage.getItem('quickconverter_reader_font_family') || 'sans';
-    const lineHeight = localStorage.getItem('quickconverter_reader_line_height') || 'relaxed';
-    const theme = localStorage.getItem('quickconverter_reader_theme') || 'slate';
-    const lh = lineHeight === 'compact' ? '1.5' : (lineHeight === 'spacious' ? '2.0' : '1.75');
-
-    if (bodyRef.current) {
-      bodyRef.current.style.fontSize = `${fontSize}px`;
-      bodyRef.current.style.fontFamily = resolveFontFamilyCss(fontFamily);
-      bodyRef.current.style.lineHeight = lh;
-      bodyRef.current.style.color = themeContentColor(theme);
-    }
-    if (titleRef.current) titleRef.current.style.color = themeTitleColor(theme);
-  }, []);
-
   useEffect(() => {
-    applyPrefs();
-  }, [applyPrefs, chapter, loadDone]);
-
-  useEffect(() => {
-    const onPrefs = () => applyPrefs();
+    const onPrefs = () => setPrefs(readPrefs());
     window.addEventListener('reader-prefs-updated', onPrefs);
     return () => window.removeEventListener('reader-prefs-updated', onPrefs);
-  }, [applyPrefs]);
+  }, []);
 
   const text = chapter ? (chapter.convertedText || chapter.rawText || '') : '';
   const paragraphs = text
@@ -136,7 +133,6 @@ export default function ReaderChapter() {
     } catch (e) {
       console.error('Error saving paragraph:', e);
     }
-    applyPrefs();
   };
 
   const makeEditable = (el, onDone) => {
@@ -179,7 +175,6 @@ export default function ReaderChapter() {
     } catch (e) {
       console.error('Error saving title:', e);
     }
-    applyPrefs();
   };
 
   const editTitle = () => makeEditable(titleRef.current, persistTitle);
@@ -217,6 +212,7 @@ export default function ReaderChapter() {
             ref={titleRef}
             id="chapter-main-title"
             className="text-2xl sm:text-3xl font-extrabold leading-tight outline-none rounded transition-all hover:opacity-90 focus:ring-1 focus:ring-indigo-500/50 focus:px-2 cursor-pointer select-text"
+            style={{ color: prefs.titleColor }}
             title="Double-click to edit chapter title"
             tabIndex={0}
             onDoubleClick={editTitle}
@@ -243,7 +239,11 @@ export default function ReaderChapter() {
         </div>
       </header>
 
-      <div id="chapter-body" ref={bodyRef} className="leading-relaxed tracking-normal font-normal space-y-6">
+      <div
+        id="chapter-body"
+        className="leading-relaxed tracking-normal font-normal space-y-6"
+        style={{ fontSize: `${prefs.fontSize}px`, fontFamily: prefs.fontFamilyCss, lineHeight: prefs.lineHeight, color: prefs.contentColor }}
+      >
         {paragraphs.length === 0 ? (
           <p className="text-slate-400">No chapter text found.</p>
         ) : paragraphs.map((p, idx) => (
