@@ -24,58 +24,7 @@
   </head>
 
   <body class="bg-slate-900 text-slate-50 min-h-screen font-sans flex flex-col antialiased">
-    <!-- Header -->
-    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30 px-6 py-4">
-      <div class="max-w-6xl mx-auto flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-base shadow-sm">
-            Q
-          </div>
-          <div>
-            <h1 class="text-xl font-bold leading-tight bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-              QuickConverter Library
-            </h1>
-            <p class="text-xs text-slate-400">
-              Managed novels & chapter download status
-            </p>
-          </div>
-        </div>
-
-        <div id="library-stats" class="flex items-center gap-2 text-xs font-medium">
-          <span id="library-novel-count" class="px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700/80 text-slate-300">
-            0 Novels
-          </span>
-          <span id="library-disk-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 transition" title="Current Browser Disk Usage for Saved Novels">
-            <span>💾</span>
-            <span id="library-disk-text">Disk: Calculating...</span>
-          </span>
-          <add-book-button></add-book-button>
-          <a
-            id="library-settings-btn"
-            href="settings.html?from=library"
-            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-slate-300 hover:text-white transition shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
-            title="Open QuickConverter Settings"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-            <span>Settings</span>
-          </a>
-        </div>
-      </div>
-    </header>
-
-    <!-- Main Content Container -->
-    <main class="max-w-6xl mx-auto w-full px-6 py-8 flex-1 flex flex-col gap-6">
-      <!-- Novel Grid -->
-      <div
-        id="library-grid"
-        class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
-      >
-        <!-- Rendered dynamically by library.js -->
-      </div>
-    </main>
+    <div id="library-root" class="contents"></div>
 
     <script src="../providers/wetriedtls.js"></script>
     <script src="../providers/registry.js"></script>
@@ -83,6 +32,6 @@
     <script src="../services/download-queue.js"></script>
     <script type="module" src="../components/react/queue-dock-entry.jsx"></script>
     <script src="../components/add-book.js"></script>
-    <script src="library.js"></script>
+    <script type="module" src="../components/react/library-entry.jsx"></script>
   </body>
 </html>
