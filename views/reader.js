@@ -232,6 +232,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         readerHeaderEl.style.borderColor = '';
       }
     }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('reader-prefs-updated'));
+    }
   }
 
   // --- In-Reader Typography Popover Controller ---
@@ -764,88 +768,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           .map((p) => p.trim())
           .filter((p) => p.length > 0 && p !== '&nbsp;');
 
-        if (chapterBody) {
-          chapterBody.innerHTML = paragraphs
-            .map(
-              (p, idx) => `
-              <div class="paragraph-block relative group rounded-md transition-all -mx-2 px-2 py-0.5 hover:bg-slate-800/30" data-idx="${idx}">
-                <p
-                  class="paragraph-text leading-relaxed outline-none rounded transition-all cursor-text select-text"
-                  tabindex="0"
-                  title="Double-click to edit this paragraph"
-                >${escapeHtml(p)}</p>
-                <div class="paragraph-actions absolute right-2 -top-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none select-none">
-                  <span class="save-pill hidden text-[10px] font-medium text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 px-1.5 py-0.5 rounded shadow-sm">
-                    Saved ✓
-                  </span>
-                  <button
-                    type="button"
-                    class="edit-p-btn pointer-events-auto p-1 text-slate-500 hover:text-indigo-300 hover:bg-slate-800 transition rounded cursor-pointer"
-                    title="Edit paragraph"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            `
-            )
-            .join('');
-
-          // Wire paragraph events
-          chapterBody.querySelectorAll('.paragraph-block').forEach((pBlock) => {
-            const pEl = pBlock.querySelector('.paragraph-text');
-            const editBtn = pBlock.querySelector('.edit-p-btn');
-
-            pEl.addEventListener('dblclick', () => startEditingParagraph(pBlock));
-            if (editBtn) editBtn.addEventListener('click', () => startEditingParagraph(pBlock));
-
-            pEl.addEventListener('blur', () => finishEditingParagraph(pBlock, true));
-          });
-
-          // Ensure theme and typography are applied to newly rendered paragraphs
-          applyReaderPreferences();
-        }
-
-        const charCount = text.length;
-        if (chapterCharCount) chapterCharCount.textContent = `${charCount.toLocaleString()} characters`;
-        if (chapterReadingTime) {
-          const words = text.split(/\s+/).length;
-          const mins = Math.max(1, Math.round(words / 220));
-          chapterReadingTime.textContent = `~${mins} min read`;
-        }
-
-        if (chapter.title) {
-          if (headerChapterTitle) headerChapterTitle.textContent = chapter.title;
-          if (chapterMainTitle) chapterMainTitle.textContent = chapter.title;
-        }
-
-        // Show/hide translation & edited badges
-        if (chapterTransBadge) {
-          if (chapter.isTranslated || chapter.modelUsed) {
-            const costStr = chapter.translationCost && chapter.translationCost.formattedCost ? ` • ${chapter.translationCost.formattedCost}` : '';
-            chapterTransBadge.textContent = `Translated (${chapter.modelUsed || 'deepseek-flash'}${costStr})`;
-            if (chapter.translationCost) {
-              const promptTok = chapter.translationCost.promptTokens ? `${chapter.translationCost.promptTokens.toLocaleString()} in` : '';
-              const outTok = chapter.translationCost.completionTokens ? `${chapter.translationCost.completionTokens.toLocaleString()} out` : '';
-              const cacheTok = chapter.translationCost.cacheHitTokens ? ` • ${chapter.translationCost.cacheHitTokens.toLocaleString()} cached` : '';
-              chapterTransBadge.title = `Translation Request Cost: ${chapter.translationCost.formattedCost} USD (${promptTok}, ${outTok}${cacheTok}) • ${chapter.translationCost.ratePeriod}`;
-            }
-            chapterTransBadge.classList.remove('hidden');
-          } else {
-            chapterTransBadge.classList.add('hidden');
-          }
-        }
-
-        if (chapterEditedBadge) {
-          if (chapter.isUserEdited) {
-            chapterEditedBadge.classList.remove('hidden');
-          } else {
-            chapterEditedBadge.classList.add('hidden');
-          }
-        }
+        if (headerChapterTitle) headerChapterTitle.textContent = chapter.title || fallbackTitle;
 
         // Handle Original Source Drawer setup & cost breakdown
         const sourceDrawerCostCard = document.getElementById('source-drawer-cost-card');
@@ -999,6 +922,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             aiConfigPanel.refreshBalance(true);
           }
               await loadChapterContent();
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new Event('reader-chapter-refresh'));
+              }
             } catch (err) {
               console.error('Download failed:', err);
               readerDownloadBtn.disabled = false;
