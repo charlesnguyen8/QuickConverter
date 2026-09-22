@@ -203,7 +203,7 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
     () => new Map(downloaded.map((c) => [Number(c.chapterNumber), c])),
     [downloaded]
   );
-  const displayList = catalog.length > 0 ? catalog : downloaded;
+  const displayList = novel ? (catalog.length > 0 ? catalog : downloaded) : [];
   const totalChapters = (novel && novel.totalChapters) || catalog.length || 100;
 
   const statusIndex = useMemo(() => {
