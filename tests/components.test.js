@@ -246,6 +246,25 @@ function test(name, fn) {
     }
   });
 
+  // --- ReaderDeepseekCard ---
+  const ReaderDeepseekCard = (await loadComponent('components/react/ReaderDeepseekCard.jsx')).default;
+  const deepseekCard = render(h(ReaderDeepseekCard));
+  test('ReaderDeepseekCard renders the AiConfigPanel container ids', () => {
+    for (const id of ['reader-deepseek-toggle', 'reader-deepseek-toggle-badge', 'reader-provider-badge',
+      'reader-provider-btn-official', 'reader-provider-btn-custom', 'reader-custom-api-row',
+      'reader-custom-base-url', 'reader-bridge-preset-btn', 'reader-test-custom-btn', 'reader-api-key-label',
+      'reader-deepseek-api-key', 'reader-remember-deepseek-key', 'reader-clear-deepseek-btn',
+      'reader-deepseek-prompt', 'reader-toggle-key-visibility', 'reader-deepseek-config-fields',
+      'reader-edit-prompt-btn', 'reader-deepseek-model-select', 'reader-test-deepseek-btn',
+      'reader-deepseek-test-status', 'reader-deepseek-balance-badge', 'reader-deepseek-balance-text',
+      'reader-deepseek-refresh-balance-btn', 'reader-deepseek-refresh-balance-icon',
+      'reader-deepseek-pricing-badge']) {
+      assert(deepseekCard.includes(`id="${id}"`), `missing #${id}`);
+    }
+    assert(deepseekCard.includes('value="deepseek-reasoner"'), 'expected the reasoner model option');
+    assert(deepseekCard.includes('DeepSeek Translation on Download'), 'expected the card heading');
+  });
+
   // --- PopupApp smoke ---
   const app = render(h(PopupApp));
   test('PopupApp renders both views', () => {

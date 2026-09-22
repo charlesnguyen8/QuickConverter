@@ -37,18 +37,17 @@ const novelHtml = fs.readFileSync(path.join(repoRoot, 'views', 'novel.html'), 'u
 const popupHtml = fs.readFileSync(path.join(repoRoot, 'views', 'popup.html'), 'utf8');
 const settingsHtml = fs.readFileSync(path.join(repoRoot, 'views', 'settings.html'), 'utf8');
 const readerSourceSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderSourceDrawer.jsx'), 'utf8');
+const readerDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderDeepseekCard.jsx'), 'utf8');
 
 // Reader View
-assert(readerHtml.includes('id="reader-provider-btn-official"'), 'views/reader.html must have #reader-provider-btn-official');
-assert(readerHtml.includes('id="reader-provider-btn-custom"'), 'views/reader.html must have #reader-provider-btn-custom');
-assert(readerHtml.includes('id="reader-custom-base-url"'), 'views/reader.html must have #reader-custom-base-url');
-assert(readerHtml.includes('id="reader-bridge-preset-btn"'), 'views/reader.html must have #reader-bridge-preset-btn');
-assert(readerHtml.includes('id="reader-test-custom-btn"'), 'views/reader.html must have #reader-test-custom-btn');
-assert(readerHtml.includes('id="reader-api-key-label"'), 'views/reader.html must have #reader-api-key-label');
-assert(readerHtml.includes('value="deepseek-reasoner"'), 'views/reader.html must have deepseek-reasoner in model select');
+for (const id of ['reader-provider-btn-official', 'reader-provider-btn-custom', 'reader-custom-base-url',
+  'reader-bridge-preset-btn', 'reader-test-custom-btn', 'reader-api-key-label']) {
+  assert(readerDeepseekSrc.includes(`id="${id}"`), `ReaderDeepseekCard.jsx must have #${id}`);
+}
+assert(readerDeepseekSrc.includes('value="deepseek-reasoner"'), 'ReaderDeepseekCard.jsx must have deepseek-reasoner in model select');
 assert(readerSourceSrc.includes('id="source-reasoning-container"'), 'ReaderSourceDrawer.jsx must have #source-reasoning-container in source drawer');
 assert(readerSourceSrc.includes('DeepThink Reasoning Process'), 'ReaderSourceDrawer.jsx must have the DeepThink drawer section');
-console.log('✓ views/reader.html contains provider switcher buttons, custom URL input, and DeepThink drawer section');
+console.log('✓ ReaderDeepseekCard.jsx & ReaderSourceDrawer.jsx contain provider switcher, custom URL, and DeepThink drawer section');
 
 // Novel View
 assert(novelHtml.includes('id="novel-provider-btn-official"'), 'views/novel.html must have #novel-provider-btn-official');

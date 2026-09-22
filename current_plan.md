@@ -42,7 +42,7 @@ cleanup; M8 (ESM/MV3) deferred.
 |---|---|---|
 | Library | full (`LibraryView.jsx`) | — |
 | Novel | hero, chapters, name-list drawer, dock | `views/novel.js` ~400 lines: panel init, sync/download-all, `enqueueChapterDownload`, `refreshChapterList`, `novel-chapter-download` listener, balance/queue hook |
-| Reader | reading core, nav, source drawer, header, typography popover | `views/reader.js` ~384 lines: translation panel init, not-saved/download flow, chapter load, source drawer toggle, hotkeys |
+| Reader | reading core, nav, source drawer, header, typography popover, DeepSeek card | `views/reader.js` ~310 lines: not-saved/download flow, chapter load, source drawer toggle, hotkeys |
 | Settings | Storage tab, Reader tab, DeepSeek tab (`SettingsDeepSeekTab.jsx`) | `views/settings.js` ~177 lines: nav, tab switching, balance display, toasts, About; DeepSeek controller now in `components/settings-deepseek.js` |
 | Popup | **fully React** (`PopupApp` + `PopupMainView` + `PopupNovelView` + `PopupDeepseekCard`) | `views/popup.js` and `popupMarkup.mjs` deleted; `popup.html` is a shell + entry |
 
@@ -64,7 +64,8 @@ update them whenever an ID moves (`bridge.test.js`, `settings.test.js`).
 | M3 Settings DeepSeek tab JSX + controller move | `48c0bdc`, `af464f5` (emoji/save), `710ab4b` (wiring), `ee6a31d` |
 | M4 Settings shell → React, delete `settings.js` | `c3cedee`, `e755efc` |
 | M5a Reader header → React | `6bf390a` |
-| M5b Reader typography popover → React | `ReaderPrefsPopover.jsx` (this milestone) |
+| M5b Reader typography popover → React | `ReaderPrefsPopover.jsx` |
+| M5c Reader DeepSeek card → React | `ReaderDeepseekCard.jsx` (this milestone) |
 
 ---
 
@@ -97,8 +98,8 @@ the toast/save-pill; the tab components render as direct children. `views/settin
 `settings.html` is a shell with `#settings-root` + `settings-entry.jsx`, and the per-tab entries
 (storage/reader/deepseek/shell) are gone. Balance/toast helpers live in `components/settings-deepseek.js`.
 
-### M5 — Reader: finish the remaining pieces  ← **next** (5c)
-`views/reader.js` is ~384 lines with coupled subsystems; split into four slices. Each slice: convert
+### M5 — Reader: finish the remaining pieces  ← **next** (5d)
+`views/reader.js` is ~310 lines with coupled subsystems; split into four slices. Each slice: convert
 markup with the same IDs, keep `reader.js` wiring (React renders once, so DOM refs stay valid —
 the bridge pattern used for the popup DeepSeek card), build + 13 suites + a `dist/` check.
 
@@ -113,8 +114,14 @@ the bridge pattern used for the popup DeepSeek card), build + 13 suites + a `dis
   `reader-close-typography` window events. The shared storage keys and `reader-prefs-updated`
   contract are unchanged; `applyReaderPreferences` sets column width + `body[data-theme]` and emits
   the event (chapter body/title colors stay in `ReaderChapter`).
-- **5c — Translation panel + source drawer**: render the `AiConfigPanel` container from React (same
-  IDs) and move `initDeepSeekUI` wiring; hook the source drawer to React state.
+- **5c — Translation panel + source drawer — done**: `components/react/ReaderDeepseekCard.jsx`
+  (`reader-deepseek-entry.jsx` → `#reader-deepseek-root`) renders the DeepSeek card with the same IDs
+  and owns `AiConfigPanel.create({ variant:'full', capabilities:{cooldown:false},
+  options:{readerPromptStyle:true} })` plus the novel prompt hooks (`getPrompt`/`savePrompt`). The
+  source drawer was already React (`ReaderSourceDrawer` owns open state via
+  `reader-open-source`/`reader-close-source`); `reader.js` dropped `initReaderDeepSeekUI`, the dead
+  drawer button listeners, and now seams balance refresh (`reader-refresh-balance`) and the
+  prompt-saved toast (`reader-show-toast`). The not-saved shell + download button stay static (5d).
 - **5d — Chapter load / not-saved / download flow + toast + hotkeys**: port the remaining
   `reader.js` logic (load chapter, download, save toast, keyboard shortcuts).
 - Finish: delete `views/reader.js`; `reader.html` becomes a shell + entry.

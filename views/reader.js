@@ -29,8 +29,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Source Drawer Elements
   const sourceDrawer = document.getElementById('source-drawer');
-  const closeSourceDrawerBtn = document.getElementById('close-source-drawer-btn');
-  const copySourceBtn = document.getElementById('copy-source-btn');
 
   // Toast Element
   const saveToast = document.getElementById('save-toast');
@@ -57,6 +55,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       saveToast.classList.add('translate-y-12', 'opacity-0', 'pointer-events-none');
     }, 2500);
   }
+
+  window.addEventListener('reader-show-toast', (e) => showToast(e.detail));
 
   if (readerSettingsBtn && novelId && !isNaN(chapterNumber)) {
     readerSettingsBtn.href = `settings.html?from=reader&id=${encodeURIComponent(novelId)}&ch=${encodeURIComponent(chapterNumber)}`;
@@ -118,23 +118,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
-    if (closeSourceDrawerBtn) {
-      closeSourceDrawerBtn.addEventListener('click', closeSourceDrawer);
-    }
-
-    if (copySourceBtn) {
-      copySourceBtn.addEventListener('click', () => {
-        if (currentChapter && currentChapter.originalRawText) {
-          navigator.clipboard.writeText(currentChapter.originalRawText).then(() => {
-            copySourceBtn.textContent = 'Copied! ✓';
-            setTimeout(() => {
-              copySourceBtn.textContent = 'Copy';
-            }, 2000);
-          });
-        }
-      });
-    }
-
     // Global Keydown Handler (Navigation, Hotkeys & Active ContentEditable overrides)
     window.addEventListener('keydown', (e) => {
       const activeEl = document.activeElement;
@@ -190,64 +173,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     });
-
-    // --- DeepSeek Pre-Download UI for Reader ---
-    let aiConfigPanel = null;
-
-    async function initReaderDeepSeekUI(novelRecord) {
-      if (!window.AiConfigPanel || typeof window.AiConfigPanel.create !== 'function') {
-        console.warn('[reader.js] AiConfigPanel module not loaded; DeepSeek panel disabled.');
-        return;
-      }
-
-      aiConfigPanel = window.AiConfigPanel.create({
-        variant: 'full',
-        capabilities: { cooldown: false },
-        options: { readerPromptStyle: true },
-        ids: {
-          toggle: 'reader-deepseek-toggle',
-          toggleBadge: 'reader-deepseek-toggle-badge',
-          providerBadge: 'reader-provider-badge',
-          providerBtnOfficial: 'reader-provider-btn-official',
-          providerBtnCustom: 'reader-provider-btn-custom',
-          customRow: 'reader-custom-api-row',
-          customUrl: 'reader-custom-base-url',
-          presetBtn: 'reader-bridge-preset-btn',
-          testCustomBtn: 'reader-test-custom-btn',
-          apiKeyLabel: 'reader-api-key-label',
-          apiKey: 'reader-deepseek-api-key',
-          rememberKey: 'reader-remember-deepseek-key',
-          clearKeyBtn: 'reader-clear-deepseek-btn',
-          prompt: 'reader-deepseek-prompt',
-          visibilityBtn: 'reader-toggle-key-visibility',
-          fields: 'reader-deepseek-config-fields',
-          editPromptBtn: 'reader-edit-prompt-btn',
-          modelSelect: 'reader-deepseek-model-select',
-          testBtn: 'reader-test-deepseek-btn',
-          testStatus: 'reader-deepseek-test-status',
-          balanceBadge: 'reader-deepseek-balance-badge',
-          balanceText: 'reader-deepseek-balance-text',
-          refreshBalanceBtn: 'reader-deepseek-refresh-balance-btn',
-          refreshBalanceIcon: 'reader-deepseek-refresh-balance-icon',
-          pricingBadge: 'reader-deepseek-pricing-badge'
-        },
-        hooks: {
-          getPrompt: () => (novelRecord && novelRecord.translationPrompt) || null,
-          savePrompt: async (text) => {
-            if (!novelRecord) return;
-            novelRecord.translationPrompt = text;
-            if (window.StorageService && typeof window.StorageService.updateNovel === 'function') {
-              await window.StorageService.updateNovel(novelRecord.id, { translationPrompt: text });
-            }
-          },
-          onPromptSaved: () => showToast('Translation prompt saved ✓')
-        }
-      });
-
-      if (aiConfigPanel) await aiConfigPanel.refresh();
-    }
-
-    initReaderDeepSeekUI(novel);
 
     // --- Load Chapter Content ---
     async function loadChapterContent() {
@@ -353,9 +278,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
               };
               await window.StorageService.downloadChapter(novel.id, chapterNumber, options);
-          if (aiConfigPanel && isTranslationEnabled && !isCustomMode) {
-            aiConfigPanel.refreshBalance(true);
-          }
+              if (isTranslationEnabled && !isCustomMode) {
+                window.dispatchEvent(new Event('reader-refresh-balance'));
+              }
               await loadChapterContent();
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new Event('reader-chapter-refresh'));
