@@ -7,7 +7,7 @@ export default function ReaderHeader() {
     <div
       id="reading-progress-bar"
       className="fixed top-0 left-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 z-50 transition-all duration-75"
-      style={{ width: '0%;' }}
+      style={{ width: '0%' }}
     ></div>
 
     
