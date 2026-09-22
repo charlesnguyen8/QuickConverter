@@ -264,9 +264,18 @@ export default function NovelChapters() {
   useEffect(() => {
     const queueService = getQueueService();
     if (!queueService || typeof queueService.subscribe !== 'function') return undefined;
-    const unsubscribe = queueService.subscribe((state) => setQueueState(state));
+    const initial = typeof queueService.getState === 'function' ? queueService.getState() : null;
+    let prevActiveId = initial && initial.activeTask ? initial.activeTask.id : null;
+    const unsubscribe = queueService.subscribe((state) => {
+      setQueueState(state);
+      const activeId = state && state.activeTask ? state.activeTask.id : null;
+      if (prevActiveId && activeId !== prevActiveId) {
+        load();
+      }
+      prevActiveId = activeId;
+    });
     return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
-  }, []);
+  }, [load]);
 
   useEffect(() => {
     const onRefresh = () => load();
