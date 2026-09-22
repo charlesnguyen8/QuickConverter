@@ -8,7 +8,7 @@ export default function SettingsDeepSeekTab() {
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-                <span>ðŸŒ</span>
+                <span>🌐</span>
                 <span>DeepSeek AI Translation</span>
               </h2>
               
@@ -17,7 +17,7 @@ export default function SettingsDeepSeekTab() {
                 className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 shadow-sm"
                 title="Active DeepSeek Account Balance"
               >
-                <span>ðŸ’³</span>
+                <span>💳</span>
                 <span id="deepseek-header-balance-val">Balance: Loading...</span>
               </div>
             </div>
@@ -90,7 +90,7 @@ export default function SettingsDeepSeekTab() {
                     <span className="text-sm font-bold text-slate-200">Custom API / Local Bridge</span>
                   </div>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    Custom â€¢ Free
+                    Custom • Free
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
@@ -135,7 +135,7 @@ export default function SettingsDeepSeekTab() {
                 </button>
               </div>
               <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-700/50 text-[11px] text-slate-400 flex items-center justify-between">
-                <span>ðŸ’¡ Works with <code>start_chromium.bat</code> or any OpenAI-compatible <code>/v1/chat/completions</code> server.</span>
+                <span>💡 Works with <code>start_chromium.bat</code> or any OpenAI-compatible <code>/v1/chat/completions</code> server.</span>
                 <span className="text-emerald-400 font-medium">Auto-deletes chats</span>
               </div>
             </div>
@@ -160,7 +160,7 @@ export default function SettingsDeepSeekTab() {
                     <span className="text-sm font-bold text-slate-100">DeepSeek Flash</span>
                   </div>
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    âš¡ 50x Cheaper Cache
+                    ⚡ 50x Cheaper Cache
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed">
@@ -206,7 +206,7 @@ export default function SettingsDeepSeekTab() {
                     <span className="text-sm font-bold text-slate-200">DeepSeek Reasoner (R1 DeepThink)</span>
                   </div>
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    ðŸ§  DeepThink Reasoning
+                    🧠 DeepThink Reasoning
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
@@ -290,7 +290,7 @@ export default function SettingsDeepSeekTab() {
             <div id="settings-balance-card" className="bg-slate-900/60 border border-slate-700/60 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-xl text-emerald-400 flex-shrink-0">
-                  ðŸ’³
+                  💳
                 </div>
                 <div className="flex flex-col">
                   <div className="flex items-center gap-2">
@@ -352,7 +352,7 @@ export default function SettingsDeepSeekTab() {
             ></textarea>
 
             <p className="text-[11px] text-slate-400">
-              ðŸ’¡ Tip: Individual novels can override this prompt in their respective Novel Overview page.
+              💡 Tip: Individual novels can override this prompt in their respective Novel Overview page.
             </p>
           </div>
 
@@ -447,18 +447,18 @@ export default function SettingsDeepSeekTab() {
             </div>
 
             <p className="text-[11px] text-slate-400 leading-relaxed bg-slate-900/60 p-3 rounded-lg border border-slate-700/40">
-              ðŸ’¡ When enabled with DeepSeek Translation, the queue will wait for a randomized duration between <strong>180s (3m)</strong> and <strong>300s (5m)</strong> after completing each translated chapter. If an API rate limit or error occurs, the failed chapter is placed back at the top of the queue and pauses for <strong>1 hour 15 minutes</strong> before retrying automatically. You can click <strong>Retry Now ðŸ”„</strong> or <strong>Skip â©</strong> in the floating Queue Dock at any time.
+              💡 When enabled with DeepSeek Translation, the queue will wait for a randomized duration between <strong>180s (3m)</strong> and <strong>300s (5m)</strong> after completing each translated chapter. If an API rate limit or error occurs, the failed chapter is placed back at the top of the queue and pauses for <strong>1 hour 15 minutes</strong> before retrying automatically. You can click <strong>Retry Now 🔄</strong> or <strong>Skip ⏩</strong> in the floating Queue Dock at any time.
             </p>
           </div>
 
           
           <div className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-              <span>ðŸ•’</span>
+              <span>🕒</span>
               <span>Off-Peak Discount & Token Pricing Notice</span>
             </div>
             <p className="text-xs text-slate-400 leading-relaxed">
-              DeepSeek offers an automatic <strong className="text-emerald-400">50% off-peak discount</strong> during Beijing non-business hours (UTC 16:30 â€“ 08:30). QuickConverter automatically factors in off-peak rates and context caching discounts when calculating per-chapter costs.
+              DeepSeek offers an automatic <strong className="text-emerald-400">50% off-peak discount</strong> during Beijing non-business hours (UTC 16:30 – 08:30). QuickConverter automatically factors in off-peak rates and context caching discounts when calculating per-chapter costs.
             </p>
           </div>
 
