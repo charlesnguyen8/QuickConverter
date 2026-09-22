@@ -64,7 +64,7 @@ assert(libraryViewSrc.includes('id="library-settings-btn"'), 'Missing #library-s
 assert(novelHtml.includes('id="novel-settings-btn"'), 'Missing #novel-settings-btn in views/novel.html');
 assert(readerHtml.includes('id="reader-settings-btn"'), 'Missing #reader-settings-btn in views/reader.html');
 assert(
-  popupHtml.includes('id="settings-btn"') || fs.readFileSync(path.join(repoRoot, 'components', 'react', 'popupMarkup.mjs'), 'utf8').includes('id="settings-btn"'),
+  popupHtml.includes('id="settings-btn"') || fs.readFileSync(path.join(repoRoot, 'components', 'react', 'PopupMainView.jsx'), 'utf8').includes('id="settings-btn"'),
   'Missing #settings-btn in popup'
 );
 console.log('✓ All 4 views have dedicated settings button anchors');

@@ -1,19 +1,7 @@
 document.addEventListener('DOMContentLoaded', async () => {
-  // Views
-  const viewMain = document.getElementById('view-main');
-  const viewNovel = document.getElementById('view-novel');
-  const backToMainBtn = document.getElementById('back-to-main-btn');
-
-  // Main View Elements
-  const badgeEl = document.getElementById('badge');
-  const siteHostEl = document.getElementById('site-host');
-  const statusMsgEl = document.getElementById('status-message');
-  const statusActionEl = document.getElementById('status-action');
-  const novelListEl = document.getElementById('novel-list');
-  const novelCountEl = document.getElementById('novel-count');
-  const openLibraryBtn = document.getElementById('open-library-btn');
-
-  // Novel Detail View Elements
+  // Novel Detail View Elements. The main view now lives in React
+  // (components/react/PopupApp.jsx); this script still owns the detail view
+  // and drives visibility through the window.__popupShow* hooks.
   const popupNovelThumb = document.getElementById('popup-novel-thumb');
   const popupNovelTitle = document.getElementById('popup-novel-title');
   const popupNovelDomain = document.getElementById('popup-novel-domain');
@@ -21,25 +9,43 @@ document.addEventListener('DOMContentLoaded', async () => {
   const popupChapterCount = document.getElementById('popup-chapter-count');
   const popupChapterList = document.getElementById('popup-chapter-list');
   const popupDownloadAllBtn = document.getElementById('popup-download-all-btn');
-  const settingsBtn = document.getElementById('settings-btn');
   const novelSettingsBtn = document.getElementById('novel-settings-btn');
 
-  // Settings button handlers
-  [settingsBtn, novelSettingsBtn].forEach((btn) => {
-    if (btn) {
-      btn.addEventListener('click', () => {
-        const settingsUrl =
-          typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
-            ? chrome.runtime.getURL('views/settings.html')
-            : 'settings.html';
-        if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
-          chrome.tabs.create({ url: settingsUrl });
-        } else {
-          window.open(settingsUrl, '_blank');
-        }
-      });
+  function openSettings() {
+    const settingsUrl =
+      typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
+        ? chrome.runtime.getURL('views/settings.html')
+        : 'settings.html';
+    if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
+      chrome.tabs.create({ url: settingsUrl });
+    } else {
+      window.open(settingsUrl, '_blank');
     }
-  });
+  }
+
+  function openLibrary() {
+    const url =
+      typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
+        ? chrome.runtime.getURL('views/library.html')
+        : 'library.html';
+    if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
+      chrome.tabs.create({ url });
+    } else {
+      window.open(url, '_blank');
+    }
+  }
+
+  if (novelSettingsBtn) novelSettingsBtn.addEventListener('click', openSettings);
+
+  window.__popupActions = {
+    openNovel: (id) => showNovelDetailView(id),
+    onNovelsChanged: () => {
+      console.log('[popup.js] onNovelsChanged');
+      checkCurrentPageStatus();
+    },
+    openLibrary,
+    openSettings
+  };
 
   // --- DeepSeek Translation UI Wiring ---
   let currentActiveNovel = null;
@@ -165,22 +171,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     tabTitle = document.title;
   }
 
-  // --- View Switching ---
+  // --- View Switching (visibility is owned by the React PopupApp) ---
+  let isDetailView = false;
+
   function showMainView() {
-    if (viewNovel) viewNovel.classList.add('hidden');
-    if (viewMain) viewMain.classList.remove('hidden');
+    console.log('[popup.js] showMainView');
+    isDetailView = false;
+    if (window.__popupShowMain) window.__popupShowMain();
     refreshNovelsList();
     checkCurrentPageStatus();
   }
 
   async function showNovelDetailView(novelId) {
+    console.log('[popup.js] showNovelDetailView', novelId);
     if (!window.StorageService || !novelId) return;
 
     const novel = await window.StorageService.getNovelById(novelId);
     if (!novel) return;
 
-    if (viewMain) viewMain.classList.add('hidden');
-    if (viewNovel) viewNovel.classList.remove('hidden');
+    isDetailView = true;
+    if (window.__popupShowNovel) window.__popupShowNovel();
 
     // Populate Novel Info
     if (popupNovelTitle) popupNovelTitle.textContent = novel.title;
@@ -703,163 +713,58 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // --- Render Managed Novels List in Main View ---
-  function renderNovels(novels) {
-    if (!novelListEl || !novelCountEl) return;
-
-    novelCountEl.textContent = `${novels.length} Novel${novels.length === 1 ? '' : 's'}`;
-    novelListEl.innerHTML = '';
-
-    if (novels.length === 0) {
-      const emptyCard = document.createElement('div');
-      emptyCard.className = 'p-5 rounded-md bg-slate-800/60 border border-slate-700/50 text-center text-xs text-slate-500 italic';
-      emptyCard.textContent = 'No novels currently managed.';
-      novelListEl.appendChild(emptyCard);
-      return;
-    }
-
-    novels.forEach((novel) => {
-      const itemEl = document.createElement('div');
-      itemEl.className = 'flex items-center justify-between p-2.5 rounded-md bg-slate-800 border border-slate-700/80 hover:border-indigo-500/60 transition group cursor-pointer';
-      itemEl.title = `Click to view chapters for ${novel.title}`;
-
-      // Clicking novel item navigates into the in-popup novel view
-      itemEl.addEventListener('click', () => {
-        showNovelDetailView(novel.id);
-      });
-
-      const leftSection = document.createElement('div');
-      leftSection.className = 'flex items-center gap-2.5 overflow-hidden flex-1 min-w-0 pr-2';
-
-      const iconBox = document.createElement('div');
-      iconBox.className = 'w-8 h-8 rounded bg-slate-700/80 border border-slate-600/50 flex items-center justify-center flex-shrink-0 text-base';
-      iconBox.textContent = novel.icon || '📖';
-
-      const textContainer = document.createElement('div');
-      textContainer.className = 'flex flex-col overflow-hidden min-w-0';
-
-      const titleEl = document.createElement('span');
-      titleEl.className = 'text-sm font-medium text-slate-200 group-hover:text-indigo-300 transition truncate';
-      titleEl.textContent = novel.title;
-
-      const subEl = document.createElement('span');
-      subEl.className = 'text-xs text-slate-400 truncate';
-      const chText = novel.totalChapters ? `${novel.totalChapters} Chs &bull; ` : '';
-      subEl.innerHTML = `${chText}${novel.domain || 'wetriedtls.com'} &bull; ${novel.status || 'Active'}`;
-
-      textContainer.appendChild(titleEl);
-      textContainer.appendChild(subEl);
-      leftSection.appendChild(iconBox);
-      leftSection.appendChild(textContainer);
-
-      const rightSection = document.createElement('div');
-      rightSection.className = 'flex items-center gap-2 flex-shrink-0';
-
-      const statusBadge = document.createElement('span');
-      statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20';
-      statusBadge.textContent = novel.status || 'Active';
-
-      // Delete novel button
-      const deleteBtn = document.createElement('button');
-      deleteBtn.type = 'button';
-      deleteBtn.className = 'p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-slate-700/80 transition focus:outline-none cursor-pointer flex-shrink-0';
-      deleteBtn.title = `Delete ${novel.title}`;
-      deleteBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="3 6 5 6 21 6"></polyline>
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          <line x1="10" y1="11" x2="10" y2="17"></line>
-          <line x1="14" y1="11" x2="14" y2="17"></line>
-        </svg>
-      `;
-
-      deleteBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (window.StorageService) {
-          const updatedNovels = await window.StorageService.deleteNovel(novel.id);
-          renderNovels(updatedNovels);
-          checkCurrentPageStatus();
-        }
-      });
-
-      rightSection.appendChild(statusBadge);
-      rightSection.appendChild(deleteBtn);
-
-      itemEl.appendChild(leftSection);
-      itemEl.appendChild(rightSection);
-      novelListEl.appendChild(itemEl);
-    });
-  }
-
   async function refreshNovelsList() {
-    if (window.StorageService) {
-      try {
-        const novels = await window.StorageService.getManagedNovels();
-        renderNovels(novels);
-      } catch (err) {
-        console.error('Failed to load managed novels:', err);
-      }
+    if (!window.StorageService) return;
+    try {
+      const novels = await window.StorageService.getManagedNovels();
+      console.log('[popup.js] refreshNovelsList', novels && novels.length);
+      if (window.__popupSetNovels) window.__popupSetNovels(novels);
+    } catch (err) {
+      console.error('Failed to load managed novels:', err);
     }
   }
 
   // --- Evaluate & Render Current Page Status ---
   async function checkCurrentPageStatus() {
     const novelInfo = extractNovelInfo(currentUrl, tabTitle);
+    console.log('[popup.js] checkCurrentPageStatus', { currentUrl, novelInfo });
+    const setStatus = (next) => {
+      if (window.__popupSetStatus) window.__popupSetStatus(next);
+    };
 
     if (novelInfo) {
-      siteHostEl.textContent = novelInfo.domain || 'wetriedtls.com';
+      const host = novelInfo.domain || 'wetriedtls.com';
       const novel = window.StorageService
         ? await window.StorageService.getNovelBySlug(novelInfo.slug)
         : null;
 
-      const isAlreadyManaged = !!novel;
-
       // Case: Visiting a specific Chapter page
       if (novelInfo.chapterNumber !== null) {
-        statusActionEl.innerHTML = '';
-        statusActionEl.classList.add('hidden');
-
         let isChapterSaved = false;
         if (novel) {
           isChapterSaved = await window.StorageService.isChapterSaved(novel.id, novelInfo.chapterNumber);
         }
-
-        if (isChapterSaved) {
-          badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
-          badgeEl.innerHTML = `
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-            Chapter Saved
-          `;
-          statusMsgEl.innerHTML = `
-            <p class="font-medium text-slate-100 truncate">${novel.title}</p>
-            <p class="text-xs text-emerald-400/90 mt-0.5">Chapter ${novelInfo.chapterNumber} is saved in QuickConverterDB.</p>
-          `;
-        } else {
-          badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
-          badgeEl.innerHTML = `
-            <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
-            Chapter Loading
-          `;
-          statusMsgEl.innerHTML = `
-            <p class="font-medium text-slate-100 truncate">${novel ? novel.title : novelInfo.title}</p>
-            <p class="text-xs text-slate-400 mt-0.5">Chapter ${novelInfo.chapterNumber} is being checked/saved.</p>
-          `;
-        }
+        setStatus({
+          variant: isChapterSaved ? 'saved' : 'loading',
+          host,
+          title: novel ? novel.title : novelInfo.title,
+          subtitle: isChapterSaved
+            ? `Chapter ${novelInfo.chapterNumber} is saved in QuickConverterDB.`
+            : `Chapter ${novelInfo.chapterNumber} is being checked/saved.`,
+          subtitleClass: isChapterSaved ? 'text-emerald-400/90' : 'text-slate-400'
+        });
         return;
       }
 
       // Case: Visiting Series Overview page
-      if (isAlreadyManaged) {
-        badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
-        badgeEl.innerHTML = `
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-          Already Managed
-        `;
-        statusMsgEl.innerHTML = `
-          <p class="font-medium text-slate-100 truncate">${novel.title}</p>
-          <p class="text-xs text-emerald-400/90 mt-0.5">${novel.totalChapters ? novel.totalChapters + ' Total Chapters &bull; ' : ''}Already under management.</p>
-        `;
-        statusActionEl.innerHTML = '';
-        statusActionEl.classList.add('hidden');
+      if (novel) {
+        setStatus({
+          variant: 'managed',
+          host,
+          title: novel.title,
+          subtitle: `${novel.totalChapters ? novel.totalChapters + ' Total Chapters • ' : ''}Already under management.`,
+          subtitleClass: 'text-emerald-400/90'
+        });
 
         // Background metadata sync
         if (window.StorageService && novel.slug) {
@@ -870,57 +775,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           }).catch(() => {});
         }
       } else {
-        badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
-        badgeEl.innerHTML = `
-          <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
-          Novel Detected
-        `;
-        statusMsgEl.innerHTML = `
-          <p class="font-medium text-slate-100 truncate">${novelInfo.title}</p>
-          <p class="text-xs text-slate-400 mt-0.5">This novel is not managed yet.</p>
-        `;
-
-        statusActionEl.innerHTML = `
-          <button
-            id="add-novel-btn"
-            type="button"
-            class="w-full cursor-pointer rounded-md px-3 py-2 text-sm font-semibold text-white bg-indigo-500 transition hover:bg-indigo-600 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-indigo-500/50 shadow-sm flex items-center justify-center gap-1.5"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            <span>Manage This Novel</span>
-          </button>
-        `;
-        statusActionEl.classList.remove('hidden');
-
-        const addBtn = document.getElementById('add-novel-btn');
-        if (addBtn) {
-          addBtn.addEventListener('click', async () => {
-            if (window.StorageService) {
-              addBtn.disabled = true;
-              addBtn.innerHTML = `
-                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                </svg>
-                <span>Populating Chapters...</span>
-              `;
-
-              await window.StorageService.addNovel(novelInfo);
-              if (novelInfo.slug) {
-                await Promise.all([
-                  window.StorageService.syncNovelMetadata(novelInfo.slug),
-                  window.StorageService.syncNovelChapters(novelInfo.slug)
-                ]);
-              }
-              const latest = await window.StorageService.getManagedNovels();
-              renderNovels(latest);
-              checkCurrentPageStatus();
-            }
-          });
-        }
+        setStatus({
+          variant: 'detected',
+          host,
+          title: novelInfo.title,
+          subtitle: 'This novel is not managed yet.',
+          subtitleClass: 'text-slate-400',
+          action: 'add',
+          novelInfo
+        });
       }
       return;
     }
@@ -941,49 +804,39 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (e) {}
     }
 
-    statusActionEl.innerHTML = '';
-    statusActionEl.classList.add('hidden');
-
     if (matchedProvider) {
-      badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
-      badgeEl.innerHTML = `
-        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-        Supported Site
-      `;
-      siteHostEl.textContent = matchedProvider.domains[0] || hostname;
-      statusMsgEl.innerHTML = `
-        <p class="font-medium text-slate-100">QuickConverter supports <span class="text-indigo-300 font-semibold">${matchedProvider.name}</span>.</p>
-        <p class="text-xs text-slate-400 mt-1">Open any novel series to manage it.</p>
-      `;
+      setStatus({
+        variant: 'supported',
+        host: matchedProvider.domains[0] || hostname,
+        titlePrefix: 'QuickConverter supports ',
+        accent: matchedProvider.name,
+        accentClass: 'text-indigo-300 font-semibold',
+        titleSuffix: '.',
+        subtitle: 'Open any novel series to manage it.',
+        subtitleClass: 'text-slate-400'
+      });
     } else {
-      badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-700/60 text-slate-400 border border-slate-600/40';
-      badgeEl.textContent = 'Standard Mode';
-      siteHostEl.textContent = hostname || 'Browser Tab';
-      const supportedSites = (typeof ProviderRegistry !== 'undefined') 
+      const supportedSites = (typeof ProviderRegistry !== 'undefined')
         ? ProviderRegistry.getAllProviders().map((p) => p.name).join(', ')
         : 'We Tried TLS';
-      statusMsgEl.innerHTML = `
-        <p class="text-slate-300">QuickConverter supports <span class="text-indigo-300 font-medium">${supportedSites}</span>.</p>
-        <p class="text-xs text-slate-500 mt-1">Visit a supported novel series to add it.</p>
-      `;
+      setStatus({
+        variant: 'standard',
+        host: hostname || 'Browser Tab',
+        titlePrefix: 'QuickConverter supports ',
+        accent: supportedSites,
+        accentClass: 'text-indigo-300 font-medium',
+        titleSuffix: '.',
+        subtitle: 'Visit a supported novel series to add it.',
+        subtitleClass: 'text-slate-500'
+      });
     }
   }
 
-  // --- Header Navigation & Open Library ---
+  // --- Header Navigation (the bridged detail view is hidden by React) ---
+  const backToMainBtn = document.getElementById('back-to-main-btn');
   if (backToMainBtn) {
     backToMainBtn.addEventListener('click', () => {
       showMainView();
-    });
-  }
-
-  if (openLibraryBtn) {
-    openLibraryBtn.addEventListener('click', () => {
-      const url = chrome.runtime && chrome.runtime.getURL ? chrome.runtime.getURL('views/library.html') : 'library.html';
-      if (chrome.tabs && chrome.tabs.create) {
-        chrome.tabs.create({ url });
-      } else {
-        window.open(url, '_blank');
-      }
     });
   }
 
@@ -1051,7 +904,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     isUpdatingPopupQueue = true;
     try {
-      if (currentActiveNovel && viewNovel && !viewNovel.classList.contains('hidden')) {
+      if (currentActiveNovel && isDetailView) {
         await renderPopupChapters(currentActiveNovel);
         if (hadActivePopupTask && (!state || !state.activeTask) && aiConfigPanel) {
           aiConfigPanel.refreshBalance(true);

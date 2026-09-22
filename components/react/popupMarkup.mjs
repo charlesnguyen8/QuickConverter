@@ -418,3 +418,9 @@ export const popupHtml = `
       </div>
     </div>
 `;
+
+// Detail view is still bridged: React owns its visibility (the wrapper div in
+// PopupApp), so strip the hardcoded `hidden` here.
+export const popupDetailHtml = popupHtml
+  .slice(popupHtml.indexOf('<div id="view-novel"'))
+  .replace('id="view-novel" class="hidden flex', 'id="view-novel" class="flex');
