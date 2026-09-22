@@ -240,16 +240,10 @@ export default function NovelChapters() {
       return true;
     }).length;
 
-    const percent = total > 0 ? Math.min(100, Math.round((downloaded.length / total) * 100)) : 0;
-    const statEl = document.getElementById('chapters-stat');
-    const barEl = document.getElementById('chapters-progress-bar');
-    const totalLabelEl = document.getElementById('total-chapters-label');
-    const percentEl = document.getElementById('progress-percent');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('novel-stats-updated', { detail: { downloaded: downloaded.length, total } }));
+    }
     const badgeEl = document.getElementById('chapters-badge');
-    if (statEl) statEl.textContent = `${downloaded.length} / ${total}`;
-    if (barEl) barEl.style.width = `${percent}%`;
-    if (totalLabelEl) totalLabelEl.textContent = `${total} Total Chapters`;
-    if (percentEl) percentEl.textContent = `${percent}%`;
     if (badgeEl) badgeEl.textContent = `${downloaded.length} / ${total} Saved`;
 
     const downloadAllBtn = document.getElementById('download-all-btn');

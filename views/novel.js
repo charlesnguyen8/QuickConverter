@@ -2,15 +2,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const urlParams = new URLSearchParams(window.location.search);
   const novelId = urlParams.get('id');
 
-  const titleEl = document.getElementById('novel-title');
-  const artworkEl = document.getElementById('novel-artwork');
-  const domainEl = document.getElementById('novel-domain');
-  const statusEl = document.getElementById('novel-status');
   const syncChaptersBtn = document.getElementById('sync-chapters-btn');
   const downloadAllBtn = document.getElementById('download-all-btn');
 
   if (!novelId || !window.StorageService) {
-    if (titleEl) titleEl.textContent = 'Novel Not Found';
     return;
   }
 
@@ -216,11 +211,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function renderNameList() {
     const itemsContainer = document.getElementById('name-list-items');
-    const heroCountBadge = document.getElementById('name-list-count-badge');
     const drawerBadge = document.getElementById('name-list-badge');
 
-    if (heroCountBadge) heroCountBadge.textContent = nameList.length;
     if (drawerBadge) drawerBadge.textContent = nameList.length;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('novel-name-list-updated', { detail: { count: nameList.length } }));
+    }
 
     if (!itemsContainer) return;
 
@@ -566,6 +562,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (openDrawerBtn) openDrawerBtn.addEventListener('click', openNameListDrawer);
     if (closeDrawerBtn) closeDrawerBtn.addEventListener('click', closeNameListDrawer);
+    window.addEventListener('novel-open-name-list', openNameListDrawer);
 
     if (drawerBackdrop) {
       drawerBackdrop.addEventListener('click', (e) => {
@@ -871,7 +868,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     const novel = await window.StorageService.getNovelById(novelId);
     if (!novel) {
-      if (titleEl) titleEl.textContent = 'Novel Not Found';
       return;
     }
 
@@ -887,20 +883,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       initNameListUI(currentNovel);
     }
 
-    // Populate Novel Info
     document.title = `${novel.title} - QuickConverter`;
-    if (titleEl) titleEl.textContent = novel.title;
-
-    if (artworkEl) {
-      artworkEl.src = novel.thumbnail || 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp';
-      artworkEl.alt = novel.title;
-      artworkEl.onerror = () => {
-        artworkEl.src = 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp';
-      };
-    }
-
-    if (domainEl) domainEl.textContent = novel.domain || 'wetriedtls.com';
-    if (statusEl) statusEl.textContent = novel.status || 'Active';
 
     // Wire Sync Catalog button
     if (syncChaptersBtn) {
