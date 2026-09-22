@@ -740,531 +740,59 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // --- DeepSeek Pre-Download UI for Reader ---
-    let readerBalanceTracker = null;
+    let aiConfigPanel = null;
 
     async function initReaderDeepSeekUI(novelRecord) {
-      const toggleEl = document.getElementById('reader-deepseek-toggle');
-      const badgeEl = document.getElementById('reader-deepseek-toggle-badge');
-      const providerBadgeEl = document.getElementById('reader-provider-badge');
-      const providerBtnOfficial = document.getElementById('reader-provider-btn-official');
-      const providerBtnCustom = document.getElementById('reader-provider-btn-custom');
-      const customApiRow = document.getElementById('reader-custom-api-row');
-      const customBaseUrlInput = document.getElementById('reader-custom-base-url');
-      const bridgePresetBtn = document.getElementById('reader-bridge-preset-btn');
-      const testCustomBtn = document.getElementById('reader-test-custom-btn');
-      const apiKeyLabel = document.getElementById('reader-api-key-label');
-
-      const keyEl = document.getElementById('reader-deepseek-api-key');
-      const rememberKeyEl = document.getElementById('reader-remember-deepseek-key');
-      const clearKeyBtn = document.getElementById('reader-clear-deepseek-btn');
-      const promptEl = document.getElementById('reader-deepseek-prompt');
-      const visibilityBtn = document.getElementById('reader-toggle-key-visibility');
-      const fieldsEl = document.getElementById('reader-deepseek-config-fields');
-      const editPromptBtn = document.getElementById('reader-edit-prompt-btn');
-      const modelSelectEl = document.getElementById('reader-deepseek-model-select');
-      const testBtn = document.getElementById('reader-test-deepseek-btn');
-      const testStatusEl = document.getElementById('reader-deepseek-test-status');
-
-      // Balance Widget Elements
-      const balanceBadgeEl = document.getElementById('reader-deepseek-balance-badge');
-      const balanceTextEl = document.getElementById('reader-deepseek-balance-text');
-      const refreshBalanceBtn = document.getElementById('reader-deepseek-refresh-balance-btn');
-      const refreshBalanceIcon = document.getElementById('reader-deepseek-refresh-balance-icon');
-      const pricingBadgeEl = document.getElementById('reader-deepseek-pricing-badge');
-
-      if (!toggleEl) return;
-
-      const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
-        (typeof DeepSeekService !== 'undefined' && DeepSeekService);
-
-      // Fetch active AI provider configuration
-      let providerConfig = {
-        provider: 'official',
-        baseUrl: 'https://api.deepseek.com',
-        customUrl: 'http://127.0.0.1:8000/v1'
-      };
-
-      if (deepseek && typeof deepseek.getProviderConfig === 'function') {
-        try {
-          providerConfig = await deepseek.getProviderConfig();
-        } catch (e) {
-          console.warn('[reader.js] Could not load provider config:', e);
-        }
+      if (!window.AiConfigPanel || typeof window.AiConfigPanel.create !== 'function') {
+        console.warn('[reader.js] AiConfigPanel module not loaded; DeepSeek panel disabled.');
+        return;
       }
 
-      function applyProviderUI(provider, targetUrl) {
-        const isOfficial = provider === 'official';
-        if (providerBtnOfficial) {
-          providerBtnOfficial.className = isOfficial
-            ? 'px-3 py-1 rounded-md font-semibold text-xs transition cursor-pointer bg-indigo-600 text-white shadow-sm'
-            : 'px-3 py-1 rounded-md font-medium text-xs transition cursor-pointer text-slate-400 hover:text-slate-200';
-        }
-        if (providerBtnCustom) {
-          providerBtnCustom.className = !isOfficial
-            ? 'px-3 py-1 rounded-md font-semibold text-xs transition cursor-pointer bg-purple-600 text-white shadow-sm'
-            : 'px-3 py-1 rounded-md font-medium text-xs transition cursor-pointer text-slate-400 hover:text-slate-200';
-        }
-
-        if (customApiRow) {
-          if (isOfficial) {
-            customApiRow.classList.add('hidden');
-          } else {
-            customApiRow.classList.remove('hidden');
-          }
-        }
-
-        const effectiveUrl = targetUrl || providerConfig.customUrl || 'http://127.0.0.1:8000/v1';
-        if (customBaseUrlInput) {
-          customBaseUrlInput.value = effectiveUrl;
-        }
-
-        if (providerBadgeEl) {
-          if (isOfficial) {
-            providerBadgeEl.textContent = 'Official API';
-            providerBadgeEl.className = 'text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
-            providerBadgeEl.title = 'Using official api.deepseek.com';
-          } else {
-            const isBridge = effectiveUrl.includes('127.0.0.1') || effectiveUrl.includes('localhost');
-            providerBadgeEl.textContent = isBridge ? 'Local Bridge (Free)' : 'Custom API';
-            providerBadgeEl.className = 'text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/30';
-            providerBadgeEl.title = `Connected to ${effectiveUrl}`;
-          }
-        }
-
-        if (apiKeyLabel) {
-          apiKeyLabel.textContent = isOfficial ? '1. DeepSeek API Key' : '1. API Key (Optional for local)';
-        }
-        if (keyEl) {
-          keyEl.placeholder = isOfficial ? 'sk-...' : 'Optional (leave blank for local bridge)';
-        }
-
-        if (pricingBadgeEl) {
-          if (!isOfficial) {
-            pricingBadgeEl.textContent = 'Free / Custom';
-            pricingBadgeEl.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded border border-purple-500/30 bg-purple-500/15 text-purple-300';
-            pricingBadgeEl.title = 'Custom API / Local Bridge endpoint';
-          } else if (deepseek && typeof deepseek.getPricingStatus === 'function') {
-            const pStatus = deepseek.getPricingStatus();
-            pricingBadgeEl.textContent = pStatus.label;
-            pricingBadgeEl.className = `text-[10px] font-semibold px-1.5 py-0.5 rounded border ${pStatus.badgeClass}`;
-            pricingBadgeEl.title = `${pStatus.windowDesc} • Auto-applied UTC Schedule`;
-          }
-        }
-
-        if (balanceBadgeEl && !isOfficial) {
-          balanceBadgeEl.classList.add('hidden');
-          balanceBadgeEl.classList.remove('inline-flex');
-        }
-      }
-
-      applyProviderUI(providerConfig.provider, providerConfig.customUrl);
-
-      // Provider Switch Clicks
-      if (providerBtnOfficial) {
-        providerBtnOfficial.addEventListener('click', async () => {
-          if (deepseek && typeof deepseek.setProviderConfig === 'function') {
-            providerConfig = await deepseek.setProviderConfig({ provider: 'official' });
-          }
-          applyProviderUI('official', providerConfig.customUrl);
-          if (readerBalanceTracker) readerBalanceTracker.refresh(true);
-        });
-      }
-
-      if (providerBtnCustom) {
-        providerBtnCustom.addEventListener('click', async () => {
-          const customUrlVal = customBaseUrlInput ? (customBaseUrlInput.value.trim() || 'http://127.0.0.1:8000/v1') : 'http://127.0.0.1:8000/v1';
-          if (deepseek && typeof deepseek.setProviderConfig === 'function') {
-            providerConfig = await deepseek.setProviderConfig({ provider: 'custom', customUrl: customUrlVal });
-          }
-          applyProviderUI('custom', customUrlVal);
-        });
-      }
-
-      if (customBaseUrlInput) {
-        customBaseUrlInput.addEventListener('change', async () => {
-          const val = customBaseUrlInput.value.trim() || 'http://127.0.0.1:8000/v1';
-          if (deepseek && typeof deepseek.setProviderConfig === 'function') {
-            providerConfig = await deepseek.setProviderConfig({ customUrl: val });
-          }
-          applyProviderUI(providerConfig.provider, val);
-        });
-      }
-
-      if (bridgePresetBtn && customBaseUrlInput) {
-        bridgePresetBtn.addEventListener('click', async () => {
-          customBaseUrlInput.value = 'http://127.0.0.1:8000/v1';
-          if (deepseek && typeof deepseek.setProviderConfig === 'function') {
-            providerConfig = await deepseek.setProviderConfig({ customUrl: 'http://127.0.0.1:8000/v1' });
-          }
-          applyProviderUI(providerConfig.provider, 'http://127.0.0.1:8000/v1');
-        });
-      }
-
-      // Test Custom API connection
-      if (testCustomBtn && customBaseUrlInput && testStatusEl) {
-        testCustomBtn.addEventListener('click', async () => {
-          const targetUrl = customBaseUrlInput.value.trim() || 'http://127.0.0.1:8000/v1';
-          testCustomBtn.disabled = true;
-          testCustomBtn.textContent = 'Testing...';
-          testStatusEl.className = 'text-[11px] text-purple-300 bg-purple-500/10 border border-purple-500/20 px-2.5 py-1.5 rounded-md flex items-center gap-1.5 block mt-1';
-          testStatusEl.innerHTML = `
-            <svg class="animate-spin h-3.5 w-3.5 text-purple-400" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-            </svg>
-            <span>Pinging ${targetUrl}/models...</span>
-          `;
-
-          try {
-            const key = keyEl ? keyEl.value.trim() : '';
-            const res = await deepseek.testConnection(key, { provider: 'custom', baseUrl: targetUrl });
-            if (res.success) {
-              testStatusEl.className = 'text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5 rounded-md block mt-1';
-              testStatusEl.textContent = `✓ Custom API connected! (${(res.models || []).length} models ready)`;
-              if (modelSelectEl && Array.isArray(res.models) && res.models.length > 0) {
-                const curModel = modelSelectEl.value;
-                modelSelectEl.innerHTML = '';
-                res.models.forEach((mId) => {
-                  const opt = document.createElement('option');
-                  opt.value = mId;
-                  let label = mId;
-                  if (mId === 'deepseek-flash') label += ' (V4.1-Flash • Fast)';
-                  else if (mId === 'deepseek-chat') label += ' (V3 • Standard)';
-                  else if (mId === 'deepseek-reasoner') label += ' (R1 • DeepThink)';
-                  opt.textContent = label;
-                  if (mId === curModel) opt.selected = true;
-                  modelSelectEl.appendChild(opt);
-                });
-              }
-            } else {
-              testStatusEl.className = 'text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1.5 rounded-md block mt-1';
-              testStatusEl.textContent = `✗ ${res.error || 'Connection failed'}`;
+      aiConfigPanel = window.AiConfigPanel.create({
+        variant: 'full',
+        capabilities: { cooldown: false },
+        options: { readerPromptStyle: true },
+        ids: {
+          toggle: 'reader-deepseek-toggle',
+          toggleBadge: 'reader-deepseek-toggle-badge',
+          providerBadge: 'reader-provider-badge',
+          providerBtnOfficial: 'reader-provider-btn-official',
+          providerBtnCustom: 'reader-provider-btn-custom',
+          customRow: 'reader-custom-api-row',
+          customUrl: 'reader-custom-base-url',
+          presetBtn: 'reader-bridge-preset-btn',
+          testCustomBtn: 'reader-test-custom-btn',
+          apiKeyLabel: 'reader-api-key-label',
+          apiKey: 'reader-deepseek-api-key',
+          rememberKey: 'reader-remember-deepseek-key',
+          clearKeyBtn: 'reader-clear-deepseek-btn',
+          prompt: 'reader-deepseek-prompt',
+          visibilityBtn: 'reader-toggle-key-visibility',
+          fields: 'reader-deepseek-config-fields',
+          editPromptBtn: 'reader-edit-prompt-btn',
+          modelSelect: 'reader-deepseek-model-select',
+          testBtn: 'reader-test-deepseek-btn',
+          testStatus: 'reader-deepseek-test-status',
+          balanceBadge: 'reader-deepseek-balance-badge',
+          balanceText: 'reader-deepseek-balance-text',
+          refreshBalanceBtn: 'reader-deepseek-refresh-balance-btn',
+          refreshBalanceIcon: 'reader-deepseek-refresh-balance-icon',
+          pricingBadge: 'reader-deepseek-pricing-badge'
+        },
+        hooks: {
+          getPrompt: () => (novelRecord && novelRecord.translationPrompt) || null,
+          savePrompt: async (text) => {
+            if (!novelRecord) return;
+            novelRecord.translationPrompt = text;
+            if (window.StorageService && typeof window.StorageService.updateNovel === 'function') {
+              await window.StorageService.updateNovel(novelRecord.id, { translationPrompt: text });
             }
-          } catch (err) {
-            testStatusEl.className = 'text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1.5 rounded-md block mt-1';
-            testStatusEl.textContent = `✗ Connection failed: ${err.message}`;
-          } finally {
-            testCustomBtn.disabled = false;
-            testCustomBtn.textContent = 'Test Connection';
-          }
-        });
-      }
-
-      const updateBalanceUI = (balanceInfo, isUpdating) => {
-        if (!balanceBadgeEl) return;
-        if (providerConfig.provider !== 'official') {
-          balanceBadgeEl.classList.add('hidden');
-          balanceBadgeEl.classList.remove('inline-flex');
-          return;
+          },
+          onPromptSaved: () => showToast('Translation prompt saved ✓')
         }
-        if (refreshBalanceIcon) {
-          refreshBalanceIcon.classList.toggle('animate-spin', !!isUpdating);
-        }
-        if (isUpdating && !balanceInfo) {
-          return;
-        }
-        if (!balanceInfo || !balanceInfo.success) {
-          if (!keyEl || !keyEl.value.trim()) {
-            balanceBadgeEl.classList.add('hidden');
-            balanceBadgeEl.classList.remove('inline-flex');
-          } else if (balanceInfo && balanceInfo.error) {
-            balanceBadgeEl.classList.remove('hidden');
-            balanceBadgeEl.classList.add('inline-flex');
-            balanceBadgeEl.className = 'inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border border-rose-500/30 bg-rose-500/10 text-rose-300 select-none';
-            if (balanceTextEl) balanceTextEl.textContent = 'Auth Error';
-            balanceBadgeEl.title = balanceInfo.error;
-          }
-          return;
-        }
-
-        balanceBadgeEl.classList.remove('hidden');
-        balanceBadgeEl.classList.add('inline-flex');
-
-        if (!balanceInfo.isAvailable || balanceInfo.numericBalance <= 0) {
-          balanceBadgeEl.className = 'inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border border-rose-500/40 bg-rose-500/15 text-rose-300 select-none';
-          if (balanceTextEl) balanceTextEl.textContent = `${balanceInfo.compact} (No Funds)`;
-          balanceBadgeEl.title = `DeepSeek Account Balance: ${balanceInfo.formatted} • Insufficient credits`;
-        } else if (balanceInfo.isLow) {
-          balanceBadgeEl.className = 'inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/15 text-amber-300 select-none';
-          if (balanceTextEl) balanceTextEl.textContent = `${balanceInfo.compact} (Low)`;
-          balanceBadgeEl.title = `DeepSeek Account Balance: ${balanceInfo.formatted} • Low balance warning`;
-        } else {
-          balanceBadgeEl.className = 'inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/15 text-emerald-300 select-none';
-          if (balanceTextEl) balanceTextEl.textContent = balanceInfo.compact;
-          balanceBadgeEl.title = `DeepSeek Account Balance: ${balanceInfo.formatted} (Click to refresh)`;
-        }
-      };
-
-      if (deepseek && typeof deepseek.createBalanceTracker === 'function') {
-        readerBalanceTracker = deepseek.createBalanceTracker(
-          () => (keyEl ? keyEl.value.trim() : ''),
-          updateBalanceUI
-        );
-      }
-
-      if (refreshBalanceBtn && readerBalanceTracker) {
-        refreshBalanceBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          readerBalanceTracker.refresh(true);
-        });
-      }
-
-      const updateClearBtnVisibility = () => {
-        const hasKey = !!(keyEl && keyEl.value.trim());
-        if (clearKeyBtn) {
-          clearKeyBtn.classList.toggle('hidden', !hasKey);
-        }
-      };
-
-      // Load API key from session storage (or local storage if remembered)
-      if (deepseek && typeof deepseek.getApiKey === 'function') {
-        deepseek.getApiKey().then(({ apiKey, remembered }) => {
-          if (keyEl && apiKey) {
-            keyEl.value = apiKey;
-          } else if (keyEl && providerConfig.provider !== 'official' && !keyEl.value) {
-            keyEl.placeholder = 'Optional (leave blank for local bridge)';
-          }
-          if (rememberKeyEl) {
-            rememberKeyEl.checked = !!remembered;
-          }
-          updateClearBtnVisibility();
-          if (readerBalanceTracker && apiKey) {
-            readerBalanceTracker.refresh(false);
-          }
-        }).catch((e) => console.warn('[reader.js] Failed to load DeepSeek API key:', e));
-      }
-
-      let keyDebounceTimer = null;
-      const handleKeyChange = () => {
-        updateClearBtnVisibility();
-        const val = keyEl ? keyEl.value.trim() : '';
-        const remember = !!(rememberKeyEl && rememberKeyEl.checked);
-        if (deepseek && typeof deepseek.setApiKey === 'function') {
-          deepseek.setApiKey(val, remember);
-        }
-        if (!val) {
-          updateBalanceUI(null, false);
-        } else {
-          clearTimeout(keyDebounceTimer);
-          keyDebounceTimer = setTimeout(() => {
-            if (readerBalanceTracker) readerBalanceTracker.refresh(true);
-          }, 600);
-        }
-      };
-
-      if (keyEl) {
-        keyEl.addEventListener('input', handleKeyChange);
-        keyEl.addEventListener('change', handleKeyChange);
-      }
-
-      if (rememberKeyEl) {
-        rememberKeyEl.addEventListener('change', () => {
-          if (deepseek && typeof deepseek.setApiKey === 'function') {
-            const val = keyEl ? keyEl.value.trim() : '';
-            deepseek.setApiKey(val, rememberKeyEl.checked);
-          }
-        });
-      }
-
-      if (clearKeyBtn) {
-        clearKeyBtn.addEventListener('click', async () => {
-          if (deepseek && typeof deepseek.clearApiKey === 'function') {
-            await deepseek.clearApiKey();
-          }
-          if (keyEl) keyEl.value = '';
-          if (rememberKeyEl) rememberKeyEl.checked = false;
-          updateClearBtnVisibility();
-          updateBalanceUI(null, false);
-          if (testStatusEl) {
-            testStatusEl.className = 'hidden';
-            testStatusEl.textContent = '';
-          }
-        });
-      }
-
-      if (pricingBadgeEl) {
-        if (providerConfig.provider !== 'official') {
-          pricingBadgeEl.textContent = 'Free / Custom';
-          pricingBadgeEl.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded border border-purple-500/30 bg-purple-500/15 text-purple-300';
-          pricingBadgeEl.title = 'Custom API / Local Bridge endpoint';
-        } else if (deepseek && typeof deepseek.getPricingStatus === 'function') {
-          const pStatus = deepseek.getPricingStatus();
-          pricingBadgeEl.textContent = pStatus.label;
-          pricingBadgeEl.className = `text-[10px] font-semibold px-1.5 py-0.5 rounded border ${pStatus.badgeClass}`;
-          pricingBadgeEl.title = `${pStatus.windowDesc} • Auto-applied UTC Schedule`;
-        }
-      }
-
-      const DEFAULT_PROMPT = 'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
-
-      const getStored = (key, fallback) => {
-        return (window.StorageService && typeof window.StorageService.getPreference === 'function')
-          ? window.StorageService.getPreference(key, fallback)
-          : (typeof localStorage !== 'undefined' ? (localStorage.getItem(key) ?? fallback) : fallback);
-      };
-
-      const setStored = (key, val) => {
-        if (window.StorageService && typeof window.StorageService.setPreference === 'function') {
-          window.StorageService.setPreference(key, val);
-        } else {
-          try {
-            if (typeof localStorage !== 'undefined') localStorage.setItem(key, String(val));
-            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-              chrome.storage.local.set({ [key]: String(val) });
-            }
-          } catch (e) {}
-        }
-      };
-
-      const isEnabled = getStored('quickconverter_deepseek_enabled', 'false') === 'true';
-      toggleEl.checked = isEnabled;
-
-      const savedModel = getStored('quickconverter_deepseek_model', 'deepseek-flash');
-      if (modelSelectEl) {
-        modelSelectEl.value = savedModel;
-        modelSelectEl.addEventListener('change', () => {
-          setStored('quickconverter_deepseek_model', modelSelectEl.value);
-        });
-      }
-
-      function updateState(checked) {
-        if (badgeEl) {
-          if (checked) {
-            badgeEl.textContent = 'Active (Translates on Download)';
-            badgeEl.className = 'text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
-          } else {
-            badgeEl.textContent = 'Off (Save Raw Chapter)';
-            badgeEl.className = 'text-xs font-semibold px-2 py-0.5 rounded bg-slate-700 text-slate-300 border border-slate-600';
-          }
-        }
-        if (fieldsEl) {
-          fieldsEl.classList.toggle('opacity-100', checked);
-          fieldsEl.classList.toggle('opacity-60', !checked);
-        }
-      }
-
-      updateState(isEnabled);
-
-      toggleEl.addEventListener('change', () => {
-        const checked = toggleEl.checked;
-        setStored('quickconverter_deepseek_enabled', checked ? 'true' : 'false');
-        updateState(checked);
       });
 
-      if (visibilityBtn && keyEl) {
-        visibilityBtn.addEventListener('click', () => {
-          const isPassword = keyEl.type === 'password';
-          keyEl.type = isPassword ? 'text' : 'password';
-          visibilityBtn.textContent = isPassword ? 'Hide Key' : 'Show Key';
-        });
-      }
-
-      // "Test Key" / "Test Connection" button click handler
-      if (testBtn && testStatusEl) {
-        testBtn.addEventListener('click', async () => {
-          const isCustom = providerConfig.provider !== 'official';
-          const key = keyEl ? keyEl.value.trim() : '';
-          if (!isCustom && !key) {
-            testStatusEl.className = 'text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-md block mt-1';
-            testStatusEl.textContent = 'Please enter an API key to test.';
-            if (keyEl) keyEl.focus();
-            return;
-          }
-
-          testBtn.disabled = true;
-          testStatusEl.className = 'text-[11px] text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1.5 rounded-md flex items-center gap-1.5 block mt-1';
-          testStatusEl.innerHTML = `
-            <svg class="animate-spin h-3.5 w-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-            </svg>
-            <span>Connecting to ${isCustom ? 'Custom API / Bridge' : 'DeepSeek API'}...</span>
-          `;
-
-          try {
-            if (!deepseek || typeof deepseek.testConnection !== 'function') {
-              throw new Error('DeepSeekService not loaded');
-            }
-
-            const effectiveUrl = isCustom
-              ? ((customBaseUrlInput && customBaseUrlInput.value.trim()) || providerConfig.customUrl || 'http://127.0.0.1:8000/v1')
-              : undefined;
-
-            const res = await deepseek.testConnection(key, {
-              provider: providerConfig.provider,
-              baseUrl: effectiveUrl
-            });
-
-            if (res.success) {
-              const currentSelected = (modelSelectEl && modelSelectEl.value) || savedModel;
-              if (modelSelectEl && Array.isArray(res.models) && res.models.length > 0) {
-                modelSelectEl.innerHTML = '';
-                res.models.forEach((mId) => {
-                  const opt = document.createElement('option');
-                  opt.value = mId;
-                  let label = mId;
-                  if (mId === 'deepseek-flash') label += ' (V4.1-Flash • Fast)';
-                  else if (mId === 'deepseek-chat') label += ' (V3 • Standard)';
-                  else if (mId === 'deepseek-reasoner') label += ' (R1 • DeepThink)';
-                  opt.textContent = label;
-                  if (mId === currentSelected || (!currentSelected && mId === 'deepseek-flash')) {
-                    opt.selected = true;
-                  }
-                  modelSelectEl.appendChild(opt);
-                });
-              }
-
-              const balStr = isCustom ? ' • Free / Custom' : (res.balance ? ` • Balance: ${res.balance.totalBalance === 'Available' ? 'Available' : '$' + res.balance.totalBalance}` : '');
-              testStatusEl.className = 'text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5 rounded-md block mt-1';
-              testStatusEl.textContent = `✓ Connected (${(res.models || []).length} models ready${balStr})`;
-            } else {
-              testStatusEl.className = 'text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1.5 rounded-md block mt-1';
-              testStatusEl.textContent = `✗ ${res.error || 'Connection failed'}`;
-            }
-          } catch (e) {
-            testStatusEl.className = 'text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1.5 rounded-md block mt-1';
-            testStatusEl.textContent = `✗ ${e.message || 'Error testing connection'}`;
-          } finally {
-            testBtn.disabled = false;
-          }
-        });
-      }
-
-      // Translation Prompt: saved per novel with Edit button
-      let isEditingPrompt = false;
-
-      if (promptEl) {
-        promptEl.value = (novelRecord && novelRecord.translationPrompt) ? novelRecord.translationPrompt : DEFAULT_PROMPT;
-        promptEl.readOnly = true;
-      }
-
-      if (editPromptBtn && promptEl) {
-        editPromptBtn.addEventListener('click', async () => {
-          if (!novelRecord) return;
-
-          if (isEditingPrompt) {
-            // Save prompt to novel record in IndexedDB
-            const updatedPrompt = promptEl.value.trim() || DEFAULT_PROMPT;
-            novelRecord.translationPrompt = updatedPrompt;
-            await window.StorageService.updateNovel(novelRecord.id, { translationPrompt: updatedPrompt });
-
-            promptEl.readOnly = true;
-            promptEl.className = 'w-full px-3 py-2 text-xs bg-slate-900/90 border border-slate-700 rounded-lg text-slate-300 placeholder-slate-500 focus:outline-none transition resize-none leading-relaxed cursor-default';
-            editPromptBtn.textContent = 'Edit';
-            editPromptBtn.className = 'text-xs font-medium text-indigo-400 hover:text-indigo-300 transition cursor-pointer px-2 py-0.5 rounded hover:bg-slate-700/60';
-            isEditingPrompt = false;
-            showToast('Translation prompt saved ✓');
-          } else {
-            promptEl.readOnly = false;
-            promptEl.className = 'w-full px-3 py-2 text-xs bg-slate-900 border border-indigo-500/80 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition resize-none leading-relaxed';
-            promptEl.focus();
-            editPromptBtn.textContent = 'Save';
-            editPromptBtn.className = 'text-xs font-medium text-emerald-400 hover:text-emerald-300 transition cursor-pointer px-2 py-0.5 rounded hover:bg-slate-700/60';
-            isEditingPrompt = true;
-          }
-        });
-      }
+      if (aiConfigPanel) await aiConfigPanel.refresh();
     }
 
     initReaderDeepSeekUI(novel);
@@ -1512,9 +1040,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
               };
               await window.StorageService.downloadChapter(novel.id, chapterNumber, options);
-              if (readerBalanceTracker && isTranslationEnabled && !isCustomMode) {
-                readerBalanceTracker.refresh(true);
-              }
+          if (aiConfigPanel && isTranslationEnabled && !isCustomMode) {
+            aiConfigPanel.refreshBalance(true);
+          }
               await loadChapterContent();
             } catch (err) {
               console.error('Download failed:', err);
