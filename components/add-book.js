@@ -554,9 +554,4 @@
   if (typeof customElements !== 'undefined' && !customElements.get('add-book-button')) {
     customElements.define('add-book-button', AddBookButton);
   }
-
-  // Global export
-  if (typeof window !== 'undefined') {
-    window.AddBookButton = AddBookButton;
-  }
 })();

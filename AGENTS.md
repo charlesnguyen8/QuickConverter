@@ -66,7 +66,7 @@ nodes, so the helper's `render` strips `<!-- -->`).
 - **Views are React** (`components/react/*.jsx`), mounted from a per-view entry (`<view>-entry.jsx` →
   `#<view>-root`); `services/`, `providers/` and shared `components/*.js` stay classic global scripts.
 - **Do not add comments unless asked.**
-- Reuse shared view modules in `components/` (`AiConfigPanel`, `UIUtils`, `QueueDock`, `AddBookButton`)
+- Reuse shared view modules in `components/` (`AiConfigPanel`, `QueueDock`, `add-book-button`)
   instead of duplicating provider/DeepSeek UI across views. React views render the panel container
   (same element IDs) and call the global `window.*` module; its classic `<script>` still loads before
   the view entry. Register new global-script modules the same way (IIFE + `window.*` export).

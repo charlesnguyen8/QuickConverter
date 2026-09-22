@@ -9,8 +9,9 @@
 changed → `npm run build:ext` → `npm test` green → commit → owner loads `dist/` for parity).
 No piecemeal approval requests. Commit per milestone so each is independently revertible.
 
-**Status (as of M1–M6):** Popup, Settings, Reader and Novel are fully React; no `views/*.js` logic
-scripts remain. Next is **M7** cleanup; M8 (ESM/MV3) deferred.
+**Status (as of M1–M7):** Popup, Settings, Reader and Novel are fully React; no `views/*.js` logic
+scripts remain and the dead ESM facade is gone. The React rewrite is complete; only M8 (ESM/MV3) is
+deferred.
 
 **Related docs:** `context.md`, `AGENTS.md`.
 
@@ -21,9 +22,9 @@ scripts remain. Next is **M7** cleanup; M8 (ESM/MV3) deferred.
 1. **Load from `dist/`** — `npm run build:ext`, then load unpacked from `dist/`. Repo root is not
    loadable (React pages need the bundle).
 2. **Static layers stay classic for now** — `services/`, `providers/`, and shared `components/*.js`
-   (`AiConfigPanel`, `UIUtils`, `AddBookButton`, `DownloadQueueService`) remain global scripts and
-   are bridged through the ESM facade (`services/index.mjs`, `components/index.mjs`). Converting
-   them to ESM is Phase 8 (optional, later).
+   (`AiConfigPanel`, `add-book-button`) remain global scripts loaded via `<script>` before the view
+   entry. (The unused ESM facade `services/index.mjs` / `components/index.mjs` was removed in M7.)
+   Converting them to ESM is Phase 8 (optional, later).
 3. **Per-view entry** — `components/react/<view>-entry.jsx` mounts `<View>` into `#<view>-root`
    with `flushSync` (so sibling classic scripts that run at `DOMContentLoaded` still find DOM).
 4. **No `chrome.*` in `views/` or React components** — go through `services/` (platform/storage).
@@ -67,7 +68,8 @@ update them whenever an ID moves (`bridge.test.js`, `settings.test.js`).
 | M5b Reader typography popover → React | `ReaderPrefsPopover.jsx` |
 | M5c Reader DeepSeek card → React | `ReaderDeepseekCard.jsx` |
 | M5d Reader app controller → React, delete `reader.js` | `ReaderApp.jsx` |
-| M6 Novel app controller → React, delete `novel.js` | `NovelApp.jsx`, `NovelDeepseekCard.jsx` (this milestone) |
+| M6 Novel app controller → React, delete `novel.js` | `dc2bd85` |
+| M7 Cleanup | removed facade + `ui-utils.js`, docs (this milestone) |
 
 ---
 
@@ -147,9 +149,11 @@ the novel prompt hooks. `NovelChapters` now publishes `unqueuedMissing`/`hasCata
 `views/novel.js` and the per-section `novel-hero-entry`/`novel-chapters-entry`/`name-list-entry`
 files; `novel.html` is a shell (`#novel-root`) + `novel-entry.jsx`.
 
-### M7 — Cleanup
-- Remove facade entries/globals no longer used; update `context.md` + `AGENTS.md`; rebuild
-  `tailwind.css`; confirm no logic remains in `views/*.js` (shells only).
+### M7 — Cleanup — **done**
+Removed the unused ESM facade (`services/index.mjs`, `components/index.mjs`) and the unused
+`components/ui-utils.js` (`window.UIUtils`; its `<script>` tags dropped from novel/popup/reader),
+plus the dead `window.QueueDockReact` and `window.AddBookButton` globals. Confirmed `views/` holds
+only HTML shells (no `*.js`). Updated `context.md` + `AGENTS.md` and rebuilt `styles/tailwind.css`.
 
 ### M8 — (deferred) ESM + MV3 bundling
 - Convert `services/` + `providers/` to ESM, module service worker, IIFE content bundle, drop the

@@ -58,7 +58,6 @@ function autoMount() {
 
 if (typeof window !== 'undefined') {
   window.renderProgressRing = renderProgressRing;
-  window.QueueDockReact = { mountQueueDock };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', autoMount);
   } else {
