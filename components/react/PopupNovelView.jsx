@@ -1,35 +1,68 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { popupDeepseekHtml } from './popupMarkup.mjs';
 
 const storage = () => (typeof window !== 'undefined' ? window.StorageService : null);
 const queue = () => (typeof window !== 'undefined' ? window.DownloadQueueService : null);
 const actions = () => (typeof window !== 'undefined' ? window.__popupActions : null);
 
-function ProgressRing({ percent }) {
-  if (typeof window !== 'undefined' && typeof window.renderProgressRing === 'function') {
-    return <span className="popup-active-ring-container flex items-center justify-center" dangerouslySetInnerHTML={{ __html: window.renderProgressRing(percent, 16, 2.5, false) }} />;
-  }
+function structural(state) {
+  const at = state && state.activeTask;
+  const q = (state && state.queue) || [];
+  return `${at && at.id}|${q.map((t) => `${t.id}:${t.status}`).join(',')}|${!!(state && state.isPaused)}`;
+}
+
+function ActiveButton({ novelId, chNum, onCancel }) {
+  const readPercent = () => {
+    const q = queue();
+    const st = q && typeof q.getChapterStatus === 'function' ? q.getChapterStatus(novelId, chNum) : null;
+    const p = st && st.progress && st.progress.percent;
+    return p === undefined || p === null ? 0 : p;
+  };
+  const [percent, setPercent] = useState(readPercent);
+
+  useEffect(() => {
+    const q = queue();
+    if (!q || typeof q.subscribe !== 'function') return undefined;
+    const unsub = q.subscribe(() => setPercent(readPercent()));
+    return typeof unsub === 'function' ? unsub : undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [novelId, chNum]);
+
+  const ring = typeof window !== 'undefined' && typeof window.renderProgressRing === 'function'
+    ? <span className="popup-active-ring-container flex items-center justify-center" dangerouslySetInnerHTML={{ __html: window.renderProgressRing(percent, 16, 2.5, false) }} />
+    : (
+      <span className="popup-active-ring-container flex items-center justify-center">
+        <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+      </span>
+    );
+
   return (
-    <span className="popup-active-ring-container flex items-center justify-center">
-      <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-      </svg>
-    </span>
+    <button
+      type="button"
+      className="px-1.5 py-1 rounded text-[10px] font-mono font-semibold text-indigo-200 bg-indigo-600/40 hover:bg-rose-600 hover:text-white transition cursor-pointer flex-shrink-0 flex items-center gap-1 group/pactive"
+      title={`Translating (${percent}%)... Click to cancel.`}
+      data-active-chapter={String(chNum)}
+      onClick={(e) => { e.stopPropagation(); onCancel(); }}
+    >
+      {ring}
+      <span className="popup-active-text group-hover/pactive:hidden">{percent}%</span>
+      <span className="hidden group-hover/pactive:inline font-bold">✕</span>
+    </button>
   );
 }
 
-function ChapterRow({ novel, chapter, downloadedChapter, onOpen, onDelete, onDownload, refresh }) {
+const ChapterRow = memo(function ChapterRow({ novel, chapter, downloadedChapter, queueStatus, onOpen, onDelete, onDownload }) {
   const chNum = Number(chapter.chapterNumber !== undefined ? chapter.chapterNumber : chapter.number);
   const isDownloaded = !!downloadedChapter;
   const q = queue();
-  const qStatus = !isDownloaded && q && typeof q.getChapterStatus === 'function' ? q.getChapterStatus(novel.id, chNum) : null;
+  const taskId = `${novel.id}_ch${chNum}`;
 
   const rowClass = isDownloaded
     ? 'flex items-center justify-between p-2 rounded-md bg-slate-800 border border-slate-700/80 hover:border-indigo-500/60 transition group cursor-pointer'
     : 'flex items-center justify-between p-2 rounded-md bg-slate-800 border border-slate-700/80 hover:border-slate-600 transition group';
-
-  const title = `${novel.id}_ch${chNum}`;
 
   return (
     <div className={rowClass} title={isDownloaded ? `Click to read ${chapter.title || 'Chapter ' + chNum}` : undefined} onClick={isDownloaded ? () => onOpen(chNum) : undefined}>
@@ -73,23 +106,13 @@ function ChapterRow({ novel, chapter, downloadedChapter, onOpen, onDelete, onDow
               </svg>
             </button>
           </>
-        ) : qStatus && qStatus.status === 'processing' ? (
-          <button
-            type="button"
-            className="px-1.5 py-1 rounded text-[10px] font-mono font-semibold text-indigo-200 bg-indigo-600/40 hover:bg-rose-600 hover:text-white transition cursor-pointer flex-shrink-0 flex items-center gap-1 group/pactive"
-            title={`Translating (${qStatus.progress && qStatus.progress.percent !== undefined ? qStatus.progress.percent : 10}%)... Click to cancel.`}
-            data-active-chapter={String(chNum)}
-            onClick={async (e) => { e.stopPropagation(); if (q) await q.remove(title); }}
-          >
-            <ProgressRing percent={qStatus.progress && qStatus.progress.percent !== undefined ? qStatus.progress.percent : 10} />
-            <span className="popup-active-text group-hover/pactive:hidden">{qStatus.progress && qStatus.progress.percent !== undefined ? qStatus.progress.percent : 10}%</span>
-            <span className="hidden group-hover/pactive:inline font-bold">✕</span>
-          </button>
-        ) : qStatus && qStatus.status === 'retry_pending' ? (
+        ) : queueStatus && queueStatus.status === 'processing' ? (
+          <ActiveButton novelId={novel.id} chNum={chNum} onCancel={async () => { if (q) await q.remove(taskId); }} />
+        ) : queueStatus && queueStatus.status === 'retry_pending' ? (
           <button
             type="button"
             className="px-1.5 py-1 rounded text-[10px] font-mono text-rose-300 bg-rose-500/15 border border-rose-500/30 hover:bg-rose-500/25 transition cursor-pointer flex items-center gap-1"
-            title={`Retry Pending (Attempt ${qStatus.retryCount || 1}). Click to retry now.`}
+            title={`Retry Pending (Attempt ${queueStatus.retryCount || 1}). Click to retry now.`}
             onClick={async (e) => {
               e.stopPropagation();
               if (!q) return;
@@ -100,14 +123,14 @@ function ChapterRow({ novel, chapter, downloadedChapter, onOpen, onDelete, onDow
             <span>🔄 Retry</span>
             <span className="font-bold text-rose-300">⚡</span>
           </button>
-        ) : qStatus && qStatus.status === 'queued' ? (
+        ) : queueStatus && queueStatus.status === 'queued' ? (
           <button
             type="button"
             className="px-1.5 py-1 rounded text-[10px] font-mono text-amber-300 bg-amber-500/15 border border-amber-500/30 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/40 transition cursor-pointer flex items-center gap-1"
-            title={`Queued (#${qStatus.queuePosition}). Click to remove from queue.`}
-            onClick={async (e) => { e.stopPropagation(); if (q) await q.remove(title); }}
+            title={`Queued (#${queueStatus.queuePosition}). Click to remove from queue.`}
+            onClick={async (e) => { e.stopPropagation(); if (q) await q.remove(taskId); }}
           >
-            <span>⏳#{qStatus.queuePosition}</span>
+            <span>⏳#{queueStatus.queuePosition}</span>
             <span className="font-bold">✕</span>
           </button>
         ) : (
@@ -126,12 +149,12 @@ function ChapterRow({ novel, chapter, downloadedChapter, onOpen, onDelete, onDow
       </div>
     </div>
   );
-}
+});
 
 export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings }) {
   const [novel, setNovel] = useState(null);
   const [downloaded, setDownloaded] = useState([]);
-  const [, setTick] = useState(0);
+  const [qState, setQState] = useState(null);
   const [downloadAllBusy, setDownloadAllBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -153,21 +176,46 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
   useEffect(() => {
     const q = queue();
     if (!q || typeof q.subscribe !== 'function') return undefined;
-    const unsub = q.subscribe(() => setTick((t) => t + 1));
+    let last = null;
+    const unsub = q.subscribe((state) => {
+      const key = structural(state);
+      if (key === last) return;
+      last = key;
+      setQState(state);
+    });
     return typeof unsub === 'function' ? unsub : undefined;
   }, []);
 
   const catalog = (novel && novel.chapterList) || [];
-  const downloadedMap = new Map(downloaded.map((c) => [Number(c.chapterNumber), c]));
+  const downloadedMap = useMemo(
+    () => new Map(downloaded.map((c) => [Number(c.chapterNumber), c])),
+    [downloaded]
+  );
   const displayList = catalog.length > 0 ? catalog : downloaded;
   const totalChapters = (novel && novel.totalChapters) || catalog.length || 100;
 
+  const statusIndex = useMemo(() => {
+    const map = new Map();
+    if (!qState || !novel) return map;
+    const at = qState.activeTask;
+    if (at && at.novelId === novel.id) {
+      map.set(Number(at.chapterNumber), { status: 'processing' });
+    }
+    (qState.queue || []).forEach((t, i) => {
+      if (t.novelId !== novel.id) return;
+      const retry = t.status === 'retry_pending';
+      map.set(Number(t.chapterNumber), {
+        status: retry ? 'retry_pending' : 'queued',
+        queuePosition: i + 1,
+        retryCount: t.retryCount || 1
+      });
+    });
+    return map;
+  }, [qState, novel]);
+
   const unqueuedMissingCount = catalog.filter((c) => {
     const chNum = Number(c.chapterNumber !== undefined ? c.chapterNumber : c.number);
-    if (downloadedMap.has(chNum)) return false;
-    const q = queue();
-    if (q && typeof q.isQueued === 'function' && q.isQueued(novel.id, chNum)) return false;
-    return true;
+    return !downloadedMap.has(chNum) && !statusIndex.has(chNum);
   }).length;
 
   const openReader = useCallback((chNum) => {
@@ -184,11 +232,9 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
     await load();
   }, [novel, load]);
 
-  const downloadChapter = useCallback(async (chNum) => {
+  const downloadChapter = useCallback((chNum) => {
     const a = actions();
-    if (a && a.downloadChapter) {
-      await a.downloadChapter(chNum, null, load);
-    }
+    if (a && a.downloadChapter) a.downloadChapter(chNum, null, load);
   }, [load]);
 
   const downloadAll = useCallback(async () => {
@@ -203,7 +249,7 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
     }
   }, [load]);
 
-  console.log('[PopupNovelView] render', { hidden, novelId, chapters: displayList.length, downloaded: downloaded.length });
+  console.log('[PopupNovelView] render', { hidden, novelId, chapters: displayList.length, downloaded: downloaded.length, active: statusIndex.size });
 
   return (
     <div id="view-novel" className={`flex flex-col gap-3${hidden ? ' hidden' : ''}`}>
@@ -289,6 +335,7 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
                 novel={novel}
                 chapter={chapter}
                 downloadedChapter={downloadedMap.get(chNum)}
+                queueStatus={statusIndex.get(chNum)}
                 onOpen={openReader}
                 onDelete={deleteChapter}
                 onDownload={downloadChapter}
