@@ -6,12 +6,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const artworkEl = document.getElementById('novel-artwork');
   const domainEl = document.getElementById('novel-domain');
   const statusEl = document.getElementById('novel-status');
-  const chaptersStatEl = document.getElementById('chapters-stat');
-  const progressBarEl = document.getElementById('chapters-progress-bar');
-  const totalChaptersLabel = document.getElementById('total-chapters-label');
-  const progressPercentEl = document.getElementById('progress-percent');
-  const chaptersBadgeEl = document.getElementById('chapters-badge');
-  const chaptersListEl = document.getElementById('chapters-list');
   const syncChaptersBtn = document.getElementById('sync-chapters-btn');
   const downloadAllBtn = document.getElementById('download-all-btn');
 
@@ -775,408 +769,103 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  async function updateStatsAndProgress(novel, downloadedCount, totalCount) {
-    const total = totalCount || novel.totalChapters || 100;
-    const percent = total > 0 ? Math.min(100, Math.round((downloadedCount / total) * 100)) : 0;
-
-    if (chaptersStatEl) chaptersStatEl.textContent = `${downloadedCount} / ${total}`;
-    if (progressBarEl) progressBarEl.style.width = `${percent}%`;
-    if (totalChaptersLabel) totalChaptersLabel.textContent = `${total} Total Chapters`;
-    if (progressPercentEl) progressPercentEl.textContent = `${percent}%`;
-    if (chaptersBadgeEl) chaptersBadgeEl.textContent = `${downloadedCount} / ${total} Saved`;
+  function refreshChapterList() {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('novel-chapters-refresh'));
+    }
   }
 
-  async function renderChapters(novel) {
-    if (!novel || !chaptersListEl) return;
+  async function enqueueChapterDownload(chNum, chapterTitle) {
+    if (!currentNovel) return;
 
-    let catalog = novel.chapterList || [];
+    const toggleEl = document.getElementById('deepseek-toggle');
+    const keyEl = document.getElementById('deepseek-api-key');
+    const promptEl = document.getElementById('deepseek-prompt');
+    const modelSelectEl = document.getElementById('deepseek-model-select');
 
-    // If catalog is empty but novel has slug, attempt initial auto-sync
-    if (catalog.length === 0 && novel.slug) {
-      chaptersListEl.innerHTML = `
-        <div class="p-8 rounded-lg bg-slate-800/40 border border-slate-700/50 text-center flex flex-col items-center justify-center gap-2">
-          <svg class="animate-spin h-6 w-6 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-          </svg>
-          <p class="text-sm font-medium text-slate-300">Fetching chapter catalog from provider...</p>
-        </div>
-      `;
+    const isTranslationEnabled = !!(toggleEl && toggleEl.checked);
+    let apiKey = keyEl ? keyEl.value.trim() : '';
+    const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
 
-      const synced = await window.StorageService.syncNovelChapters(novel.id);
-      if (synced && synced.chapterList && synced.chapterList.length > 0) {
-        novel = synced;
-        currentNovel = synced;
-        catalog = novel.chapterList;
+    const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+      (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+    let curProvConfig = { provider: 'official', customUrl: 'http://127.0.0.1:8000/v1' };
+    if (deepseek && typeof deepseek.getProviderConfig === 'function') {
+      try {
+        curProvConfig = await deepseek.getProviderConfig();
+      } catch (e) {}
+    }
+    const isCustomMode = curProvConfig.provider !== 'official';
+    const customUrlInputEl = document.getElementById('novel-custom-base-url');
+    const effectiveCustomUrl = customUrlInputEl ? (customUrlInputEl.value.trim() || curProvConfig.customUrl || 'http://127.0.0.1:8000/v1') : (curProvConfig.customUrl || 'http://127.0.0.1:8000/v1');
+
+    if (isTranslationEnabled && !apiKey) {
+      if (isCustomMode) {
+        apiKey = 'sk-local';
+      } else if (deepseek && typeof deepseek.getApiKey === 'function') {
+        try {
+          const stored = await deepseek.getApiKey();
+          if (stored && stored.apiKey) {
+            apiKey = stored.apiKey.trim();
+            if (keyEl) keyEl.value = apiKey;
+            const clearKeyBtn = document.getElementById('clear-deepseek-btn');
+            if (clearKeyBtn) clearKeyBtn.classList.remove('hidden');
+          }
+        } catch (e) {}
       }
     }
 
-    const downloadedChapters = await window.StorageService.getNovelChapters(novel.id);
-    const downloadedMap = new Map(downloadedChapters.map((c) => [Number(c.chapterNumber), c]));
-
-    const displayList = catalog.length > 0 ? catalog : downloadedChapters;
-    const totalCount = novel.totalChapters || displayList.length || 100;
-
-    updateStatsAndProgress(novel, downloadedChapters.length, totalCount);
-
-    if (downloadAllBtn) {
-      const queueService = (typeof window !== 'undefined' && window.DownloadQueueService);
-      const unqueuedMissingCount = catalog.filter((c) => {
-        const chNum = Number(c.chapterNumber !== undefined ? c.chapterNumber : c.number);
-        if (downloadedMap.has(chNum)) return false;
-        if (queueService && typeof queueService.isQueued === 'function') {
-          if (queueService.isQueued(novel.id, chNum)) return false;
-        }
-        return true;
-      }).length;
-
-      if (catalog.length === 0 || unqueuedMissingCount === 0) {
-        downloadAllBtn.classList.add('opacity-50', 'pointer-events-none');
-        downloadAllBtn.title = 'All chapters are already downloaded or queued';
-      } else {
-        downloadAllBtn.classList.remove('opacity-50', 'pointer-events-none');
-        downloadAllBtn.title = `Download and translate all ${unqueuedMissingCount} missing chapters`;
+    if (isTranslationEnabled && !apiKey && !isCustomMode) {
+      if (keyEl) {
+        keyEl.focus();
+        keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');
+        setTimeout(() => {
+          keyEl.classList.remove('border-rose-500', 'ring-1', 'ring-rose-500/50');
+        }, 2500);
       }
-    }
-
-    if (displayList.length === 0) {
-      chaptersListEl.innerHTML = `
-        <div class="p-8 rounded-lg bg-slate-800/40 border border-slate-700/50 text-center flex flex-col items-center justify-center gap-2">
-          <div class="text-2xl">📖</div>
-          <p class="text-sm font-medium text-slate-300">No chapters found for this novel.</p>
-          <p class="text-xs text-slate-500 max-w-sm">
-            Click "Sync Catalog" above to fetch chapters from the provider.
-          </p>
-        </div>
-      `;
+      alert('Please enter your DeepSeek API Key before translating.');
       return;
     }
 
-    chaptersListEl.innerHTML = '';
-
-    displayList.forEach((chapter) => {
-      const chNum = Number(chapter.chapterNumber);
-      const isDownloaded = downloadedMap.has(chNum);
-
-      const row = document.createElement('div');
-      row.className = isDownloaded
-        ? 'flex items-center justify-between p-3.5 rounded-lg bg-slate-800/80 border border-slate-700/60 hover:border-indigo-500/60 hover:bg-slate-800 transition group cursor-pointer'
-        : 'flex items-center justify-between p-3.5 rounded-lg bg-slate-800/60 border border-slate-700/50 hover:border-slate-600 transition group';
-
-      if (isDownloaded) {
-        row.title = `Click to read ${chapter.title || 'Chapter ' + chNum}`;
-        row.addEventListener('click', () => {
-          window.location.href = `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(chNum)}`;
-        });
+    const cooldownToggleEl = document.getElementById('novel-cooldown-toggle');
+    const isCooldownActive = cooldownToggleEl ? cooldownToggleEl.checked : true;
+    const options = {
+      cooldown: isCooldownActive,
+      translation: {
+        enabled: isTranslationEnabled,
+        cooldown: isCooldownActive,
+        apiKey: apiKey || (isCustomMode ? 'sk-local' : ''),
+        prompt: promptEl ? promptEl.value : '',
+        model: selectedModel,
+        provider: curProvConfig.provider,
+        baseUrl: isCustomMode ? effectiveCustomUrl : undefined
       }
+    };
 
-      // Left: Chapter number badge + Chapter title
-      const leftCol = document.createElement('div');
-      leftCol.className = 'flex items-center gap-3 overflow-hidden flex-1 min-w-0 pr-3';
+    const queueService = (typeof window !== 'undefined' && window.DownloadQueueService) ||
+      (typeof globalThis !== 'undefined' && globalThis.DownloadQueueService);
 
-      const chBadge = document.createElement('span');
-      chBadge.className = isDownloaded
-        ? 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-900 text-indigo-300 border border-indigo-500/30 flex-shrink-0'
-        : 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-900 text-slate-400 border border-slate-700/80 flex-shrink-0';
-      chBadge.textContent = `Ch. ${chNum}`;
-
-      const nameEl = document.createElement('span');
-      nameEl.className = isDownloaded
-        ? 'text-sm font-semibold text-slate-100 truncate group-hover:text-indigo-300 transition'
-        : 'text-sm font-medium text-slate-300 truncate group-hover:text-slate-200 transition';
-      nameEl.textContent = chapter.title || `Chapter ${chNum}`;
-
-      leftCol.appendChild(chBadge);
-      leftCol.appendChild(nameEl);
-
-      // Right: Actions (Download button OR Saved badge + Delete button)
-      const rightCol = document.createElement('div');
-      rightCol.className = 'flex items-center gap-2.5 flex-shrink-0';
-
-      if (isDownloaded) {
-        const readHint = document.createElement('span');
-        readHint.className = 'inline-flex items-center gap-1 text-xs font-semibold text-indigo-400 group-hover:text-indigo-300 group-hover:translate-x-0.5 transition-all';
-        readHint.innerHTML = `
-          <span>Read</span>
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 18 15 12 9 6"></polyline>
-          </svg>
-        `;
-
-        const statusBadge = document.createElement('span');
-        statusBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20';
-        statusBadge.innerHTML = `
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-          Saved
-        `;
-
-        const delBtn = document.createElement('button');
-        delBtn.type = 'button';
-        delBtn.className = 'p-1.5 rounded text-slate-400 hover:text-red-400 hover:bg-slate-700/80 transition cursor-pointer';
-        delBtn.title = `Delete Chapter ${chNum}`;
-        delBtn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            <line x1="10" y1="11" x2="10" y2="17"></line>
-            <line x1="14" y1="11" x2="14" y2="17"></line>
-          </svg>
-        `;
-
-        delBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          await window.StorageService.deleteChapter(novel.id, chNum);
-          await renderChapters(currentNovel);
-        });
-
-        rightCol.appendChild(readHint);
-        rightCol.appendChild(statusBadge);
-
-        const downloadedChapter = downloadedMap.get(chNum);
-        if (downloadedChapter && downloadedChapter.translationCost && downloadedChapter.translationCost.formattedCost) {
-          const costBadge = document.createElement('span');
-          costBadge.className = 'text-[11px] font-mono font-medium px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20';
-          costBadge.textContent = downloadedChapter.translationCost.formattedCost;
-          const promptTok = downloadedChapter.translationCost.promptTokens ? `${downloadedChapter.translationCost.promptTokens.toLocaleString()} in` : '';
-          const outTok = downloadedChapter.translationCost.completionTokens ? `${downloadedChapter.translationCost.completionTokens.toLocaleString()} out` : '';
-          const cacheTok = downloadedChapter.translationCost.cacheHitTokens ? ` • ${downloadedChapter.translationCost.cacheHitTokens.toLocaleString()} cached` : '';
-          costBadge.title = `Translation Cost: ${downloadedChapter.translationCost.formattedCost} USD (${promptTok}, ${outTok}${cacheTok}) • ${downloadedChapter.translationCost.ratePeriod}`;
-          rightCol.appendChild(costBadge);
+    if (queueService && typeof queueService.enqueue === 'function') {
+      await queueService.enqueue({
+        novelId: currentNovel.id,
+        novelTitle: currentNovel.title,
+        chapterNumber: chNum,
+        chapterTitle: chapterTitle || `Chapter ${chNum}`,
+        options
+      });
+      refreshChapterList();
+    } else {
+      try {
+        await window.StorageService.downloadChapter(currentNovel.id, chNum, options);
+        if (aiConfigPanel && isTranslationEnabled && !isCustomMode) {
+          aiConfigPanel.refreshBalance(true);
         }
-
-        rightCol.appendChild(delBtn);
-      } else {
-        const queueService = (typeof window !== 'undefined' && window.DownloadQueueService) ||
-          (typeof globalThis !== 'undefined' && globalThis.DownloadQueueService);
-        const qStatus = queueService && typeof queueService.getChapterStatus === 'function'
-          ? queueService.getChapterStatus(novel.id, chNum)
-          : null;
-
-        if (qStatus && qStatus.status === 'processing') {
-          // Chapter is currently being downloaded/translated in queue
-          const activeBtn = document.createElement('button');
-          activeBtn.type = 'button';
-          activeBtn.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-rose-600 transition shadow-sm cursor-pointer group/activebtn';
-          activeBtn.title = 'Currently downloading & translating. Click to cancel and skip to next.';
-          activeBtn.dataset.activeChapter = String(chNum);
-
-          const percent = qStatus.progress?.percent !== undefined ? qStatus.progress.percent : 10;
-          const ringHtml = (typeof window !== 'undefined' && typeof window.renderProgressRing === 'function')
-            ? window.renderProgressRing(percent, 16, 2.5, false)
-            : `
-            <svg class="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-            </svg>`;
-
-          activeBtn.innerHTML = `
-            <span class="active-progress-ring-container flex items-center justify-center">${ringHtml}</span>
-            <span class="active-progress-text group-hover/activebtn:hidden">${percent}% Translating...</span>
-            <span class="hidden group-hover/activebtn:inline font-bold">Cancel ✕</span>
-          `;
-
-          activeBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            if (queueService) {
-              await queueService.remove(`${novel.id}_ch${chNum}`);
-            }
-          });
-
-          rightCol.appendChild(activeBtn);
-        } else if (qStatus && qStatus.status === 'retry_pending') {
-          // Chapter is pending retry after error / rate-limit backoff
-          const retryBtn = document.createElement('button');
-          retryBtn.type = 'button';
-          retryBtn.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-rose-300 bg-rose-500/15 border border-rose-500/30 hover:bg-rose-500/25 transition shadow-sm cursor-pointer group/retrybtn';
-          retryBtn.title = `Retry Pending (Attempt ${qStatus.retryCount || 1}). Rate-limit backoff active. Click to retry now immediately.`;
-          retryBtn.innerHTML = `
-            <span class="group-hover/retrybtn:hidden">🔄 Retry Pending</span>
-            <span class="hidden group-hover/retrybtn:inline font-bold">Retry Now ⚡</span>
-          `;
-
-          retryBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            if (queueService) {
-              if (typeof queueService.retryNow === 'function') {
-                await queueService.retryNow();
-              } else if (typeof queueService.skipCooldown === 'function') {
-                await queueService.skipCooldown();
-              }
-            }
-          });
-
-          rightCol.appendChild(retryBtn);
-        } else if (qStatus && qStatus.status === 'queued') {
-          // Chapter is waiting in queue
-          const queuedBtn = document.createElement('button');
-          queuedBtn.type = 'button';
-          queuedBtn.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-amber-300 bg-amber-500/15 border border-amber-500/30 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/40 transition shadow-sm cursor-pointer group/qbtn';
-          queuedBtn.title = `Queued (#${qStatus.queuePosition}). Click to remove from queue.`;
-          queuedBtn.innerHTML = `
-            <span class="group-hover/qbtn:hidden">⏳ Queued (#${qStatus.queuePosition})</span>
-            <span class="hidden group-hover/qbtn:inline">Remove ✕</span>
-            <span class="text-amber-400 group-hover/qbtn:text-rose-300 font-bold ml-0.5 group-hover/qbtn:hidden">✕</span>
-          `;
-
-          queuedBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            if (queueService) {
-              await queueService.remove(`${novel.id}_ch${chNum}`);
-            }
-          });
-
-          rightCol.appendChild(queuedBtn);
-        } else {
-          // Download button with downward arrow icon
-          const dlBtn = document.createElement('button');
-          dlBtn.type = 'button';
-          dlBtn.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50';
-          dlBtn.title = `Download Chapter ${chNum}`;
-          dlBtn.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <polyline points="19 12 12 19 5 12"></polyline>
-            </svg>
-            <span>Download</span>
-          `;
-
-          dlBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-
-            const toggleEl = document.getElementById('deepseek-toggle');
-            const keyEl = document.getElementById('deepseek-api-key');
-            const promptEl = document.getElementById('deepseek-prompt');
-            const modelSelectEl = document.getElementById('deepseek-model-select');
-
-            const isTranslationEnabled = !!(toggleEl && toggleEl.checked);
-            let apiKey = keyEl ? keyEl.value.trim() : '';
-            const selectedModel = (modelSelectEl && modelSelectEl.value) || 'deepseek-flash';
-
-            const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
-              (typeof DeepSeekService !== 'undefined' && DeepSeekService);
-
-            let curProvConfig = { provider: 'official', customUrl: 'http://127.0.0.1:8000/v1' };
-            if (deepseek && typeof deepseek.getProviderConfig === 'function') {
-              try {
-                curProvConfig = await deepseek.getProviderConfig();
-              } catch (e) {}
-            }
-            const isCustomMode = curProvConfig.provider !== 'official';
-            const customUrlInputEl = document.getElementById('novel-custom-base-url');
-            const effectiveCustomUrl = customUrlInputEl ? (customUrlInputEl.value.trim() || curProvConfig.customUrl || 'http://127.0.0.1:8000/v1') : (curProvConfig.customUrl || 'http://127.0.0.1:8000/v1');
-
-            if (isTranslationEnabled && !apiKey) {
-              if (isCustomMode) {
-                apiKey = 'sk-local';
-              } else if (deepseek && typeof deepseek.getApiKey === 'function') {
-                try {
-                  const stored = await deepseek.getApiKey();
-                  if (stored && stored.apiKey) {
-                    apiKey = stored.apiKey.trim();
-                    if (keyEl) keyEl.value = apiKey;
-                    const clearKeyBtn = document.getElementById('clear-deepseek-btn');
-                    if (clearKeyBtn) clearKeyBtn.classList.remove('hidden');
-                  }
-                } catch (e) {}
-              }
-            }
-
-            if (isTranslationEnabled && !apiKey && !isCustomMode) {
-              if (keyEl) {
-                keyEl.focus();
-                keyEl.classList.add('border-rose-500', 'ring-1', 'ring-rose-500/50');
-                setTimeout(() => {
-                  keyEl.classList.remove('border-rose-500', 'ring-1', 'ring-rose-500/50');
-                }, 2500);
-              }
-              alert('Please enter your DeepSeek API Key before translating.');
-              return;
-            }
-
-            const cooldownToggleEl = document.getElementById('novel-cooldown-toggle');
-            const isCooldownActive = cooldownToggleEl ? cooldownToggleEl.checked : true;
-            const options = {
-              cooldown: isCooldownActive,
-              translation: {
-                enabled: isTranslationEnabled,
-                cooldown: isCooldownActive,
-                apiKey: apiKey || (isCustomMode ? 'sk-local' : ''),
-                prompt: promptEl ? promptEl.value : '',
-                model: selectedModel,
-                provider: curProvConfig.provider,
-                baseUrl: isCustomMode ? effectiveCustomUrl : undefined
-              }
-            };
-
-            if (queueService && typeof queueService.enqueue === 'function') {
-              // Add to download queue
-              await queueService.enqueue({
-                novelId: novel.id,
-                novelTitle: novel.title,
-                chapterNumber: chNum,
-                chapterTitle: chapter.title || `Chapter ${chNum}`,
-                options
-              });
-              await renderChapters(currentNovel);
-            } else {
-              // Fallback direct download
-              dlBtn.disabled = true;
-              dlBtn.innerHTML = `
-                <svg class="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                </svg>
-                <span>${isTranslationEnabled ? 'Translating (' + selectedModel + ')...' : 'Downloading...'}</span>
-              `;
-
-              try {
-                await window.StorageService.downloadChapter(novel.id, chNum, options);
-                if (aiConfigPanel && isTranslationEnabled && !isCustomMode) {
-                  aiConfigPanel.refreshBalance(true);
-                }
-                await renderChapters(currentNovel);
-              } catch (err) {
-                console.error('Error downloading chapter:', err);
-                dlBtn.disabled = false;
-                dlBtn.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-red-500/80 hover:bg-red-500 transition shadow-sm cursor-pointer';
-                dlBtn.title = err.message || 'Error downloading chapter';
-                dlBtn.innerHTML = `
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <polyline points="19 12 12 19 5 12"></polyline>
-                  </svg>
-                  <span>Retry</span>
-                `;
-              }
-            }
-          });
-
-          rightCol.appendChild(dlBtn);
-        }
+        refreshChapterList();
+      } catch (err) {
+        console.error('Error downloading chapter:', err);
       }
-
-      if (chapter.url) {
-        const linkBtn = document.createElement('a');
-        linkBtn.href = chapter.url;
-        linkBtn.target = '_blank';
-        linkBtn.rel = 'noreferrer';
-        linkBtn.className = 'p-1.5 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition ml-0.5';
-        linkBtn.title = 'Open chapter on web';
-        linkBtn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-            <polyline points="15 3 21 3 21 9"></polyline>
-            <line x1="10" y1="14" x2="21" y2="3"></line>
-          </svg>
-        `;
-        linkBtn.addEventListener('click', (e) => e.stopPropagation());
-        rightCol.appendChild(linkBtn);
-      }
-
-      row.appendChild(leftCol);
-      row.appendChild(rightCol);
-      chaptersListEl.appendChild(row);
-    });
+    }
   }
 
   try {
@@ -1230,7 +919,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (updated) {
             currentNovel = updated;
           }
-          await renderChapters(currentNovel);
+          refreshChapterList();
         } catch (e) {
           console.error('Error syncing catalog:', e);
         } finally {
@@ -1386,7 +1075,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               await queueService.enqueue(task);
             }
           }
-          await renderChapters(currentNovel);
+          refreshChapterList();
         } catch (err) {
           console.error('Error queuing batch download:', err);
           alert('Error queuing chapters: ' + (err.message || err));
@@ -1398,96 +1087,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Initial render
-    await renderChapters(currentNovel);
-
-    // Listen for queue state events to update chapter button states
-    let isUpdatingFromQueue = false;
-    let hasPendingQueueUpdate = false;
-    let hadActiveTask = false;
-    let lastActiveTaskId = null;
-    let lastQueueCount = -1;
-    let lastIsPaused = null;
-
-    function updateActiveProgressInPlace(activeTask) {
-      if (!activeTask || !chaptersListEl) return false;
-      const chNum = Number(activeTask.chapterNumber);
-      const btn = chaptersListEl.querySelector(`button[data-active-chapter="${chNum}"]`);
-      if (!btn) return false;
-
-      const percent = activeTask.progress?.percent !== undefined ? activeTask.progress.percent : 10;
-      const ringContainer = btn.querySelector('.active-progress-ring-container');
-      if (ringContainer) {
-        const circle = ringContainer.querySelector('circle[stroke="#6366f1"]');
-        if (circle) {
-          const size = 16, strokeWidth = 2.5;
-          const radius = (size - strokeWidth) / 2;
-          const circumference = 2 * Math.PI * radius;
-          const offset = circumference - (Math.max(0, Math.min(100, percent)) / 100) * circumference;
-          circle.style.strokeDashoffset = offset.toFixed(1);
-        } else if (typeof window.renderProgressRing === 'function') {
-          ringContainer.innerHTML = window.renderProgressRing(percent, 16, 2.5, false);
-        }
-      }
-      const textEl = btn.querySelector('.active-progress-text');
-      if (textEl) {
-        textEl.textContent = `${percent}% Translating...`;
-      }
-      return true;
-    }
-
-    async function handleQueueChange(state) {
-      const currentActiveTaskId = state?.activeTask?.id || null;
-      const currentQueueCount = Array.isArray(state?.queue) ? state.queue.length : 0;
-      const currentIsPaused = !!state?.isPaused;
-
-      // If active task and queue structure are unchanged, update only progress in place!
-      if (
-        currentActiveTaskId &&
-        currentActiveTaskId === lastActiveTaskId &&
-        currentQueueCount === lastQueueCount &&
-        currentIsPaused === lastIsPaused
-      ) {
-        const updated = updateActiveProgressInPlace(state.activeTask);
-        if (updated) {
-          return; // Targeted in-place update with zero DOM rebuilding or hover blinking
-        }
-      }
-
-      // Active task, queue items, or paused state transitioned -> Full re-render needed
-      lastActiveTaskId = currentActiveTaskId;
-      lastQueueCount = currentQueueCount;
-      lastIsPaused = currentIsPaused;
-
-      if (isUpdatingFromQueue) {
-        hasPendingQueueUpdate = true;
-        return;
-      }
-      isUpdatingFromQueue = true;
-      try {
-        if (currentNovel) {
-          await renderChapters(currentNovel);
-          if (hadActiveTask && (!state || !state.activeTask) && aiConfigPanel) {
-            aiConfigPanel.refreshBalance(true);
-          }
-        }
-        hadActiveTask = !!(state && state.activeTask);
-      } catch (e) {
-        console.warn('[novel.js] Error updating from queue change:', e);
-      } finally {
-        isUpdatingFromQueue = false;
-        if (hasPendingQueueUpdate) {
-          hasPendingQueueUpdate = false;
-          handleQueueChange(window.DownloadQueueService ? window.DownloadQueueService.getState() : null);
-        }
-      }
-    }
+    refreshChapterList();
 
     const queueService = (typeof window !== 'undefined' && window.DownloadQueueService);
     if (queueService && typeof queueService.subscribe === 'function') {
+      let hadActiveTask = false;
       queueService.subscribe((state) => {
-        handleQueueChange(state);
+        const hasActive = !!(state && state.activeTask);
+        if (hadActiveTask && !hasActive && aiConfigPanel) {
+          aiConfigPanel.refreshBalance(true);
+        }
+        hadActiveTask = hasActive;
       });
     }
+
+    window.addEventListener('novel-chapter-download', (e) => {
+      const detail = (e && e.detail) || {};
+      enqueueChapterDownload(detail.chapterNumber, detail.chapterTitle);
+    });
   } catch (err) {
     console.error('Error loading novel details:', err);
   }

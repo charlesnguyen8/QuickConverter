@@ -51,10 +51,19 @@ commit. Browser parity check is done by the owner after each phase.
 - Delete `views/library.js` once verified.
 - Keep the `novel-added` listener (React re-loads on the window event).
 
-### Phase 3 — Novel view → React
-- Largest view (`novel.js` ~2000 lines) — split internally into sub-steps if needed:
-  chapters list + stats, download panel (reuse `AiConfigPanel`), Name List drawer.
-- `components/react/NovelView.jsx` + `novel-entry.jsx`; delete `novel.js` after parity.
+### Phase 3 — Novel view → React (section by section)
+Largest view. Convert one section at a time into its own React root; the rest of the page stays
+static, and `novel.js` shrinks each step. Delete `novel.js` when nothing is left.
+
+- **3a — Chapters list + progress stats**: `components/react/NovelChapters.jsx` mounted into a
+  `#novel-chapters-root` section; own the list, per-chapter download/retry buttons, progress bar.
+  Remove the corresponding code from `novel.js`.
+- **3b — Hero** (artwork/title/domain/status + Name List button/count): `components/react/NovelHero.jsx`.
+- **3c — Name List drawer**: `components/react/NameListDrawer.jsx` (the ~600-line imperative
+  drawer ported last).
+- DeepSeek/cooldown panel stays as the existing `AiConfigPanel` module (already shared); only its
+  container is rendered by React with the same element IDs.
+- Delete `views/novel.js` and `views/novel.html` shell once all sections are React.
 
 ### Phase 4 — Reader view → React
 - `components/react/ReaderView.jsx` + `reader-entry.jsx`; delete `reader.js` after parity.
