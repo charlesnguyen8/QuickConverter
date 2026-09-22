@@ -599,20 +599,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Source Reference Drawer Controller ---
     function openSourceDrawer() {
-      if (!sourceDrawer) return;
-      sourceDrawer.classList.remove('translate-x-full');
+      window.dispatchEvent(new Event('reader-open-source'));
     }
 
     function closeSourceDrawer() {
-      if (!sourceDrawer) return;
-      sourceDrawer.classList.add('translate-x-full');
+      window.dispatchEvent(new Event('reader-close-source'));
     }
 
     if (toggleSourceDrawerBtn) {
       toggleSourceDrawerBtn.addEventListener('click', () => {
-        const isClosed = sourceDrawer.classList.contains('translate-x-full');
-        if (isClosed) openSourceDrawer();
-        else closeSourceDrawer();
+        openSourceDrawer();
       });
     }
 
@@ -770,66 +766,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (headerChapterTitle) headerChapterTitle.textContent = chapter.title || fallbackTitle;
 
-        // Handle Original Source Drawer setup & cost breakdown
-        const sourceDrawerCostCard = document.getElementById('source-drawer-cost-card');
-        const drawerCostRateBadge = document.getElementById('drawer-cost-rate-badge');
-        const drawerCostPromptTokens = document.getElementById('drawer-cost-prompt-tokens');
-        const drawerCostCacheTokens = document.getElementById('drawer-cost-cache-tokens');
-        const drawerCostOutTokens = document.getElementById('drawer-cost-out-tokens');
-        const drawerCostTotalTokens = document.getElementById('drawer-cost-total-tokens');
-        const drawerCostTotalAmount = document.getElementById('drawer-cost-total-amount');
-
-        if (chapter.translationCost && sourceDrawerCostCard) {
-          sourceDrawerCostCard.classList.remove('hidden');
-          if (drawerCostRateBadge) {
-            drawerCostRateBadge.textContent = chapter.translationCost.ratePeriod || 'Off-Peak';
-            drawerCostRateBadge.className = chapter.translationCost.isPeak
-              ? 'text-[10px] font-semibold px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/15 text-amber-400'
-              : 'text-[10px] font-semibold px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/15 text-emerald-400';
-          }
-          if (drawerCostPromptTokens) {
-            drawerCostPromptTokens.textContent = `${(chapter.translationCost.promptTokens || 0).toLocaleString()} tokens`;
-          }
-          if (drawerCostCacheTokens) {
-            drawerCostCacheTokens.textContent = `${(chapter.translationCost.cacheHitTokens || 0).toLocaleString()} cached (90% off)`;
-          }
-          if (drawerCostOutTokens) {
-            drawerCostOutTokens.textContent = `${(chapter.translationCost.completionTokens || 0).toLocaleString()} tokens`;
-          }
-          if (drawerCostTotalTokens) {
-            drawerCostTotalTokens.textContent = `${(chapter.translationCost.totalTokens || 0).toLocaleString()} total tokens`;
-          }
-          if (drawerCostTotalAmount) {
-            drawerCostTotalAmount.textContent = `${chapter.translationCost.formattedCost} USD`;
-          }
-        } else if (sourceDrawerCostCard) {
-          sourceDrawerCostCard.classList.add('hidden');
-        }
-
-        // Handle DeepSeek Reasoner (R1) chain-of-thought drawer section
-        const reasoningContainer = document.getElementById('source-reasoning-container');
-        const reasoningHeader = document.getElementById('source-reasoning-header');
-        const reasoningContent = document.getElementById('source-reasoning-content');
-        const reasoningToggleIcon = document.getElementById('source-reasoning-toggle-icon');
-
-        if (chapter.reasoningText && reasoningContainer && reasoningContent) {
-          reasoningContainer.classList.remove('hidden');
-          reasoningContent.textContent = chapter.reasoningText;
-          if (reasoningHeader && !reasoningHeader.dataset.wired) {
-            reasoningHeader.dataset.wired = 'true';
-            reasoningHeader.addEventListener('click', () => {
-              const isCollapsed = reasoningContent.classList.contains('hidden');
-              reasoningContent.classList.toggle('hidden', !isCollapsed);
-              if (reasoningToggleIcon) reasoningToggleIcon.textContent = isCollapsed ? '▼' : '►';
-            });
-          }
-        } else if (reasoningContainer) {
-          reasoningContainer.classList.add('hidden');
-        }
-
         if ((chapter.originalRawText && chapter.originalRawText.trim() !== text.trim()) || chapter.translationCost || chapter.reasoningText) {
           if (toggleSourceDrawerBtn) toggleSourceDrawerBtn.classList.remove('hidden');
-          if (sourceDrawerText) sourceDrawerText.textContent = chapter.originalRawText || 'No separate raw source text stored.';
         } else {
           if (toggleSourceDrawerBtn) toggleSourceDrawerBtn.classList.add('hidden');
           closeSourceDrawer();

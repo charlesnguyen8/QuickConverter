@@ -36,6 +36,7 @@ const readerHtml = fs.readFileSync(path.join(repoRoot, 'views', 'reader.html'), 
 const novelHtml = fs.readFileSync(path.join(repoRoot, 'views', 'novel.html'), 'utf8');
 const popupHtml = fs.readFileSync(path.join(repoRoot, 'views', 'popup.html'), 'utf8');
 const settingsHtml = fs.readFileSync(path.join(repoRoot, 'views', 'settings.html'), 'utf8');
+const readerSourceSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'ReaderSourceDrawer.jsx'), 'utf8');
 
 // Reader View
 assert(readerHtml.includes('id="reader-provider-btn-official"'), 'views/reader.html must have #reader-provider-btn-official');
@@ -45,8 +46,8 @@ assert(readerHtml.includes('id="reader-bridge-preset-btn"'), 'views/reader.html 
 assert(readerHtml.includes('id="reader-test-custom-btn"'), 'views/reader.html must have #reader-test-custom-btn');
 assert(readerHtml.includes('id="reader-api-key-label"'), 'views/reader.html must have #reader-api-key-label');
 assert(readerHtml.includes('value="deepseek-reasoner"'), 'views/reader.html must have deepseek-reasoner in model select');
-assert(readerHtml.includes('id="source-reasoning-container"'), 'views/reader.html must have #source-reasoning-container in source drawer');
-assert(readerHtml.includes('id="source-reasoning-content"'), 'views/reader.html must have #source-reasoning-content in source drawer');
+assert(readerSourceSrc.includes('id="source-reasoning-container"'), 'ReaderSourceDrawer.jsx must have #source-reasoning-container in source drawer');
+assert(readerSourceSrc.includes('DeepThink Reasoning Process'), 'ReaderSourceDrawer.jsx must have the DeepThink drawer section');
 console.log('✓ views/reader.html contains provider switcher buttons, custom URL input, and DeepThink drawer section');
 
 // Novel View
