@@ -98,6 +98,9 @@ export default function ReaderChapter() {
 
   useEffect(() => {
     applyPrefs();
+  }, [applyPrefs, chapter, loadDone]);
+
+  useEffect(() => {
     const onPrefs = () => applyPrefs();
     window.addEventListener('reader-prefs-updated', onPrefs);
     return () => window.removeEventListener('reader-prefs-updated', onPrefs);
