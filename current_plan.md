@@ -1,117 +1,120 @@
 # current_plan.md
 
-## Plan: Incremental React migration (load from `dist/`)
+## Plan: Rewrite the remaining views into React
 
-**Status:** complete for the view layer (Phases 0–7 done; Phase 8 ESM/MV3 bundling deferred/optional)
-**Related docs:** `context.md`, `AGENTS.md`
-**Rule of engagement:** execute one phase at a time to completion (build + tests + commit),
-then report. No piecemeal approval requests.
+**Goal:** every view is native React — no `dangerouslySetInnerHTML` bridges, no classic
+`views/<view>.js` logic scripts. Pure HTML shells + a React entry per view.
+
+**Rule of engagement:** one milestone at a time to completion (`npm run build:css` if classes
+changed → `npm run build:ext` → `npm test` green → commit → owner loads `dist/` for parity).
+No piecemeal approval requests. Commit per milestone so each is independently revertible.
+
+**Related docs:** `context.md`, `AGENTS.md`.
 
 ---
 
 ## 1. Decisions locked
 
-1. **Load the extension from `dist/`** — `npm run build:ext` then load unpacked from `dist/`.
-   (Repo root is no longer loadable: React pages need the bundle.)
-2. **Do not convert classic scripts to ESM yet.** Keep the global-script architecture and bridge
-   into React via the ESM facade `services/index.mjs` + `components/index.mjs` (read `globalThis.*`).
-   ESM conversion + MV3 bundling is deferred (see Phase 8).
-3. **Convert one view at a time.** A "view conversion" means: React owns the view's content
-   (header + main + dynamic regions), the old `views/<view>.js` is deleted once verified, static
-   services/providers stay classic.
-4. **Per-page React entry**: `components/react/<view>-entry.jsx` mounts `<View>` into a root div.
-5. Chrome-extension constraints respected: no ESM content scripts, no `eval`.
+1. **Load from `dist/`** — `npm run build:ext`, then load unpacked from `dist/`. Repo root is not
+   loadable (React pages need the bundle).
+2. **Static layers stay classic for now** — `services/`, `providers/`, and shared `components/*.js`
+   (`AiConfigPanel`, `UIUtils`, `AddBookButton`, `DownloadQueueService`) remain global scripts and
+   are bridged through the ESM facade (`services/index.mjs`, `components/index.mjs`). Converting
+   them to ESM is Phase 8 (optional, later).
+3. **Per-view entry** — `components/react/<view>-entry.jsx` mounts `<View>` into `#<view>-root`
+   with `flushSync` (so sibling classic scripts that run at `DOMContentLoaded` still find DOM).
+4. **No `chrome.*` in `views/` or React components** — go through `services/` (platform/storage).
+5. **Reuse shared modules** — DeepSeek/AI config must stay the shared `AiConfigPanel`; do not
+   duplicate provider UI.
+6. **Mobile-first + Tailwind** — rebuilt `styles/tailwind.css` is committed; rerun
+   `npm run build:css` whenever new utility classes appear.
 
 ---
 
-## 2. Current state (already done)
+## 2. Current state
 
-| Area | State |
-|---|---|
-| Vite build | MPA build to `dist/`, `base:'./'`, copies `providers/services/components/scripts/styles/fonts/icons/manifest.json` **and `views/*.js`** |
-| React | React 19 + `@vitejs/plugin-react`; `react()` in `vite.config.mjs` |
-| ESM facade | `services/index.mjs`, `components/index.mjs` (read `globalThis`) |
-| QueueDock | **Done** — `components/react/QueueDock.jsx` + `queue-dock-entry.jsx`; used by all 4 dock pages; vanilla `queue-dock.js` deleted |
-| Dev harness | `dev/queue-dock.html` for isolated UI iteration |
-| Tests | 12 suites, all green; Tailwind scan globs include `.jsx` + `dev/` |
+| View | React-owned | Still classic |
+|---|---|---|
+| Library | full (`LibraryView.jsx`) | — |
+| Novel | hero, chapters, name-list drawer, dock | `views/novel.js` ~400 lines: panel init, sync/download-all, `enqueueChapterDownload`, `refreshChapterList`, `novel-chapter-download` listener, balance/queue hook |
+| Reader | reading core, nav, source drawer | `views/reader.js` ~690 lines: header, typography popover, translation panel init, prefs application, not-saved/download flow |
+| Settings | Storage tab, Reader tab | DeepSeek tab is **bridged** (`deepseekTabMarkup.mjs` + `SettingsDeepSeekTab.jsx`); `settings.js` still runs `initDeepSeekSettings`, tab shell, About |
+| Popup | main view (`PopupMainView.jsx` + `PopupApp.jsx`) | detail view is **bridged** (`popupDetailHtml`); `views/popup.js` owns detail, chapters, DeepSeek panel, queue hooks |
 
----
+Bridge API currently in use (Popup): React→JS `window.__popupActions`, JS→React
+`window.__popupSetNovels/__popupSetStatus/__popupShowMain/__popupShowNovel`.
 
-## 3. Phases
-
-Each phase ends with: `npm run build:ext` succeeds → `npm test` green → reference-asset check →
-commit. Browser parity check is done by the owner after each phase.
-
-### Phase 2 — Library view → React  ⟵ **next**
-- `components/react/LibraryView.jsx`: full page content (header with stats/add-book/settings,
-  empty state, novel grid with progress + size), reading `window.StorageService`.
-- `components/react/library-entry.jsx`: mount into `#library-root`.
-- `views/library.html`: minimal shell (`<head>` unchanged, body → `#library-root`, keep classic
-  service scripts + `components/add-book.js` custom element + queue-dock entry).
-- Delete `views/library.js` once verified.
-- Keep the `novel-added` listener (React re-loads on the window event).
-
-### Phase 3 — Novel view → React (section by section)
-Largest view. Convert one section at a time into its own React root; the rest of the page stays
-static, and `novel.js` shrinks each step. Delete `novel.js` when nothing is left.
-
-- **3a — Chapters list + progress stats**: `components/react/NovelChapters.jsx` mounted into a
-  `#novel-chapters-root` section; own the list, per-chapter download/retry buttons, progress bar.
-  Remove the corresponding code from `novel.js`.
-- **3b — Hero** (artwork/title/domain/status + Name List button/count): `components/react/NovelHero.jsx`.
-- **3c — Name List drawer**: `components/react/NameListDrawer.jsx` (the ~600-line imperative
-  drawer ported last).
-- DeepSeek/cooldown panel stays as the existing `AiConfigPanel` module (already shared); only its
-  container is rendered by React with the same element IDs.
-- Delete `views/novel.js` and `views/novel.html` shell once all sections are React.
-
-### Phase 4 — Reader view → React (section by section)
-Reader subsystems are coupled through `reader.js` state (content ↔ typography prefs ↔ editing ↔
-source drawer ↔ DeepSeek panel), so convert in three sub-phases:
-- **4a — Reading core**: `ReaderChapter.jsx` (chapter title + body paragraphs + paragraph editing
-  + metrics) mounted in `main`; React applies typography prefs and listens for `reader-prefs-updated`.
-- **4b — Header + typography popover**: `ReaderHeader.jsx` + `ReaderPrefsPopover.jsx` (nav, theme,
-  font controls) — owns prefs state.
-- **4c — Source drawer + DeepSeek panel container**: `ReaderSourceDrawer.jsx`; panel stays the shared
-  `AiConfigPanel` module, container rendered by React.
-- Delete `views/reader.js` when nothing is left.
-
-### Phase 5 — Settings view → React
-- `components/react/SettingsView.jsx` + `settings-entry.jsx`; delete `settings.js` after parity.
-
-### Phase 6 — Popup view → React
-- `components/react/PopupView.jsx` + `popup-entry.jsx`; delete `popup.js` after parity.
-
-### Phase 7 — Cleanup
-- Delete now-dead globals/facade entries; update `context.md`/`AGENTS.md`;
-  rebuild `tailwind.css`; confirm no `views/*.js` remain that React replaced.
-
-### Phase 8 — (deferred) ESM + MV3 bundling
-- Only if worth it: convert `services/`+`providers/` to ESM, module service worker, IIFE content
-  bundle, drop the facade. Not required for React.
+Tests: 12 suites green. Tests that grep HTML for moved IDs read the React/markup module instead —
+update them whenever an ID moves.
 
 ---
 
-## 4. Backlog (separate from React phases)
+## 3. Milestones
 
-1. **OAuth under `dist/`** — dist extension ID differs from the registered client; need a second
-   "Chrome Extension" OAuth client for the dist ID (or re-register) for cloud sync to work in dist.
-2. **Scraper** — `wetriedtls` returns a Cloudflare interstitial; content script logs
-   "Could not find chapter content in DOM after waiting". Needs the real chapter DOM to update
-   `providers/wetriedtls.js` selectors / add challenge handling.
+### M1 — Popup: detail view → React  ← **next**
+- `components/react/PopupNovelView.jsx`: thumbnail/title/domain/stats, chapter count, chapter rows
+  (status badge, active/queued/download/retry/delete actions), Download All.
+- Port the chapter rendering + per-row actions from `popup.js` `renderPopupChapters` and the queue
+  in-place progress (`updatePopupActiveProgressInPlace`, `handlePopupQueueChange`) into React.
+- Delete `popupDetailHtml` and the now-dead main-view markup from `popupMarkup.mjs`; delete the file
+  once its only export is gone. Move popup tests off `popupMarkup.mjs`.
+- `popup.js` keeps: DeepSeek panel init, `extractNovelInfo`, status detection, tab query, queue
+  subscription.
+
+### M2 — Popup: DeepSeek panel + view deletion
+- Render the shared `AiConfigPanel` container from React (same element IDs, `compact` variant),
+  passing `currentActiveNovel` prompt hooks as props/state.
+- Port the remaining `popup.js` glue (tab query, provider status) into React hooks; delete
+  `views/popup.js`; `views/popup.html` becomes a shell + React entry.
+- Drop `window.__popup*` globals.
+
+### M3 — Settings: DeepSeek tab → React (real JSX)
+- Replace the `deepseekTabMarkup.mjs` bridge with JSX + hooks wired to `AiConfigPanel`; delete
+  `SettingsDeepSeekTab` bridge entry and `initDeepSeekSettings` from `settings.js`.
+
+### M4 — Settings: shell + remaining tabs → React
+- `SettingsView.jsx` owns the tab shell, tab navigation, About tab, and save-indicator; delete
+  `views/settings.js` and `deepseekTabMarkup.mjs`; `settings.html` becomes a shell + entry.
+
+### M5 — Reader: finish the remaining pieces
+- Header + typography popover (`ReaderHeader.jsx` / `ReaderPrefsPopover.jsx`, owns prefs state),
+  translation panel container via `AiConfigPanel`, prefs application + `reader-prefs-updated`
+  handling, not-saved/download flow.
+- Delete `views/reader.js`; `reader.html` becomes a shell + entry.
+
+### M6 — Novel: finish the remaining pieces
+- Move panel init, sync/download-all, `enqueueChapterDownload`, `refreshChapterList`,
+  `novel-chapter-download` listener and the balance/queue hook into React.
+- Delete `views/novel.js`; `novel.html` becomes a shell + entry.
+
+### M7 — Cleanup
+- Remove facade entries/globals no longer used; update `context.md` + `AGENTS.md`; rebuild
+  `tailwind.css`; confirm no logic remains in `views/*.js` (shells only).
+
+### M8 — (deferred) ESM + MV3 bundling
+- Convert `services/` + `providers/` to ESM, module service worker, IIFE content bundle, drop the
+  facade. Not required for the React rewrite.
 
 ---
 
-## 5. Verification per phase
+## 4. Backlog (separate)
+
+1. **OAuth under `dist/`** — dist extension ID differs from the registered client; register a second
+   "Chrome Extension" OAuth client (or re-register) so cloud sync works in `dist/`.
+2. **Scraper** — `wetriedtls` serves a Cloudflare interstitial; content script logs "Could not find
+   chapter content in DOM after waiting". Needs real chapter DOM to update `providers/wetriedtls.js`
+   selectors / add challenge handling.
+
+---
+
+## 5. Verification per milestone
 
 - `node --check` on changed classic JS; `npm run build:ext`; `npm test` (12 suites).
 - Reference-asset check: every local `src`/`href` in `dist/views/*.html` resolves.
-- `npm run build:css` if new utility classes appear (commit the rebuilt `tailwind.css`).
+- `npm run build:css` if new utility classes appear (commit `styles/tailwind.css`).
 - Owner: load `dist/`, exercise the converted view, confirm parity.
-
----
 
 ## 6. Rollback
 
-Each phase is one commit; revert it to restore the previous view. The classic view script is only
-deleted after the owner confirms parity, so any phase can be backed out.
+Each milestone is one commit; revert it to restore the previous state. A classic view script is only
+deleted after the owner confirms parity, so any milestone can be backed out.
