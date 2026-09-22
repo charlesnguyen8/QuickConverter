@@ -129,8 +129,8 @@ export default function LibraryView() {
 
   return (
     <>
-      <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+      <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30 px-4 sm:px-6 py-3 sm:py-4">
+        <div className="max-w-6xl mx-auto flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-base shadow-sm">
               Q
@@ -145,7 +145,7 @@ export default function LibraryView() {
             </div>
           </div>
 
-          <div id="library-stats" className="flex items-center gap-2 text-xs font-medium">
+          <div id="library-stats" className="flex items-center gap-2 text-xs font-medium flex-wrap">
             <span id="library-novel-count" className="px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700/80 text-slate-300">
               {countText}
             </span>
@@ -159,7 +159,7 @@ export default function LibraryView() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto w-full px-6 py-8 flex-1 flex flex-col gap-6">
+      <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 flex-1 flex flex-col gap-6">
         {loaded && count === 0 ? (
           <div id="library-grid" className="flex flex-col items-center justify-center py-24 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-3xl mb-4">
