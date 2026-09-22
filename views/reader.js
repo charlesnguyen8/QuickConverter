@@ -26,12 +26,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const novelBadge = document.getElementById('novel-badge');
   const chapterBadge = document.getElementById('chapter-badge');
-  const chapterTransBadge = document.getElementById('chapter-trans-badge');
-  const chapterEditedBadge = document.getElementById('chapter-edited-badge');
   const chapterMainTitle = document.getElementById('chapter-main-title');
-  const editTitleBtn = document.getElementById('edit-title-btn');
-  const chapterCharCount = document.getElementById('chapter-char-count');
-  const chapterReadingTime = document.getElementById('chapter-reading-time');
   const chapterBody = document.getElementById('chapter-body');
 
   // Bottom Navigation
@@ -40,7 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sourceDrawer = document.getElementById('source-drawer');
   const closeSourceDrawerBtn = document.getElementById('close-source-drawer-btn');
   const copySourceBtn = document.getElementById('copy-source-btn');
-  const sourceDrawerText = document.getElementById('source-drawer-text');
 
   // Toast Element
   const saveToast = document.getElementById('save-toast');
@@ -402,23 +396,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     { passive: true }
   );
 
-  const escapeHtml = window.UIUtils.escapeHtml;
-
-  function updateMetricsFromDom() {
-    if (!chapterBody) return;
-    const allParagraphs = Array.from(chapterBody.querySelectorAll('.paragraph-text'))
-      .map((el) => el.innerText.trim())
-      .filter((t) => t.length > 0);
-    const fullText = allParagraphs.join('\n\n');
-
-    const charCount = fullText.length;
-    if (chapterCharCount) chapterCharCount.textContent = `${charCount.toLocaleString()} characters`;
-    if (chapterReadingTime) {
-      const words = fullText.split(/\s+/).length;
-      const mins = Math.max(1, Math.round(words / 220));
-      chapterReadingTime.textContent = `~${mins} min read`;
-    }
-  }
 
   // --- Load Novel and Chapter Data ---
   try {
@@ -442,160 +419,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (headerChapterTitle) headerChapterTitle.textContent = fallbackTitle;
     if (chapterMainTitle) chapterMainTitle.textContent = fallbackTitle;
     if (chapterBadge) chapterBadge.textContent = `Ch. ${chapterNumber}`;
-
-    // --- In-Place Paragraph Editing System ---
-    function startEditingParagraph(pBlock) {
-      const pEl = pBlock.querySelector('.paragraph-text');
-      if (!pEl || pEl.getAttribute('contenteditable') === 'true') return;
-
-      const currentText = pEl.innerText.trim();
-      pEl.dataset.origText = currentText;
-
-      pEl.setAttribute('contenteditable', 'true');
-      pEl.classList.add('ring-1', 'ring-indigo-500/60', 'bg-slate-800/90', 'px-2', 'py-1', 'shadow-inner');
-      pEl.focus();
-
-      // Place caret at end or selection
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(pEl);
-      range.collapse(false);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-
-    async function finishEditingParagraph(pBlock, save = true) {
-      const pEl = pBlock.querySelector('.paragraph-text');
-      const savePill = pBlock.querySelector('.save-pill');
-      if (!pEl || pEl.getAttribute('contenteditable') !== 'true') return;
-
-      const origText = pEl.dataset.origText || '';
-      const newText = pEl.innerText.trim();
-
-      pEl.setAttribute('contenteditable', 'false');
-      pEl.classList.remove('ring-1', 'ring-indigo-500/60', 'bg-slate-800/90', 'px-2', 'py-1', 'shadow-inner');
-
-      if (!save) {
-        pEl.innerText = origText;
-        return;
-      }
-
-      if (newText !== origText && newText.length > 0) {
-        // Collect all paragraphs in the document
-        const allParagraphs = Array.from(chapterBody.querySelectorAll('.paragraph-text'))
-          .map((el) => el.innerText.trim())
-          .filter((t) => t.length > 0);
-        const fullText = allParagraphs.join('\n\n');
-
-        try {
-          await window.StorageService.updateChapter(novel.id, chapterNumber, {
-            rawText: fullText,
-            convertedText: '',
-            isUserEdited: true,
-            editedAt: Date.now()
-          });
-
-          if (currentChapter) {
-            currentChapter.rawText = fullText;
-            currentChapter.isUserEdited = true;
-          }
-
-          if (chapterEditedBadge) {
-            chapterEditedBadge.classList.remove('hidden');
-          }
-
-          // Show subtle inline Saved pill
-          if (savePill) {
-            savePill.classList.remove('hidden');
-            setTimeout(() => {
-              savePill.classList.add('hidden');
-            }, 1800);
-          }
-
-          updateMetricsFromDom();
-        } catch (err) {
-          console.error('Failed to auto-save paragraph edit:', err);
-          showToast('Failed to save edit: ' + err.message);
-        }
-      }
-    }
-
-    // --- Inline Chapter Title Editing System ---
-    function startEditingTitle() {
-      if (!chapterMainTitle || chapterMainTitle.getAttribute('contenteditable') === 'true') return;
-
-      const orig = chapterMainTitle.innerText.trim();
-      chapterMainTitle.dataset.origTitle = orig;
-
-      chapterMainTitle.setAttribute('contenteditable', 'true');
-      chapterMainTitle.classList.add('ring-1', 'ring-indigo-500/60', 'bg-slate-800/90', 'px-2', 'py-0.5');
-      chapterMainTitle.focus();
-
-      // Select all text in title
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(chapterMainTitle);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-
-    async function finishEditingTitle(save = true) {
-      if (!chapterMainTitle || chapterMainTitle.getAttribute('contenteditable') !== 'true') return;
-
-      const orig = chapterMainTitle.dataset.origTitle || '';
-      const newTitle = chapterMainTitle.innerText.trim();
-
-      chapterMainTitle.setAttribute('contenteditable', 'false');
-      chapterMainTitle.classList.remove('ring-1', 'ring-indigo-500/60', 'bg-slate-800/90', 'px-2', 'py-0.5');
-
-      if (!save) {
-        chapterMainTitle.innerText = orig;
-        return;
-      }
-
-      if (newTitle && newTitle !== orig) {
-        try {
-          await window.StorageService.updateChapter(novel.id, chapterNumber, {
-            title: newTitle,
-            isUserEdited: true,
-            editedAt: Date.now()
-          });
-
-          if (currentChapter) currentChapter.title = newTitle;
-          if (headerChapterTitle) headerChapterTitle.textContent = newTitle;
-          document.title = `${novel.title} - ${newTitle}`;
-
-          if (chapterEditedBadge) {
-            chapterEditedBadge.classList.remove('hidden');
-          }
-
-          showToast('Title updated ✓');
-        } catch (err) {
-          console.error('Failed to save chapter title:', err);
-          showToast('Failed to save title: ' + err.message);
-        }
-      }
-    }
-
-    if (chapterMainTitle) {
-      chapterMainTitle.addEventListener('dblclick', startEditingTitle);
-      chapterMainTitle.addEventListener('blur', () => finishEditingTitle(true));
-      chapterMainTitle.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          finishEditingTitle(true);
-          chapterMainTitle.blur();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          finishEditingTitle(false);
-          chapterMainTitle.blur();
-        }
-      });
-    }
-
-    if (editTitleBtn) {
-      editTitleBtn.addEventListener('click', startEditingTitle);
-    }
 
     // --- Source Reference Drawer Controller ---
     function openSourceDrawer() {
@@ -631,26 +454,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Global Keydown Handler (Navigation, Hotkeys & Active ContentEditable overrides)
     window.addEventListener('keydown', (e) => {
-      // If currently editing inside a contenteditable paragraph
       const activeEl = document.activeElement;
-      if (activeEl && activeEl.getAttribute('contenteditable') === 'true') {
-        const pBlock = activeEl.closest('.paragraph-block');
-        if (pBlock) {
-          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-            e.preventDefault();
-            finishEditingParagraph(pBlock, true);
-            activeEl.blur();
-            return;
-          }
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            finishEditingParagraph(pBlock, false);
-            activeEl.blur();
-            return;
-          }
-        }
-        return; // Don't trigger navigation keys while editing text
-      }
 
       // If inside an input or textarea
       if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;

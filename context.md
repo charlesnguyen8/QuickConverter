@@ -9,7 +9,7 @@
 QuickConverter is an offline-first web novel reader, downloader, and AI translator. It enables users to catalog novel chapters from online providers, queue them for sequential background downloading, translate them in real-time via LLM APIs (Official DeepSeek or Local Web Bridges / Custom OpenAI-compatible endpoints) with live streaming progress, and read them with custom typography.
 
 ### Current Implementation Stack
-- **Interface**: Vanilla HTML5, Vanilla JavaScript (ES6+), Vanilla CSS + Tailwind CSS (compiled via CLI).
+- **Interface**: React 19 + Vite for the view layer (built to `dist/`; load unpacked from there), with the classic global-script services as the data layer. Tailwind CSS (compiled via CLI).
 - **Persistent Storage**: W3C **IndexedDB** (`services/storage.js`) for novel metadata and chapter texts.
 - **Queue & Background**: Centralized sequential FIFO queue (`services/download-queue.js`) with concurrency control (strictly 1 task at a time), pause/resume, individual item cancellation, and live circular progress.
 - **Dock UI**: Reusable solid, opaque floating dock React component (`components/react/QueueDock.jsx`) with expanded/collapsed modes, mounted via `components/react/queue-dock-entry.jsx`.
@@ -23,7 +23,7 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 
 ```text
 QuickConverter/
-├── components/          # Reusable UI modules (QueueDock, AddBookButton, AiConfigPanel, UIUtils)
+├── components/          # Reusable UI modules (AiConfigPanel, UIUtils, AddBookButton) + react/ views
 ├── fonts/               # 11 offline web font binaries (Merriweather, Inter, etc.)
 ├── icons/               # Extension icons (16, 48, 128px)
 ├── providers/           # Web scraping catalog & content extractors (wetriedtls.js)
