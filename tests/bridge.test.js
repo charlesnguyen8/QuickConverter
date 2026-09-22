@@ -72,7 +72,7 @@ assert(popupHas('popup-api-key-label'), 'popup must have #popup-api-key-label');
 console.log('✓ views/popup.html contains provider switcher buttons, custom URL input, and preset button');
 
 // Settings View
-const settingsDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'deepseekTabMarkup.mjs'), 'utf8');
+const settingsDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'SettingsDeepSeekTab.jsx'), 'utf8');
 const settingsHas = (id) => settingsHtml.includes(`id="${id}"`) || settingsDeepseekSrc.includes(`id="${id}"`);
 assert(settingsHas('provider-radio-official'), 'settings must have #provider-radio-official');
 assert(settingsHas('provider-radio-bridge'), 'settings must have #provider-radio-bridge');
