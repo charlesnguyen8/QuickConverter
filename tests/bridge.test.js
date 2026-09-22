@@ -61,12 +61,14 @@ assert(novelHtml.includes('value="deepseek-reasoner"'), 'views/novel.html must h
 console.log('✓ views/novel.html contains provider switcher buttons, custom URL input, and reasoner model option');
 
 // Popup View
-assert(popupHtml.includes('id="popup-provider-btn-official"'), 'views/popup.html must have #popup-provider-btn-official');
-assert(popupHtml.includes('id="popup-provider-btn-custom"'), 'views/popup.html must have #popup-provider-btn-custom');
-assert(popupHtml.includes('id="popup-custom-base-url"'), 'views/popup.html must have #popup-custom-base-url');
-assert(popupHtml.includes('id="popup-bridge-preset-btn"'), 'views/popup.html must have #popup-bridge-preset-btn');
-assert(popupHtml.includes('id="popup-test-custom-btn"'), 'views/popup.html must have #popup-test-custom-btn');
-assert(popupHtml.includes('id="popup-api-key-label"'), 'views/popup.html must have #popup-api-key-label');
+const popupMarkupSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'popupMarkup.mjs'), 'utf8');
+const popupHas = (id) => popupHtml.includes(`id="${id}"`) || popupMarkupSrc.includes(`id="${id}"`);
+assert(popupHas('popup-provider-btn-official'), 'popup must have #popup-provider-btn-official');
+assert(popupHas('popup-provider-btn-custom'), 'popup must have #popup-provider-btn-custom');
+assert(popupHas('popup-custom-base-url'), 'popup must have #popup-custom-base-url');
+assert(popupHas('popup-bridge-preset-btn'), 'popup must have #popup-bridge-preset-btn');
+assert(popupHas('popup-test-custom-btn'), 'popup must have #popup-test-custom-btn');
+assert(popupHas('popup-api-key-label'), 'popup must have #popup-api-key-label');
 console.log('✓ views/popup.html contains provider switcher buttons, custom URL input, and preset button');
 
 // Settings View
