@@ -166,6 +166,7 @@ function test(name, fn) {
     assert(header.includes('value="unkempt"'), 'expected the font family options');
     assert(header.includes('width:0%') && !header.includes("0%;"), 'progress bar must start at width:0% with no malformed style value');
     assert(header.includes('id="reading-progress-percent"'), 'expected a reading progress percentage readout');
+    assert(header.includes('id="reading-progress-pill"') && header.includes('Reading progress'), 'expected a labelled reading-progress indicator');
     assert(header.includes('id="reading-progress-track"'), 'expected a fixed progress track behind the bar');
   });
 

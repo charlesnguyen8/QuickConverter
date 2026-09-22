@@ -40,8 +40,9 @@ export default function ReaderHeader() {
           <span id="header-chapter-title" className="text-xs sm:text-sm font-bold text-slate-200 truncate max-w-[240px] sm:max-w-md">
             Loading chapter...
           </span>
-          <span id="reading-progress-percent" className="text-[10px] font-mono text-slate-500 mt-0.5">
-            0%
+          <span id="reading-progress-pill" className="inline-flex items-center gap-1.5 mt-1 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-[10px] font-medium text-slate-300">
+            Reading progress
+            <span id="reading-progress-percent" className="font-mono font-semibold text-indigo-300">0%</span>
           </span>
         </div>
 
