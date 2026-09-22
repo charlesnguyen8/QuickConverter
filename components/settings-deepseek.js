@@ -1,11 +1,75 @@
 /**
  * QuickConverter - Settings DeepSeek controller
- * Moved out of views/settings.js (M3). Relies on the global-scope bindings
- * declared in settings.js: balanceTracker, updateBalanceDisplay,
- * triggerSaveIndicator, DeepSeekService.
+ * Moved out of views/settings.js (M3). Self-contained: it owns the balance
+ * display and save-toast helpers and exposes them for the other settings tabs.
  */
 (function () {
   'use strict';
+
+  let balanceTracker = null;
+  let toastTimeout = null;
+
+  function updateBalanceDisplay(data) {
+    const balanceText = document.getElementById('settings-balance-text');
+    const grantedText = document.getElementById('settings-granted-text');
+    const headerBadge = document.getElementById('deepseek-header-balance');
+    const headerVal = document.getElementById('deepseek-header-balance-val');
+
+    if (!data || !data.success || !data.isAvailable) {
+      if (balanceText) {
+        if (data && data.success && !data.isAvailable) {
+          balanceText.textContent = `${data.compact || '$0.00'} (No Funds)`;
+        } else {
+          balanceText.textContent = 'No Balance Available';
+        }
+      }
+      if (grantedText) {
+        grantedText.textContent = data && data.error ? `(${data.error})` : '(Key not set or invalid)';
+      }
+      if (headerVal) headerVal.textContent = 'Unconfigured';
+      return;
+    }
+
+    const total = parseFloat(data.totalBalance || '0').toFixed(2);
+    const granted = parseFloat(data.grantedBalance || '0').toFixed(2);
+    const currency = data.currency || 'USD';
+    const symbol = data.currencySymbol || '$';
+
+    if (balanceText) balanceText.textContent = `${symbol}${total} ${currency}`;
+    if (grantedText) grantedText.textContent = `(Includes ${symbol}${granted} granted)`;
+    if (headerVal) headerVal.textContent = `${symbol}${total}`;
+    if (headerBadge) {
+      headerBadge.classList.remove('hidden');
+      headerBadge.classList.add('inline-flex');
+    }
+  }
+
+  function triggerSaveIndicator(message = 'Settings saved') {
+    const pill = document.getElementById('settings-save-pill');
+    if (pill) {
+      pill.classList.remove('opacity-0');
+      setTimeout(() => {
+        pill.classList.add('opacity-0');
+      }, 1800);
+    }
+
+    const toast = document.getElementById('settings-toast');
+    const toastMsg = document.getElementById('settings-toast-msg');
+    if (toast && toastMsg) {
+      toastMsg.textContent = message;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+        toast.classList.remove('translate-y-0', 'opacity-100');
+      }, 2200);
+    }
+  }
+
+  window.triggerSaveIndicator = triggerSaveIndicator;
+  window.updateBalanceDisplay = updateBalanceDisplay;
 
 async function initDeepSeekSettings() {
   if (typeof DeepSeekService === 'undefined') return;
