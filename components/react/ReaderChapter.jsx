@@ -250,7 +250,7 @@ export default function ReaderChapter() {
           <div key={idx} className="paragraph-block relative group rounded-md transition-all -mx-2 px-2 py-0.5 hover:bg-slate-800/30" data-idx={idx}>
             <p
               ref={(el) => { paragraphRefs.current[idx] = el; }}
-              className="paragraph-text leading-relaxed outline-none rounded transition-all cursor-text select-text"
+              className="paragraph-text outline-none rounded transition-all cursor-text select-text"
               tabIndex={0}
               title="Double-click to edit this paragraph"
               onDoubleClick={() => editParagraph(idx)}
