@@ -13,7 +13,8 @@ const testFiles = [
   'custom-api.test.js',
   'bridge.test.js',
   'download-queue.test.js',
-  'add-book.test.js'
+  'add-book.test.js',
+  'name-list.test.js'
 ];
 
 let allPassed = true;

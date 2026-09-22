@@ -303,6 +303,90 @@ const StorageService = {
     return this.updateNovel(novel.id, updates);
   },
 
+  /**
+   * Retrieves the Name List (glossary) for a specific novel.
+   * @param {string} novelId
+   * @returns {Promise<Array<{id: string, original: string, translation: string, chapterFirstSeen: number|string, addedAt: number}>>}
+   */
+  async getNameList(novelId) {
+    if (!novelId) return [];
+    const novel = await this.getNovelById(novelId);
+    return (novel && Array.isArray(novel.nameList)) ? [...novel.nameList] : [];
+  },
+
+  /**
+   * Saves the entire Name List array for a novel (useful for bulk import/reordering).
+   * @param {string} novelId
+   * @param {Array} nameList
+   * @returns {Promise<Array>}
+   */
+  async saveNameList(novelId, nameList) {
+    if (!novelId) return [];
+    const list = Array.isArray(nameList) ? nameList : [];
+    await this.updateNovel(novelId, { nameList: list });
+    return list;
+  },
+
+  /**
+   * Adds a new name entry to the novel's Name List.
+   * @param {string} novelId
+   * @param {{ original: string, translation: string, chapterFirstSeen?: number|string }} entry
+   * @returns {Promise<{id: string, original: string, translation: string, chapterFirstSeen: number|string, addedAt: number}>}
+   */
+  async addNameEntry(novelId, entry) {
+    if (!novelId || !entry) return null;
+    const currentList = await this.getNameList(novelId);
+    const newEntry = {
+      id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      original: (entry.original || '').trim(),
+      translation: (entry.translation || '').trim(),
+      chapterFirstSeen: entry.chapterFirstSeen !== undefined && entry.chapterFirstSeen !== '' ? entry.chapterFirstSeen : null,
+      addedAt: Date.now()
+    };
+    currentList.unshift(newEntry);
+    await this.saveNameList(novelId, currentList);
+    return newEntry;
+  },
+
+  /**
+   * Updates an existing name entry.
+   * @param {string} novelId
+   * @param {string} entryId
+   * @param {Partial<{ original: string, translation: string, chapterFirstSeen: number|string }>} updates
+   * @returns {Promise<Object|null>}
+   */
+  async updateNameEntry(novelId, entryId, updates) {
+    if (!novelId || !entryId || !updates) return null;
+    const currentList = await this.getNameList(novelId);
+    const index = currentList.findIndex(e => e.id === entryId);
+    if (index === -1) return null;
+
+    currentList[index] = {
+      ...currentList[index],
+      original: updates.original !== undefined ? updates.original.trim() : currentList[index].original,
+      translation: updates.translation !== undefined ? updates.translation.trim() : currentList[index].translation,
+      chapterFirstSeen: updates.chapterFirstSeen !== undefined ? updates.chapterFirstSeen : currentList[index].chapterFirstSeen
+    };
+
+    await this.saveNameList(novelId, currentList);
+    return currentList[index];
+  },
+
+  /**
+   * Deletes a name entry from the novel's Name List.
+   * @param {string} novelId
+   * @param {string} entryId
+   * @returns {Promise<boolean>}
+   */
+  async deleteNameEntry(novelId, entryId) {
+    if (!novelId || !entryId) return false;
+    const currentList = await this.getNameList(novelId);
+    const filtered = currentList.filter(e => e.id !== entryId);
+    if (filtered.length === currentList.length) return false;
+    await this.saveNameList(novelId, filtered);
+    return true;
+  },
+
   async syncNovelMetadata(slugOrId) {
     let novel = await this.getNovelById(slugOrId);
     if (!novel) {
