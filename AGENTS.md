@@ -31,6 +31,25 @@ When adding a component test: `const { default: View } = await loadComponent('co
 then `render(h(View, props))` and assert on the returned string (React separates adjacent text
 nodes, so the helper's `render` strips `<!-- -->`).
 
+**Testing expectations (owner rules)**
+1. **Test-first for behavior.** For a new feature or a bug fix, write the failing test that
+   reproduces it *before* the code, then implement until green. State the red → green in the
+   commit message.
+2. **Never edit an assertion because the code disagrees.** A red test is a signal, not an
+   obstacle. You may only change an expectation when (a) the expectation was wrong about the
+   *behavior*, or (b) the test's proxy changed — a file/ID moved, or a serializer's output format
+   differs (e.g. SSR emits `style="width:0%"`). Say which, in the commit message.
+3. **Never weaken or delete an assertion to go green.** No shrinking a check until it passes, no
+   dropping a case. If a proxy assertion is genuinely obsolete, replace it with one that protects
+   the same behavior.
+4. **Prefer behavior-level assertions** (`render` a component/prop and assert output, or exercise
+   the service) over static greps of source. Static/contract greps are allowed for things with no
+   runtime (manifest keys, script tags) and must read the file that *owns* the ID; expect to
+   repoint them when markup moves.
+5. **Refactors are behavior-preserving.** Lock behavior with tests first (characterization), keep
+   them green, and only repoint location-based proxies.
+6. **Report test changes.** Every commit that touches a test must say why the test changed.
+
 ## Architecture rules (see `context.md` for full detail)
 
 1. **Platform API isolation** — never call `chrome.*` directly in `views/` or `components/`;

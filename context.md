@@ -16,6 +16,7 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 - **AI Translation Coordinator**: `services/ai-service.js` routing between `services/deepseek.js` (Official Cloud API) and `services/custom-api.js` (Local Web Bridge / Custom OpenAI-compatible endpoints) with SSE streaming delta accumulation and DeepThink reasoning extraction/discarding.
 - **Shared View Modules**: `components/ai-config-panel.js` (`window.AiConfigPanel`) provides the single DeepSeek / AI-provider configuration panel used by the novel, popup, and reader views via `createAiConfigPanel({ variant, ids, capabilities, hooks })`. `components/ui-utils.js` (`window.UIUtils`) provides shared helpers (e.g. `escapeHtml`/`escapeAttr`). Loaded via classic `<script>` tags before the view script.
 - **Testing**: `npm test` runs 13 suites via `tests/run_all.js` — twelve zero-dependency Node suites (unit + static/contract) plus `tests/components.test.js`, which renders the React components with `react-dom/server` (`renderToString`); JSX is compiled by the `esbuild` devDependency via `tests/helpers/render.js`. Effects don't run server-side, so component tests cover prop → markup only.
+- **Testing rules (owner)**: test-first for behavior and bug fixes; never edit an assertion just because the code disagrees (only when the expectation was wrong about behavior, or a file/format proxy moved); never weaken/delete assertions to go green; prefer behavior-level render assertions over static source greps; report every test change and why in the commit. See `AGENTS.md`.
 
 ---
 
