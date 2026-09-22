@@ -2,7 +2,7 @@
 
 ## Plan: Incremental React migration (load from `dist/`)
 
-**Status:** paused (done: Phases 0–5, 7; deferred: Phase 6 popup, Phase 8 ESM)
+**Status:** complete for the view layer (Phases 0–7 done; Phase 8 ESM/MV3 bundling deferred/optional)
 **Related docs:** `context.md`, `AGENTS.md`
 **Rule of engagement:** execute one phase at a time to completion (build + tests + commit),
 then report. No piecemeal approval requests.
