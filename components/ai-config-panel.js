@@ -750,6 +750,18 @@
       if (typeof hooks.onToggle === 'function') hooks.onToggle(checked);
     });
 
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (e) => {
+        if (e.key !== 'quickconverter_deepseek_enabled' || e.newValue === null) return;
+        const enabled = e.newValue === 'true';
+        if (toggleEl.checked !== enabled) {
+          toggleEl.checked = enabled;
+          updateState(enabled);
+          if (typeof hooks.onToggle === 'function') hooks.onToggle(enabled);
+        }
+      });
+    }
+
     if (visibilityBtn && keyEl) {
       visibilityBtn.addEventListener('click', () => {
         const isPassword = keyEl.type === 'password';
