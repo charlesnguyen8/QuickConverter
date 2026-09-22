@@ -10,10 +10,10 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 
 ### Current Implementation Stack
 - **Interface**: React 19 + Vite for the view layer (built to `dist/`; load unpacked from there), with the classic global-script services as the data layer. Tailwind CSS (compiled via CLI).
-- **View apps**: Popup (`PopupApp`), Settings (`SettingsView`), Reader (`ReaderApp`) and Novel (`NovelApp`) are fully React; each HTML file is a shell mounting one `components/react/<view>-entry.jsx` into `#<view>-root` (see `current_plan.md`).
+- **View apps**: Popup (`PopupApp`), Settings (`SettingsView`), Reader (`ReaderApp`) and Novel (`NovelApp`) are fully React; each HTML file is a shell mounting one `components/react/<view>/<view>-entry.jsx` into `#<view>-root` (see `current_plan.md`).
 - **Persistent Storage**: W3C **IndexedDB** (`services/storage.js`) for novel metadata and chapter texts.
 - **Queue & Background**: Centralized sequential FIFO queue (`services/download-queue.js`) with concurrency control (strictly 1 task at a time), pause/resume, individual item cancellation, and live circular progress.
-- **Dock UI**: Reusable solid, opaque floating dock React component (`components/react/QueueDock.jsx`) with expanded/collapsed modes, mounted via `components/react/queue-dock-entry.jsx`.
+- **Dock UI**: Reusable solid, opaque floating dock React component (`components/react/shared/QueueDock.jsx`) with expanded/collapsed modes, mounted via `components/react/shared/queue-dock-entry.jsx`.
 - **AI Translation Coordinator**: `services/ai-service.js` routing between `services/deepseek.js` (Official Cloud API) and `services/custom-api.js` (Local Web Bridge / Custom OpenAI-compatible endpoints) with SSE streaming delta accumulation and DeepThink reasoning extraction/discarding.
 - **Shared View Modules**: `components/ai-config-panel.js` (`window.AiConfigPanel`) provides the single DeepSeek / AI-provider configuration panel used by the novel, popup, and reader views via `createAiConfigPanel({ variant, ids, capabilities, hooks })`. `components/add-book.js` registers the `<add-book-button>` custom element. Loaded via classic `<script>` tags before the view entry.
 - **Testing**: `npm test` runs 13 suites via `tests/run_all.js` — twelve zero-dependency Node suites (unit + static/contract) plus `tests/components.test.js`, which renders the React components with `react-dom/server` (`renderToString`); JSX is compiled by the `esbuild` devDependency via `tests/helpers/render.js`. Effects don't run server-side, so component tests cover prop → markup only.
@@ -25,7 +25,7 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 
 ```text
 QuickConverter/
-├── components/          # Reusable UI modules (AiConfigPanel, add-book custom element) + react/ views
+├── components/          # Reusable UI modules (AiConfigPanel, add-book custom element) + react/<view> views
 ├── fonts/               # 11 offline web font binaries (Merriweather, Inter, etc.)
 ├── icons/               # Extension icons (16, 48, 128px)
 ├── providers/           # Web scraping catalog & content extractors (wetriedtls.js)

@@ -27,7 +27,7 @@ migrated React components with `react-dom/server` (`renderToString`) and asserts
 JSX is compiled for Node by `tests/helpers/render.js` using the `esbuild` devDependency
 (bundled to gitignored `tests/.tmp/`). Effects/`useEffect` do not run under `renderToString`, so
 the component suite covers prop → markup only; wiring/timing still needs a manual `dist/` check.
-When adding a component test: `const { default: View } = await loadComponent('components/react/X.jsx')`,
+When adding a component test: `const { default: View } = await loadComponent('components/react/<view>/X.jsx')`,
 then `render(h(View, props))` and assert on the returned string (React separates adjacent text
 nodes, so the helper's `render` strips `<!-- -->`).
 
@@ -63,8 +63,9 @@ nodes, so the helper's `render` strips `<!-- -->`).
 
 ## Code style
 
-- **Views are React** (`components/react/*.jsx`), mounted from a per-view entry (`<view>-entry.jsx` →
-  `#<view>-root`); `services/`, `providers/` and shared `components/*.js` stay classic global scripts.
+- **Views are React**, one folder per view under `components/react/<view>/` (plus `shared/`), mounted
+  from a per-view entry (`<view>-entry.jsx` → `#<view>-root`); `services/`, `providers/` and shared
+  `components/*.js` stay classic global scripts.
 - **Do not add comments unless asked.**
 - Reuse shared view modules in `components/` (`AiConfigPanel`, `QueueDock`, `add-book-button`)
   instead of duplicating provider/DeepSeek UI across views. React views render the panel container
@@ -75,5 +76,5 @@ nodes, so the helper's `render` strips `<!-- -->`).
 ## View rewrite status
 
 Popup, Settings, Reader and Novel are fully React (no `views/*.js` logic scripts remain).
-`current_plan.md` tracks the milestones (M7 cleanup next). Shells are `views/<view>.html` +
-`components/react/<view>-entry.jsx`.
+`current_plan.md` tracks the milestones (M1–M7 complete). Shells are `views/<view>.html` +
+`components/react/<view>/<view>-entry.jsx`.

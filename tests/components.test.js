@@ -29,11 +29,11 @@ function test(name, fn) {
 (async () => {
   console.log('--- Running React Component Render Test Suite ---');
 
-  const PopupMainView = (await loadComponent('components/react/PopupMainView.jsx')).default;
-  const PopupNovelView = (await loadComponent('components/react/PopupNovelView.jsx')).default;
-  const PopupDeepseekCard = (await loadComponent('components/react/PopupDeepseekCard.jsx')).default;
-  const SettingsDeepSeekTab = (await loadComponent('components/react/SettingsDeepSeekTab.jsx')).default;
-  const PopupApp = (await loadComponent('components/react/PopupApp.jsx')).default;
+  const PopupMainView = (await loadComponent('components/react/popup/PopupMainView.jsx')).default;
+  const PopupNovelView = (await loadComponent('components/react/popup/PopupNovelView.jsx')).default;
+  const PopupDeepseekCard = (await loadComponent('components/react/popup/PopupDeepseekCard.jsx')).default;
+  const SettingsDeepSeekTab = (await loadComponent('components/react/settings/SettingsDeepSeekTab.jsx')).default;
+  const PopupApp = (await loadComponent('components/react/popup/PopupApp.jsx')).default;
 
   const baseStatus = {
     variant: 'standard',
@@ -141,7 +141,7 @@ function test(name, fn) {
   });
 
   // --- SettingsView (shell) ---
-  const SettingsView = (await loadComponent('components/react/SettingsView.jsx')).default;
+  const SettingsView = (await loadComponent('components/react/settings/SettingsView.jsx')).default;
   const shell = render(h(SettingsView));
   test('SettingsView renders the shell, tabs and toast', () => {
     for (const id of ['settings-back-btn', 'settings-back-text', 'settings-save-pill',
@@ -154,7 +154,7 @@ function test(name, fn) {
   });
 
   // --- ReaderHeader ---
-  const headerMod = await loadComponent('components/react/ReaderHeader.jsx');
+  const headerMod = await loadComponent('components/react/reader/ReaderHeader.jsx');
   const ReaderHeader = headerMod.default;
   const { computeScrollProgress } = headerMod;
   const header = render(h(ReaderHeader));
@@ -198,7 +198,7 @@ function test(name, fn) {
   });
 
   // --- ReaderNotSaved ---
-  const ReaderNotSaved = (await loadComponent('components/react/ReaderNotSaved.jsx')).default;
+  const ReaderNotSaved = (await loadComponent('components/react/reader/ReaderNotSaved.jsx')).default;
 
   test('ReaderNotSaved shows the DeepSeek card and download button', () => {
     const idle = render(h(ReaderNotSaved, { onDownload: () => {} }));
@@ -222,7 +222,7 @@ function test(name, fn) {
   });
 
   // --- ReaderApp ---
-  const ReaderApp = (await loadComponent('components/react/ReaderApp.jsx')).default;
+  const ReaderApp = (await loadComponent('components/react/reader/ReaderApp.jsx')).default;
   const readerApp = render(h(ReaderApp));
 
   test('ReaderApp renders the header, loading state, source drawer and toast', () => {
@@ -234,7 +234,7 @@ function test(name, fn) {
   });
 
   // --- NovelApp / NovelDeepseekCard ---
-  const NovelApp = (await loadComponent('components/react/NovelApp.jsx')).default;
+  const NovelApp = (await loadComponent('components/react/novel/NovelApp.jsx')).default;
   const novelApp = render(h(NovelApp));
   test('NovelApp renders the header, hero, chapters controls and DeepSeek panel', () => {
     for (const id of ['novel-settings-btn', 'novel-hero', 'chapters-badge', 'download-all-btn',
@@ -245,7 +245,7 @@ function test(name, fn) {
     assert(novelApp.includes('Download All') && novelApp.includes('Sync Catalog'), 'expected the chapter action labels');
   });
 
-  const NovelDeepseekCard = (await loadComponent('components/react/NovelDeepseekCard.jsx')).default;
+  const NovelDeepseekCard = (await loadComponent('components/react/novel/NovelDeepseekCard.jsx')).default;
   const novelCard = render(h(NovelDeepseekCard));
   test('NovelDeepseekCard renders the AiConfigPanel ids and cooldown controls', () => {
     for (const id of ['deepseek-toggle', 'deepseek-toggle-badge', 'novel-provider-badge',
@@ -266,7 +266,7 @@ function test(name, fn) {
   });
 
   // --- ReaderPrefsPopover ---
-  const prefsMod = await loadComponent('components/react/ReaderPrefsPopover.jsx');
+  const prefsMod = await loadComponent('components/react/reader/ReaderPrefsPopover.jsx');
   const ReaderPrefsPopover = prefsMod.default;
   const readerPrefs = { fontSize: 22, fontFamily: 'serif', lineHeight: 'spacious', columnWidth: 'wide', theme: 'sepia' };
   const prevLocalStorage = global.localStorage;
@@ -341,7 +341,7 @@ function test(name, fn) {
   });
 
   // --- ReaderDeepseekCard ---
-  const ReaderDeepseekCard = (await loadComponent('components/react/ReaderDeepseekCard.jsx')).default;
+  const ReaderDeepseekCard = (await loadComponent('components/react/reader/ReaderDeepseekCard.jsx')).default;
   const deepseekCard = render(h(ReaderDeepseekCard));
   test('ReaderDeepseekCard renders the AiConfigPanel container ids', () => {
     for (const id of ['reader-deepseek-toggle', 'reader-deepseek-toggle-badge', 'reader-provider-badge',

@@ -10,8 +10,8 @@ changed → `npm run build:ext` → `npm test` green → commit → owner loads 
 No piecemeal approval requests. Commit per milestone so each is independently revertible.
 
 **Status (as of M1–M7):** Popup, Settings, Reader and Novel are fully React; no `views/*.js` logic
-scripts remain and the dead ESM facade is gone. The React rewrite is complete; only M8 (ESM/MV3) is
-deferred.
+scripts remain and the dead ESM facade is gone. **M8** (next) converts the shared AI/DeepSeek panel
+and settings controller to React — the last classic logic modules.
 
 **Related docs:** `context.md`, `AGENTS.md`.
 
@@ -21,11 +21,12 @@ deferred.
 
 1. **Load from `dist/`** — `npm run build:ext`, then load unpacked from `dist/`. Repo root is not
    loadable (React pages need the bundle).
-2. **Static layers stay classic for now** — `services/`, `providers/`, and shared `components/*.js`
-   (`AiConfigPanel`, `add-book-button`) remain global scripts loaded via `<script>` before the view
-   entry. (The unused ESM facade `services/index.mjs` / `components/index.mjs` was removed in M7.)
-   Converting them to ESM is Phase 8 (optional, later).
-3. **Per-view entry** — `components/react/<view>-entry.jsx` mounts `<View>` into `#<view>-root`
+2. **Static layers** — `services/` and `providers/` remain global scripts loaded via `<script>`
+   before the view entry (converting them to ESM is dropped — not needed for the rewrite). The
+   shared UI controllers `components/ai-config-panel.js` and `components/settings-deepseek.js` are
+   converted to React in **M8**; the `<add-book-button>` custom element stays classic (optional
+   follow-up).
+3. **Per-view entry** — `components/react/<view>/<view>-entry.jsx` mounts `<View>` into `#<view>-root`
    with `flushSync` (so sibling classic scripts that run at `DOMContentLoaded` still find DOM).
 4. **No `chrome.*` in `views/` or React components** — go through `services/` (platform/storage).
 5. **Reuse shared modules** — DeepSeek/AI config must stay the shared `AiConfigPanel`; do not
@@ -155,9 +156,44 @@ Removed the unused ESM facade (`services/index.mjs`, `components/index.mjs`) and
 plus the dead `window.QueueDockReact` and `window.AddBookButton` globals. Confirmed `views/` holds
 only HTML shells (no `*.js`). Updated `context.md` + `AGENTS.md` and rebuilt `styles/tailwind.css`.
 
-### M8 — (deferred) ESM + MV3 bundling
-- Convert `services/` + `providers/` to ESM, module service worker, IIFE content bundle, drop the
-  facade. Not required for the React rewrite.
+### M8 — Shared AI panel + Settings controller → React
+The last classic logic modules. Replace the four duplicated DeepSeek card markups and the
+imperative `components/ai-config-panel.js` (`createAiConfigPanel({ids, capabilities, hooks})`) /
+`components/settings-deepseek.js` controllers with one React panel. **Behavior-preserving** —
+characterization tests first (owner rules), then keep them green.
+
+- **New `components/react/shared/AiConfigPanel.jsx`** — the single markup + state source for
+  provider (official/custom), API key, model, prompt, cooldown and balance. Props: `variant`
+  (`full`/`compact`), `capabilities`, copy overrides, and `hooks` (`getPrompt`/`savePrompt`/
+  `onPromptSaved`). Expose an imperative handle (`useImperativeHandle`):
+  `getDownloadOptions()`, `getProviderConfig()`, `refreshBalance(force)`, `showSaveIndicator()`.
+- **View consumers** — `shared/NovelDeepseekCard`, `shared/ReaderDeepseekCard`,
+  `popup/PopupDeepseekCard` and `settings/SettingsDeepSeekTab` become thin wrappers that render
+  `<AiConfigPanel>` with view-specific copy/capabilities; the duplicated card JSX is deleted.
+- **Download-option resolution** — `novel/NovelApp.jsx` (`resolveDownloadOptions`),
+  `reader/ReaderApp.jsx` (`handleDownload`) and `popup/PopupApp.jsx` stop reading panel DOM ids
+  (`getElementById('deepseek-toggle')` etc.) and use the panel ref instead; one shared option
+  builder (or the handle) replaces the per-view copies.
+- **Balance / toast** — `updateBalanceDisplay` and `triggerSaveIndicator` (currently
+  `window.*`) move into React state; the storage tab already owns cloud sync, so
+  `settings-deepseek.js` has no other job.
+- **Delete** `components/ai-config-panel.js` and `components/settings-deepseek.js`; drop their
+  `<script>` tags from novel/popup/reader/settings; remove `window.AiConfigPanel`,
+  `window.wireSettingsDeepseek`, `window.triggerSaveIndicator`, `window.updateBalanceDisplay`,
+  `window.__settingsDeepseekWired`.
+- **Tests** — repoint the ID-contract suites (`bridge.test.js`, `settings.test.js`,
+  `components.test.js`) to the shared component and add behavior tests: provider switch reflects in
+  `getDownloadOptions()`, cooldown toggle, prompt edit/save, key show/hide. Report every changed
+  expectation as a proxy move.
+
+Out of scope: `components/add-book.js` (`<add-book-button>`) — independent custom element; convert
+later only if wanted.
+
+### Post-M7 — components/react reorg — **done**
+`components/react/` is now one folder per view (`library/`, `novel/`, `popup/`, `reader/`,
+`settings/`) plus `shared/` (`QueueDock.jsx`, `queue-dock-entry.jsx`); each `*-entry.jsx` lives in
+its view folder. Pure move (no behavior change): updated the 5 view `<script>` paths, the
+`NovelChapters` → `../shared/QueueDock.jsx` import, and test file paths. Build hashes unchanged.
 
 ---
 

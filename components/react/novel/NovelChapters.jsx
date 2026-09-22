@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ProgressRing } from './QueueDock.jsx';
+import { ProgressRing } from '../shared/QueueDock.jsx';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;

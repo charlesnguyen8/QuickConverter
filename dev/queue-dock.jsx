@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import QueueDock from '../components/react/QueueDock.jsx';
+import QueueDock from '../components/react/shared/QueueDock.jsx';
 
 const listeners = new Set();
 let state = { activeTask: null, queue: [], isPaused: false, cooldown: null };
