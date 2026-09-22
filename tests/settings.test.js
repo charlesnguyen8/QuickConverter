@@ -46,10 +46,11 @@ for (const id of ['reader-font-family', 'reader-column-width', 'reader-font-size
 }
 
 const deepseekMarkupSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'SettingsDeepSeekTab.jsx'), 'utf8');
+const settingsViewSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'SettingsView.jsx'), 'utf8');
 for (const id of requiredSettingsIds) {
   assert(
-    settingsHtml.includes(`id="${id}"`) || deepseekMarkupSrc.includes(`id="${id}"`),
-    `Missing required element #${id} in views/settings.html or SettingsDeepSeekTab.jsx`
+    settingsHtml.includes(`id="${id}"`) || deepseekMarkupSrc.includes(`id="${id}"`) || settingsViewSrc.includes(`id="${id}"`),
+    `Missing required element #${id} in settings.html, SettingsDeepSeekTab.jsx or SettingsView.jsx`
   );
 }
 console.log(`✓ views/settings.html contains all ${requiredSettingsIds.length} required interactive element IDs`);

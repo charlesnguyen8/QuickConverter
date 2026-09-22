@@ -140,6 +140,19 @@ function test(name, fn) {
     }
   });
 
+  // --- SettingsView (shell) ---
+  const SettingsView = (await loadComponent('components/react/SettingsView.jsx')).default;
+  const shell = render(h(SettingsView));
+  test('SettingsView renders the shell, tabs and toast', () => {
+    for (const id of ['settings-back-btn', 'settings-back-text', 'settings-save-pill',
+      'settings-toast', 'settings-toast-msg', 'tab-content-deepseek', 'tab-content-reader',
+      'tab-content-storage', 'tab-content-about']) {
+      assert(shell.includes(`id="${id}"`), `missing #${id}`);
+    }
+    assert(shell.includes('settings-nav-btn active'), 'expected the first tab to be active');
+    assert(shell.includes('About QuickConverter'), 'expected the About content');
+  });
+
   // --- PopupApp smoke ---
   const app = render(h(PopupApp));
   test('PopupApp renders both views', () => {
