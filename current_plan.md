@@ -9,10 +9,9 @@
 changed → `npm run build:ext` → `npm test` green → commit → owner loads `dist/` for parity).
 No piecemeal approval requests. Commit per milestone so each is independently revertible.
 
-**Status (as of M1–M3):** Popup is fully React (`views/popup.js` + `popupMarkup.mjs` deleted); the
-Settings DeepSeek tab is JSX and its controller lives in `components/settings-deepseek.js`. Next is
-**M4** (Settings shell/tabs → React, delete `views/settings.js`), then M5 Reader, M6 Novel, M7
-cleanup; M8 (ESM/MV3) deferred.
+**Status (as of M1–M5):** Popup (`views/popup.js`), Settings (`views/settings.js`) and Reader
+(`views/reader.js`) are fully React; `ReaderApp` is the single reader entry. Next is **M6** (Novel →
+React, delete `views/novel.js`), then M7 cleanup; M8 (ESM/MV3) deferred.
 
 **Related docs:** `context.md`, `AGENTS.md`.
 
@@ -42,17 +41,16 @@ cleanup; M8 (ESM/MV3) deferred.
 |---|---|---|
 | Library | full (`LibraryView.jsx`) | — |
 | Novel | hero, chapters, name-list drawer, dock | `views/novel.js` ~400 lines: panel init, sync/download-all, `enqueueChapterDownload`, `refreshChapterList`, `novel-chapter-download` listener, balance/queue hook |
-| Reader | reading core, nav, source drawer, header, typography popover, DeepSeek card | `views/reader.js` ~310 lines: not-saved/download flow, chapter load, source drawer toggle, hotkeys |
+| Reader | **fully React** (`ReaderApp` + header, chapter, nav, source drawer, popover, DeepSeek card, toast) | `views/reader.js` deleted; `reader.html` is a shell + `reader-entry.jsx` |
 | Settings | Storage tab, Reader tab, DeepSeek tab (`SettingsDeepSeekTab.jsx`) | `views/settings.js` ~177 lines: nav, tab switching, balance display, toasts, About; DeepSeek controller now in `components/settings-deepseek.js` |
 | Popup | **fully React** (`PopupApp` + `PopupMainView` + `PopupNovelView` + `PopupDeepseekCard`) | `views/popup.js` and `popupMarkup.mjs` deleted; `popup.html` is a shell + entry |
 
 Cross-view seams still in place:
 - Popup: React exposes `window.__popupActions`, main/detail are props-driven.
 - Settings: React entry calls `window.wireSettingsDeepseek()` (from `components/settings-deepseek.js`).
-- Other views render `SettingsStorageTab` / `SettingsReaderTab` / Novel/Reader components; those view
-  scripts (`novel.js`, `reader.js`) still own part of their logic (M5/M6).
+- Novel still owns part of its logic in `views/novel.js` (M6); Reader is fully React (`ReaderApp`).
 
-Tests: 12 suites green. Tests that grep HTML for moved IDs read the React/JSX module instead —
+Tests: 13 suites green. Tests that grep HTML for moved IDs read the React/JSX module instead —
 update them whenever an ID moves (`bridge.test.js`, `settings.test.js`).
 
 ### Progress log
@@ -65,7 +63,8 @@ update them whenever an ID moves (`bridge.test.js`, `settings.test.js`).
 | M4 Settings shell → React, delete `settings.js` | `c3cedee`, `e755efc` |
 | M5a Reader header → React | `6bf390a` |
 | M5b Reader typography popover → React | `ReaderPrefsPopover.jsx` |
-| M5c Reader DeepSeek card → React | `ReaderDeepseekCard.jsx` (this milestone) |
+| M5c Reader DeepSeek card → React | `ReaderDeepseekCard.jsx` |
+| M5d Reader app controller → React, delete `reader.js` | `ReaderApp.jsx` (this milestone) |
 
 ---
 
@@ -98,8 +97,8 @@ the toast/save-pill; the tab components render as direct children. `views/settin
 `settings.html` is a shell with `#settings-root` + `settings-entry.jsx`, and the per-tab entries
 (storage/reader/deepseek/shell) are gone. Balance/toast helpers live in `components/settings-deepseek.js`.
 
-### M5 — Reader: finish the remaining pieces  ← **next** (5d)
-`views/reader.js` is ~310 lines with coupled subsystems; split into four slices. Each slice: convert
+### M5 — Reader: finish the remaining pieces — **done**
+`views/reader.js` (~310 lines) was split into four slices. Each slice: convert
 markup with the same IDs, keep `reader.js` wiring (React renders once, so DOM refs stay valid —
 the bridge pattern used for the popup DeepSeek card), build + 13 suites + a `dist/` check.
 
@@ -122,9 +121,16 @@ the bridge pattern used for the popup DeepSeek card), build + 13 suites + a `dis
   `reader-open-source`/`reader-close-source`); `reader.js` dropped `initReaderDeepSeekUI`, the dead
   drawer button listeners, and now seams balance refresh (`reader-refresh-balance`) and the
   prompt-saved toast (`reader-show-toast`). The not-saved shell + download button stay static (5d).
-- **5d — Chapter load / not-saved / download flow + toast + hotkeys**: port the remaining
-  `reader.js` logic (load chapter, download, save toast, keyboard shortcuts).
-- Finish: delete `views/reader.js`; `reader.html` becomes a shell + entry.
+- **5d — Chapter load / not-saved / download flow + toast + hotkeys — done**: `components/react/
+  ReaderApp.jsx` is the single reader entry (`reader-entry.jsx` → `#reader-root`). It loads the
+  novel/chapter, derives loading/invalid/error/content/not-saved, loads the chapter, runs the
+  download flow (mirrors the old `reader.js` options/key/provider handling, with `downloading/
+  failed/translating/model` state), owns the hotkeys and `document.title`, and renders `ReaderHeader`,
+  `ReaderChapter`, `ReaderNav`, `ReaderNotSaved` (heading + `ReaderDeepseekCard` + download button),
+  `ReaderSourceDrawer` and `ReaderToast`. `ReaderHeader` is now props-driven (titles/back/settings/
+  `hasSource`) with its own scroll-progress state; `ReaderToast` owns the `reader-show-toast`
+  contract. Deleted `views/reader.js` and the per-section `reader-*-entry.jsx` files;
+  `reader.html` is a shell (`#reader-root`) + `reader-entry.jsx`.
 
 ### M6 — Novel: finish the remaining pieces
 - Move panel init, sync/download-all, `enqueueChapterDownload`, `refreshChapterList`,
@@ -153,7 +159,7 @@ the bridge pattern used for the popup DeepSeek card), build + 13 suites + a `dis
 
 ## 5. Verification per milestone
 
-- `node --check` on changed classic JS; `npm run build:ext`; `npm test` (12 suites).
+- `node --check` on changed classic JS; `npm run build:ext`; `npm test` (13 suites).
 - Reference-asset check: every local `src`/`href` in `dist/views/*.html` resolves.
 - `npm run build:css` if new utility classes appear (commit `styles/tailwind.css`).
 - Owner: load `dist/`, exercise the converted view, confirm parity.

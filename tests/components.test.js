@@ -154,7 +154,9 @@ function test(name, fn) {
   });
 
   // --- ReaderHeader ---
-  const ReaderHeader = (await loadComponent('components/react/ReaderHeader.jsx')).default;
+  const headerMod = await loadComponent('components/react/ReaderHeader.jsx');
+  const ReaderHeader = headerMod.default;
+  const { computeScrollProgress } = headerMod;
   const header = render(h(ReaderHeader));
   test('ReaderHeader renders nav, font stepper and typography popover', () => {
     for (const id of ['reading-progress-bar', 'back-to-novel-btn', 'header-novel-title',
@@ -169,6 +171,66 @@ function test(name, fn) {
     assert(/id="reading-progress-percent" class="[^"]*fixed/.test(header), 'percentage must be positioned with the top progress bar');
     assert(/id="reading-progress-percent" class="[^"]*transition-all/.test(header), 'percentage must animate at the same speed as the bar');
     assert(!header.includes('Reading progress'), 'percentage must not live in the header titles');
+    assert(/id="toggle-source-drawer-btn" class="[^"]*hidden/.test(header), 'source button must start hidden');
+  });
+
+  test('ReaderHeader reflects titles, back/settings links and source visibility', () => {
+    const configured = render(h(ReaderHeader, {
+      novelTitle: 'My Novel',
+      chapterTitle: 'Chapter 7',
+      backHref: 'novel.html?id=n1',
+      settingsHref: 'settings.html?from=reader&id=n1&ch=7',
+      hasSource: true
+    }));
+    assert(configured.includes('My Novel</span>'), 'expected the novel title');
+    assert(configured.includes('Chapter 7</span>'), 'expected the chapter title');
+    assert(configured.includes('href="novel.html?id=n1"'), 'expected the contextual back link');
+    assert(configured.includes('href="settings.html?from=reader&amp;id=n1&amp;ch=7"'), 'expected the contextual settings link');
+    assert(!/id="toggle-source-drawer-btn" class="[^"]*hidden/.test(configured), 'source button must show when the chapter has source');
+  });
+
+  test('computeScrollProgress clamps the reading progress to 0-100', () => {
+    assert.strictEqual(computeScrollProgress(0, 900), 0);
+    assert.strictEqual(computeScrollProgress(450, 900), 50);
+    assert.strictEqual(computeScrollProgress(1800, 900), 100);
+    assert.strictEqual(computeScrollProgress(-50, 900), 0);
+    assert.strictEqual(computeScrollProgress(10, 0), 0);
+  });
+
+  // --- ReaderNotSaved ---
+  const ReaderNotSaved = (await loadComponent('components/react/ReaderNotSaved.jsx')).default;
+
+  test('ReaderNotSaved shows the DeepSeek card and download button', () => {
+    const idle = render(h(ReaderNotSaved, { onDownload: () => {} }));
+    assert(idle.includes('id="reader-download-btn"'), 'expected the download button');
+    assert(idle.includes('Download Chapter'), 'expected the idle label');
+    assert(idle.includes('id="reader-deepseek-toggle"'), 'expected the DeepSeek card container');
+    assert(!/id="reader-download-btn"[^>]*disabled/.test(idle), 'idle button must be enabled');
+  });
+
+  test('ReaderNotSaved reflects downloading and failed states', () => {
+    const busy = render(h(ReaderNotSaved, { downloading: true, translating: true, model: 'deepseek-flash', onDownload: () => {} }));
+    assert(busy.includes('Translating (deepseek-flash)...'), 'expected the translating label');
+    assert(/id="reader-download-btn"[^>]*disabled/.test(busy), 'downloading button must be disabled');
+
+    const raw = render(h(ReaderNotSaved, { downloading: true, translating: false, model: 'deepseek-flash', onDownload: () => {} }));
+    assert(raw.includes('Downloading Chapter...'), 'expected the download label without translation');
+
+    const failed = render(h(ReaderNotSaved, { failed: true, onDownload: () => {} }));
+    assert(failed.includes('Failed. Click to Retry'), 'expected the retry label');
+    assert(!/id="reader-download-btn"[^>]*disabled/.test(failed), 'retry button must be enabled');
+  });
+
+  // --- ReaderApp ---
+  const ReaderApp = (await loadComponent('components/react/ReaderApp.jsx')).default;
+  const readerApp = render(h(ReaderApp));
+
+  test('ReaderApp renders the header, loading state, source drawer and toast', () => {
+    for (const id of ['reading-progress-bar', 'reader-loading', 'source-drawer', 'save-toast', 'save-toast-msg']) {
+      assert(readerApp.includes(`id="${id}"`), `missing #${id}`);
+    }
+    assert(!readerApp.includes('id="reader-not-saved"'), 'not-saved panel must not render while loading');
+    assert(!readerApp.includes('id="reader-content-view"'), 'content view must not render while loading');
   });
 
   // --- ReaderPrefsPopover ---

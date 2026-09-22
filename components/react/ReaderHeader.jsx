@@ -1,7 +1,39 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import ReaderPrefsPopover from './ReaderPrefsPopover.jsx';
 
-export default function ReaderHeader() {
+export function computeScrollProgress(scrollY, scrollHeight) {
+  return scrollHeight > 0 ? Math.min(100, Math.max(0, (scrollY / scrollHeight) * 100)) : 0;
+}
+
+export default function ReaderHeader({
+  novelTitle = 'QuickConverter Reader',
+  chapterTitle = 'Loading chapter...',
+  backHref = 'library.html',
+  settingsHref = 'settings.html?from=reader',
+  hasSource = false
+}) {
+  const barRef = useRef(null);
+  const percentRef = useRef(null);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = computeScrollProgress(window.scrollY, scrollHeight);
+      if (barRef.current) barRef.current.style.width = `${progress}%`;
+      if (percentRef.current) {
+        percentRef.current.textContent = `${Math.round(progress)}%`;
+        percentRef.current.style.left = `clamp(1.25rem, ${progress}%, calc(100% - 1.25rem))`;
+      }
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  const openSource = () => {
+    window.dispatchEvent(new Event('reader-open-source'));
+  };
+
   return (
     <>
       <div
@@ -10,6 +42,7 @@ export default function ReaderHeader() {
       >
         <div
           id="reading-progress-bar"
+          ref={barRef}
           className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-75"
           style={{ width: '0%' }}
         ></div>
@@ -17,6 +50,7 @@ export default function ReaderHeader() {
 
       <span
         id="reading-progress-percent"
+        ref={percentRef}
         className="fixed top-1.5 z-50 -translate-x-1/2 px-1.5 py-0.5 rounded-full bg-slate-800/95 border border-slate-700 text-[10px] font-mono font-semibold text-indigo-300 shadow-sm select-none pointer-events-none transition-all duration-75"
         style={{ left: '1.25rem' }}
       >
@@ -27,7 +61,7 @@ export default function ReaderHeader() {
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
           <a
             id="back-to-novel-btn"
-            href="library.html"
+            href={backHref}
             className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white transition px-2.5 py-1.5 rounded-md hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 flex-shrink-0"
             title="Return to Novel Chapters"
           >
@@ -40,10 +74,10 @@ export default function ReaderHeader() {
 
           <div className="flex flex-col items-center text-center overflow-hidden min-w-0 flex-1 px-2">
             <span id="header-novel-title" className="text-[11px] text-slate-400 truncate max-w-[200px] sm:max-w-sm">
-              QuickConverter Reader
+              {novelTitle}
             </span>
             <span id="header-chapter-title" className="text-xs sm:text-sm font-bold text-slate-200 truncate max-w-[240px] sm:max-w-md">
-              Loading chapter...
+              {chapterTitle}
             </span>
           </div>
 
@@ -51,7 +85,8 @@ export default function ReaderHeader() {
             <button
               type="button"
               id="toggle-source-drawer-btn"
-              className="hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+              onClick={openSource}
+              className={`${hasSource ? '' : 'hidden '}inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer`}
               title="View Original Raw Source text (S)"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -65,7 +100,7 @@ export default function ReaderHeader() {
 
             <a
               id="reader-settings-btn"
-              href="settings.html?from=reader"
+              href={settingsHref}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
               title="Open Reader & AI Settings"
             >

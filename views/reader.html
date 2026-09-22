@@ -466,68 +466,7 @@
   </head>
 
   <body class="bg-slate-900 text-slate-50 min-h-screen font-sans flex flex-col antialiased selection:bg-indigo-500/30 selection:text-indigo-200">
-    <div id="reader-header-root"></div>
-
-    <!-- Main Reading Content Container -->
-    <main class="max-w-3xl mx-auto w-full px-5 sm:px-8 py-8 sm:py-12 flex-1 flex flex-col gap-8">
-      <!-- Loading State -->
-      <div id="reader-loading" class="flex flex-col items-center justify-center py-24 gap-3 text-center">
-        <svg class="animate-spin h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-        </svg>
-        <span class="text-sm text-slate-400 font-medium">Loading chapter text...</span>
-      </div>
-
-      <!-- Unsaved / Missing Content State -->
-      <div id="reader-not-saved" class="hidden flex flex-col items-center justify-center py-10 px-4 sm:px-8 text-center gap-6 bg-slate-800/40 border border-slate-700/60 rounded-xl shadow-sm">
-        <div class="w-14 h-14 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-2xl text-indigo-400">
-          📥
-        </div>
-        <div class="flex flex-col gap-1 items-center">
-          <h2 class="text-lg font-bold text-slate-100">Chapter Not Downloaded Yet</h2>
-          <p class="text-sm text-slate-400 max-w-md">
-            This chapter hasn't been saved to your local storage yet. Configure your translation options below and download directly.
-          </p>
-        </div>
-
-        <!-- DeepSeek Translation Pre-Download Card (React) -->
-        <div id="reader-deepseek-root" class="w-full"></div>
-
-        <button
-          type="button"
-          id="reader-download-btn"
-          class="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition shadow-sm cursor-pointer active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <polyline points="19 12 12 19 5 12"></polyline>
-          </svg>
-          <span id="reader-download-text">Download Chapter</span>
-        </button>
-      </div>
-
-      <!-- Chapter Reader Article View -->
-      <article id="reader-content-view" class="hidden flex flex-col gap-8">
-        <div id="reader-content-root" class="contents"></div>
-        <!-- Bottom Chapter Navigation -->
-        <div id="reader-nav-root"></div>
-      </article>
-
-      <!-- Slide-out Original Source Reference Drawer -->
-      <div id="reader-source-root"></div>
-    </main>
-
-    <!-- Floating Save Toast Notification -->
-    <div
-      id="save-toast"
-      class="fixed bottom-6 right-6 z-50 transform translate-y-12 opacity-0 pointer-events-none transition-all duration-300 flex items-center gap-2 px-4 py-2.5 rounded-lg shadow-xl bg-slate-900 border border-emerald-500/50 text-emerald-200 text-xs sm:text-sm font-medium"
-    >
-      <svg class="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <polyline points="20 6 9 17 4 12" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
-      </svg>
-      <span id="save-toast-msg">Chapter changes saved</span>
-    </div>
+    <div id="reader-root" class="contents"></div>
 
     <!-- Scripts -->
     <script src="../providers/wetriedtls.js"></script>
@@ -540,11 +479,6 @@
     <script src="../components/ui-utils.js"></script>
     <script src="../components/ai-config-panel.js"></script>
     <script type="module" src="../components/react/queue-dock-entry.jsx"></script>
-    <script type="module" src="../components/react/reader-header-entry.jsx"></script>
-    <script type="module" src="../components/react/reader-deepseek-entry.jsx"></script>
-    <script type="module" src="../components/react/reader-nav-entry.jsx"></script>
-    <script type="module" src="../components/react/reader-content-entry.jsx"></script>
-    <script type="module" src="../components/react/reader-source-entry.jsx"></script>
-    <script src="reader.js"></script>
+    <script type="module" src="../components/react/reader-entry.jsx"></script>
   </body>
 </html>
