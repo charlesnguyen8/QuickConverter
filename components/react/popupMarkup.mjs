@@ -419,8 +419,9 @@ export const popupHtml = `
     </div>
 `;
 
-// Detail view is still bridged: React owns its visibility (the wrapper div in
-// PopupApp), so strip the hardcoded `hidden` here.
-export const popupDetailHtml = popupHtml
-  .slice(popupHtml.indexOf('<div id="view-novel"'))
-  .replace('id="view-novel" class="hidden flex', 'id="view-novel" class="flex');
+// Only the DeepSeek translation card is still bridged markup (popup.js's
+// AiConfigPanel wires it up by element id). Everything else is React now.
+export const popupDeepseekHtml = popupHtml.slice(
+  popupHtml.indexOf('<!-- DeepSeek Translation Pre-Download Card -->'),
+  popupHtml.indexOf('<!-- Chapters List Section -->')
+);

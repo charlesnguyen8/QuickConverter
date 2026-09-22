@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import PopupMainView from './PopupMainView.jsx';
-import { popupDetailHtml } from './popupMarkup.mjs';
+import PopupNovelView from './PopupNovelView.jsx';
 
 const CHECKING = {
   variant: 'checking',
@@ -12,6 +12,7 @@ export default function PopupApp() {
   const [novels, setNovels] = useState([]);
   const [status, setStatus] = useState(CHECKING);
   const [showDetail, setShowDetail] = useState(false);
+  const [detailNovelId, setDetailNovelId] = useState(null);
   const [addBusy, setAddBusy] = useState(false);
 
   if (typeof window !== 'undefined') {
@@ -27,8 +28,9 @@ export default function PopupApp() {
       console.log('[PopupApp] __popupShowMain');
       setShowDetail(false);
     };
-    window.__popupShowNovel = () => {
-      console.log('[PopupApp] __popupShowNovel');
+    window.__popupShowNovel = (id) => {
+      console.log('[PopupApp] __popupShowNovel', id);
+      setDetailNovelId(id);
       setShowDetail(true);
     };
   }
@@ -84,7 +86,12 @@ export default function PopupApp() {
         onOpenLibrary={() => window.__popupActions && window.__popupActions.openLibrary && window.__popupActions.openLibrary()}
         onOpenSettings={() => window.__popupActions && window.__popupActions.openSettings && window.__popupActions.openSettings()}
       />
-      <div className={showDetail ? '' : 'hidden'} dangerouslySetInnerHTML={{ __html: popupDetailHtml }} />
+      <PopupNovelView
+        hidden={!showDetail}
+        novelId={detailNovelId}
+        onBack={() => window.__popupActions && window.__popupActions.backToMain && window.__popupActions.backToMain()}
+        onOpenSettings={() => window.__popupActions && window.__popupActions.openSettings && window.__popupActions.openSettings()}
+      />
     </>
   );
 }
