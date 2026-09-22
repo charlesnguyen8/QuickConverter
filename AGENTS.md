@@ -12,8 +12,9 @@ for directory layout, porting rules, and feature checklists.
 - `npm run build:css` — rebuild `styles/tailwind.css` from `styles/input.css` + scanned content.
 - `npm run watch:css` — watch mode while developing UI.
 
-**Loading the extension:** load unpacked from the repo root in `chrome://extensions`.
-`dist/` will become the Vite build output once the migration in `current_plan.md` lands.
+**Loading the extension:** run `npm run build:ext`, then load unpacked from `dist/` in
+`chrome://extensions`. React pages (e.g. `novel.html`'s queue dock) only exist in the Vite
+build, so the repo root is no longer a loadable target. `npm run dev` is for UI iteration.
 
 **CSS gotcha:** Tailwind is compiled and committed. After editing any markup/JS that
 introduces new utility classes, run `npm run build:css` (or the `watch` script). Missing

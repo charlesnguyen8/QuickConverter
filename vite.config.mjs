@@ -1,16 +1,21 @@
 import { defineConfig } from 'vite';
-import { cpSync } from 'node:fs';
+import react from '@vitejs/plugin-react';
+import { cpSync, readdirSync } from 'node:fs';
 
 const legacyDirs = ['providers', 'services', 'components', 'scripts', 'styles', 'fonts', 'icons'];
 
 export default defineConfig({
   base: './',
   plugins: [
+    react(),
     {
       name: 'qc-copy-legacy',
       closeBundle() {
         for (const dir of legacyDirs) cpSync(dir, `dist/${dir}`, { recursive: true });
         cpSync('manifest.json', 'dist/manifest.json');
+        for (const file of readdirSync('views')) {
+          if (file.endsWith('.js')) cpSync(`views/${file}`, `dist/views/${file}`);
+        }
       }
     }
   ],
