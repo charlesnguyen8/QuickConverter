@@ -7,6 +7,5 @@ const target = typeof document !== 'undefined' ? document.getElementById('settin
 if (target) {
   const root = createRoot(target);
   flushSync(() => root.render(<SettingsDeepSeekTab />));
-  console.log('[settings-deepseek-entry] mounted');
   window.dispatchEvent(new CustomEvent('settings-deepseek-mounted'));
 }

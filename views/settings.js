@@ -7,7 +7,6 @@ let deepseekSettingsInitialized = false;
 function initDeepSeekSettingsOnce() {
   if (deepseekSettingsInitialized) return;
   deepseekSettingsInitialized = true;
-  console.log('[settings] initDeepSeekSettingsOnce');
   initDeepSeekSettings();
 }
 
@@ -149,27 +148,12 @@ async function initDeepSeekSettings() {
   const cardChat = document.getElementById('model-card-chat');
   const cardReasoner = document.getElementById('model-card-reasoner');
 
-  console.log('[settings] initDeepSeekSettings elements', {
-    masterToggle: !!masterToggle,
-    toggleBadge: !!toggleBadge,
-    apiKeyInput: !!apiKeyInput,
-    clearKeyBtn: !!clearKeyBtn,
-    customPromptEl: !!customPromptEl,
-    providerRadioOfficial: !!providerRadioOfficial,
-    providerRadioBridge: !!providerRadioBridge,
-    bridgeConfigPanel: !!bridgeConfigPanel,
-    bridgeUrlInput: !!bridgeUrlInput,
-    radioFlash: !!radioFlash,
-    radioReasoner: !!radioReasoner
-  });
-
   // --- Master Toggle ---
   const isEnabled = localStorage.getItem('quickconverter_deepseek_enabled') === 'true';
   if (masterToggle) {
     masterToggle.checked = isEnabled;
     updateToggleBadge(isEnabled);
     masterToggle.addEventListener('change', () => {
-      console.log('[settings] master toggle changed ->', masterToggle.checked);
       localStorage.setItem('quickconverter_deepseek_enabled', masterToggle.checked ? 'true' : 'false');
       updateToggleBadge(masterToggle.checked);
       triggerSaveIndicator('Translation preference saved');
@@ -203,7 +187,6 @@ async function initDeepSeekSettings() {
   }
 
   function updateProviderUI(config) {
-    console.log('[settings] updateProviderUI', config);
     const isCustom = config.provider !== DeepSeekService.PROVIDER_OFFICIAL;
     if (providerRadioOfficial) providerRadioOfficial.checked = !isCustom;
     if (providerRadioBridge) providerRadioBridge.checked = isCustom;
@@ -246,7 +229,6 @@ async function initDeepSeekSettings() {
   // Switch Provider Event Listeners
   if (providerRadioOfficial) {
     providerRadioOfficial.addEventListener('change', async () => {
-      console.log('[settings] provider changed -> official');
       activeProviderConfig = await DeepSeekService.setProviderConfig({
         provider: DeepSeekService.PROVIDER_OFFICIAL
       });
@@ -258,7 +240,6 @@ async function initDeepSeekSettings() {
 
   if (providerRadioBridge) {
     providerRadioBridge.addEventListener('change', async () => {
-      console.log('[settings] provider changed -> custom/bridge');
       const bridgeUrl = bridgeUrlInput ? bridgeUrlInput.value.trim() : DeepSeekService.CUSTOM_DEFAULT_URL;
       activeProviderConfig = await DeepSeekService.setProviderConfig({
         provider: DeepSeekService.PROVIDER_CUSTOM,
@@ -347,7 +328,6 @@ async function initDeepSeekSettings() {
     if (radio) {
       radio.addEventListener('change', () => {
         const val = radio.value;
-        console.log('[settings] model changed ->', val);
         localStorage.setItem('quickconverter_deepseek_model', val);
         updateModelCards(val);
         let modelLabel = 'Flash';
@@ -522,7 +502,6 @@ async function initDeepSeekSettings() {
   if (customPromptEl) {
     customPromptEl.value = savedPrompt;
     customPromptEl.addEventListener('change', () => {
-      console.log('[settings] prompt changed');
       localStorage.setItem('quickconverter_deepseek_prompt', customPromptEl.value.trim());
       triggerSaveIndicator('Default prompt updated');
     });
@@ -557,11 +536,6 @@ async function initDeepSeekSettings() {
   };
 
   const updateCooldownConfig = () => {
-    console.log('[settings] updateCooldownConfig fired', {
-      toggle: cooldownToggle ? cooldownToggle.checked : null,
-      min: cooldownMin ? cooldownMin.value : null,
-      max: cooldownMax ? cooldownMax.value : null
-    });
     const enabled = cooldownToggle ? cooldownToggle.checked : true;
     let min = cooldownMin ? parseInt(cooldownMin.value, 10) : 180;
     let max = cooldownMax ? parseInt(cooldownMax.value, 10) : 300;
@@ -590,7 +564,6 @@ async function initDeepSeekSettings() {
     } else {
       localStorage.setItem('quickconverter_queue_cooldown', JSON.stringify(config));
     }
-    console.log('[settings] updateCooldownConfig saved', config);
     if (cooldownInputsContainer) {
       cooldownInputsContainer.classList.toggle('opacity-50', !enabled);
       cooldownInputsContainer.classList.toggle('pointer-events-none', !enabled);
