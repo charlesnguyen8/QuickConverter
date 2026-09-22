@@ -65,8 +65,16 @@ static, and `novel.js` shrinks each step. Delete `novel.js` when nothing is left
   container is rendered by React with the same element IDs.
 - Delete `views/novel.js` and `views/novel.html` shell once all sections are React.
 
-### Phase 4 — Reader view → React
-- `components/react/ReaderView.jsx` + `reader-entry.jsx`; delete `reader.js` after parity.
+### Phase 4 — Reader view → React (section by section)
+Reader subsystems are coupled through `reader.js` state (content ↔ typography prefs ↔ editing ↔
+source drawer ↔ DeepSeek panel), so convert in three sub-phases:
+- **4a — Reading core**: `ReaderChapter.jsx` (chapter title + body paragraphs + paragraph editing
+  + metrics) mounted in `main`; React applies typography prefs and listens for `reader-prefs-updated`.
+- **4b — Header + typography popover**: `ReaderHeader.jsx` + `ReaderPrefsPopover.jsx` (nav, theme,
+  font controls) — owns prefs state.
+- **4c — Source drawer + DeepSeek panel container**: `ReaderSourceDrawer.jsx`; panel stays the shared
+  `AiConfigPanel` module, container rendered by React.
+- Delete `views/reader.js` when nothing is left.
 
 ### Phase 5 — Settings view → React
 - `components/react/SettingsView.jsx` + `settings-entry.jsx`; delete `settings.js` after parity.

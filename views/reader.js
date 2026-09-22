@@ -35,9 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const chapterBody = document.getElementById('chapter-body');
 
   // Bottom Navigation
-  const prevChapterBtn = document.getElementById('prev-chapter-btn');
-  const nextChapterBtn = document.getElementById('next-chapter-btn');
-  const bottomNovelBtn = document.getElementById('bottom-novel-btn');
 
   // Source Drawer Elements
   const sourceDrawer = document.getElementById('source-drawer');
@@ -431,7 +428,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.title = `${novel.title} - Ch. ${chapterNumber}`;
     const novelUrl = `novel.html?id=${encodeURIComponent(novel.id)}`;
     if (backToNovelBtn) backToNovelBtn.href = novelUrl;
-    if (bottomNovelBtn) bottomNovelBtn.href = novelUrl;
     if (headerNovelTitle) headerNovelTitle.textContent = novel.title;
     if (novelBadge) novelBadge.textContent = novel.title;
 
@@ -442,47 +438,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (headerChapterTitle) headerChapterTitle.textContent = fallbackTitle;
     if (chapterMainTitle) chapterMainTitle.textContent = fallbackTitle;
     if (chapterBadge) chapterBadge.textContent = `Ch. ${chapterNumber}`;
-
-    // --- Configure Adjacent Chapter Navigation ---
-    const catalog = (novel.chapterList || []).slice().sort((a, b) => a.chapterNumber - b.chapterNumber);
-    const currentIndex = catalog.findIndex((c) => Number(c.chapterNumber) === chapterNumber);
-
-    let prevCh = null;
-    let nextCh = null;
-
-    if (currentIndex > 0) {
-      prevCh = catalog[currentIndex - 1].chapterNumber;
-    } else if (chapterNumber > 1) {
-      prevCh = chapterNumber - 1;
-    }
-
-    if (currentIndex >= 0 && currentIndex < catalog.length - 1) {
-      nextCh = catalog[currentIndex + 1].chapterNumber;
-    } else if (currentIndex < 0 && (!novel.totalChapters || chapterNumber < novel.totalChapters)) {
-      nextCh = chapterNumber + 1;
-    }
-
-    if (prevChapterBtn) {
-      if (prevCh !== null) {
-        prevChapterBtn.disabled = false;
-        prevChapterBtn.addEventListener('click', () => {
-          window.location.href = `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(prevCh)}`;
-        });
-      } else {
-        prevChapterBtn.disabled = true;
-      }
-    }
-
-    if (nextChapterBtn) {
-      if (nextCh !== null) {
-        nextChapterBtn.disabled = false;
-        nextChapterBtn.addEventListener('click', () => {
-          window.location.href = `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(nextCh)}`;
-        });
-      } else {
-        nextChapterBtn.disabled = true;
-      }
-    }
 
     // --- In-Place Paragraph Editing System ---
     function startEditingParagraph(pBlock) {
