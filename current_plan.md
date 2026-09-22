@@ -61,14 +61,14 @@ update them whenever an ID moves.
 - `popup.js` keeps: DeepSeek panel init, `extractNovelInfo`, status detection, tab query, queue
   subscription.
 
-### M2 — Popup: DeepSeek panel + view deletion  ← **next**
+### M2 — Popup: DeepSeek panel + view deletion — **done**
 - Render the shared `AiConfigPanel` container from React (same element IDs, `compact` variant),
   passing `currentActiveNovel` prompt hooks as props/state.
 - Port the remaining `popup.js` glue (tab query, provider status) into React hooks; delete
   `views/popup.js`; `views/popup.html` becomes a shell + React entry.
 - Drop `window.__popup*` globals.
 
-### M3 — Settings: DeepSeek tab → React (real JSX)
+### M3 — Settings: DeepSeek tab → React (real JSX)  ← **next**
 - Replace the `deepseekTabMarkup.mjs` bridge with JSX + hooks wired to `AiConfigPanel`; delete
   `SettingsDeepSeekTab` bridge entry and `initDeepSeekSettings` from `settings.js`.
 
