@@ -39,15 +39,18 @@ saved chapter. Filter blank-translation entries out of tokenization (mirror `spl
   and its source name must appear unchanged in the output.
 - Verify: `npm test`, `npm run build:ext`.
 
-### NL-2 — Move `nameList` off the inline novel record  *(storage, bigger)*
-Currently `novel.nameList` is stored inline, so every `updateNovel` / `saveNameList` /
-`markNameSeen` rewrites the whole array, and cloud backups embed it. Move names to a dedicated
-IndexedDB store (or per-novel key) and keep a `nameListCount` on the novel for the hero badge.
-- Touches: `src/services/storage.js` (schema, `getNameList`/`saveNameList`/`addNameEntry(s)`/
-  update/delete), backup export/import, `NameListDrawer`/`NovelHero` count handling.
-- Notes: DB version bump + migration of existing inline lists; keep the public `StorageService`
-  method signatures so callers/UI don't change.
-- Verify: `npm test` (name-list, backup, cloud-sync suites), `build:ext`, manual `dist/` check.
+### NL-2 — Move `nameList` off the inline novel record  *(storage, bigger)* — **done**
+`novel.nameList` was inline, so every `updateNovel` / `saveNameList` / `markNameSeen` rewrote the
+whole array. Names now live in a **dedicated record in the same `novels` store**, keyed
+`namelist::<novelId>` (`{ id, owner, list }`) — no schema/version bump, and still readable from the
+service worker (unlike a preference, which isn't available in a worker).
+- `getNameList`/`saveNameList` read/write the record; `getNovelById` attaches `nameList` (so
+  `ReaderChapter`/`NovelHero`/tokenization are unchanged); `getManagedNovels` filters the records
+  out; `updateNovel` routes any `nameList` update to `saveNameList` and never stores it inline.
+- Legacy inline lists are migrated lazily on first read (write record, strip the inline field).
+- Backup format is unchanged: `exportAll` re-attaches lists onto exported novels; `importAll`
+  moves any inline `nameList` into the record form.
+- Verify: `npm test` (name-list 20/20, backup/cloud-sync/reader all green), `build:ext`.
 
 ### NL-3 — Virtualize the Name List drawer  *(UI, when felt)*
 `sortAndFilter` copies+sorts every render and every entry renders a row with handlers; thousands

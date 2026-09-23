@@ -6,6 +6,7 @@ const DB_VERSION = 1;
 
 const BACKUP_FORMAT = 'quickconverter-backup';
 const BACKUP_VERSION = 1;
+const NAME_LIST_PREFIX = 'namelist::';
 const BACKUP_EXCLUDED_KEYS = [
   'quickconverter_deepseek_key',
   'quickconverter_deepseek_key_storage',
@@ -247,7 +248,7 @@ const StorageService = {
       const request = store.getAll();
 
       request.onsuccess = async () => {
-        let novels = request.result || [];
+        let novels = (request.result || []).filter((n) => n && !String(n.id).startsWith(NAME_LIST_PREFIX));
 
         // First-time seed ONLY on clean install/first run, NEVER after user deletes novels
         if (!isInitialized && novels.length === 0) {
@@ -347,7 +348,19 @@ const StorageService = {
   async getNovelById(novelId) {
     if (!novelId) return null;
     const novels = await this.getManagedNovels();
-    return novels.find((n) => n.id === novelId) || null;
+    const record = novels.find((n) => n.id === novelId) || null;
+    if (!record) return null;
+
+    const stored = await this._getNameListRecord(novelId);
+    if (stored) return { ...record, nameList: stored };
+
+    const legacy = Array.isArray(record.nameList) ? record.nameList : [];
+    await this._putNameListRecord(novelId, legacy);
+    if (Object.prototype.hasOwnProperty.call(record, 'nameList')) {
+      const { nameList, ...rest } = record;
+      try { await this._putNovelRecord(rest); } catch (e) {}
+    }
+    return { ...record, nameList: legacy };
   },
 
   async isChapterSaved(novelId, chapterNumber) {
@@ -405,6 +418,11 @@ const StorageService = {
 
   async updateNovel(novelId, updates) {
     if (!novelId || !updates) return null;
+    const cleanUpdates = { ...updates };
+    if (Object.prototype.hasOwnProperty.call(cleanUpdates, 'nameList')) {
+      await this.saveNameList(novelId, cleanUpdates.nameList);
+      delete cleanUpdates.nameList;
+    }
     const db = await openDatabase();
     return new Promise((resolve, reject) => {
       const tx = db.transaction('novels', 'readwrite');
@@ -418,7 +436,7 @@ const StorageService = {
         }
         const updated = {
           ...novel,
-          ...updates,
+          ...cleanUpdates,
           id: novel.id // preserve id
         };
         store.put(updated);
@@ -443,8 +461,48 @@ const StorageService = {
    */
   async getNameList(novelId) {
     if (!novelId) return [];
-    const novel = await this.getNovelById(novelId);
-    return (novel && Array.isArray(novel.nameList)) ? [...novel.nameList] : [];
+    const stored = await this._getNameListRecord(novelId);
+    if (stored) return [...stored];
+
+    const novels = await this.getManagedNovels();
+    const novel = novels.find((n) => n.id === novelId) || null;
+    const legacy = novel && Array.isArray(novel.nameList) ? novel.nameList : [];
+    await this._putNameListRecord(novelId, legacy);
+    if (novel && Object.prototype.hasOwnProperty.call(novel, 'nameList')) {
+      const { nameList, ...rest } = novel;
+      try { await this._putNovelRecord(rest); } catch (e) {}
+    }
+    return [...legacy];
+  },
+
+  _getNameListRecord(novelId) {
+    return openDatabase().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction('novels', 'readonly');
+      const request = tx.objectStore('novels').get(NAME_LIST_PREFIX + novelId);
+      request.onsuccess = () => {
+        const record = request.result;
+        resolve(record && Array.isArray(record.list) ? record.list : null);
+      };
+      request.onerror = () => reject(request.error);
+    }));
+  },
+
+  _putNameListRecord(novelId, list) {
+    return openDatabase().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction('novels', 'readwrite');
+      tx.objectStore('novels').put({ id: NAME_LIST_PREFIX + novelId, owner: novelId, list });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    }));
+  },
+
+  _putNovelRecord(record) {
+    return openDatabase().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction('novels', 'readwrite');
+      tx.objectStore('novels').put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    }));
   },
 
   /**
@@ -456,7 +514,7 @@ const StorageService = {
   async saveNameList(novelId, nameList) {
     if (!novelId) return [];
     const list = dedupeNameList(Array.isArray(nameList) ? nameList : []);
-    await this.updateNovel(novelId, { nameList: list });
+    await this._putNameListRecord(novelId, list);
     return list;
   },
 
@@ -1223,8 +1281,21 @@ const StorageService = {
 
   async exportAll() {
     const db = await openDatabase();
-    const novels = await getAllFromStore(db, 'novels');
+    const rawNovels = await getAllFromStore(db, 'novels');
     const chapters = await getAllFromStore(db, 'chapters');
+
+    const listByNovel = new Map();
+    rawNovels.forEach((record) => {
+      if (record && String(record.id).startsWith(NAME_LIST_PREFIX)) {
+        listByNovel.set(record.owner, Array.isArray(record.list) ? record.list : []);
+      }
+    });
+    const novels = rawNovels
+      .filter((record) => record && !String(record.id).startsWith(NAME_LIST_PREFIX))
+      .map((novel) => ({
+        ...novel,
+        nameList: listByNovel.has(novel.id) ? listByNovel.get(novel.id) : (Array.isArray(novel.nameList) ? novel.nameList : [])
+      }));
 
     const preferences = {};
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -1266,6 +1337,19 @@ const StorageService = {
     const novels = Array.isArray(data.novels) ? data.novels : [];
     const chapters = Array.isArray(data.chapters) ? data.chapters : [];
 
+    const novelRecords = [];
+    const nameRecords = [];
+    novels.forEach((novel) => {
+      if (!novel) return;
+      if (Object.prototype.hasOwnProperty.call(novel, 'nameList')) {
+        const { nameList, ...rest } = novel;
+        nameRecords.push({ id: NAME_LIST_PREFIX + novel.id, owner: novel.id, list: Array.isArray(nameList) ? nameList : [] });
+        novelRecords.push(rest);
+      } else {
+        novelRecords.push(novel);
+      }
+    });
+
     const db = await openDatabase();
     await new Promise((resolve, reject) => {
       const tx = db.transaction(['novels', 'chapters'], 'readwrite');
@@ -1275,7 +1359,8 @@ const StorageService = {
         novelStore.clear();
         chapterStore.clear();
       }
-      novels.forEach((novel) => novelStore.put(novel));
+      novelRecords.forEach((novel) => novelStore.put(novel));
+      nameRecords.forEach((record) => novelStore.put(record));
       chapters.forEach((chapter) => chapterStore.put(chapter));
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);

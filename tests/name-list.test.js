@@ -473,7 +473,30 @@ async function runTests() {
   assert.strictEqual(StorageService.restoreTokens(emptyTok.text, emptyTok.mapping), 'Yanguo met Lý Thất Dạ.', 'no token leaks');
   console.log('✓ tokenizeSource skips names with an empty translation');
 
-  console.log('\n🎉 All 18 Novel Name List tests passed!');
+  // 19. Name lists live in their own record, not inline on the novel
+  await StorageService.saveNameList('novel-test', [{ id: 'p1', original: 'Aaa', translation: 'Bbb', addedAt: 1 }]);
+  const rawNovel = mockDbStore['novel-test'];
+  assert(!rawNovel || !('nameList' in rawNovel) || (Array.isArray(rawNovel.nameList) && rawNovel.nameList.length === 0), 'novel record must not carry the list');
+  const listRecord = mockDbStore['namelist::novel-test'];
+  assert(listRecord && Array.isArray(listRecord.list) && listRecord.list.length === 1, 'list stored in its own record');
+  assert.strictEqual((await StorageService.getNameList('novel-test')).length, 1);
+  assert.strictEqual((await StorageService.getNovelById('novel-test')).nameList.length, 1, 'getNovelById attaches the list');
+  console.log('✓ name lists are stored per-novel, not inline on the novel record');
+
+  // 20. Legacy inline lists are migrated to their own record on first read
+  mockDbStore['novel-legacy'] = {
+    id: 'novel-legacy', title: 'Legacy', slug: 'legacy', url: '', domain: 'x.com', totalChapters: 3, chapterList: [],
+    nameList: [{ id: 'l1', original: 'Old', translation: 'New', addedAt: 1 }]
+  };
+  const migratedNovel = await StorageService.getNovelById('novel-legacy');
+  assert.strictEqual(migratedNovel.nameList.length, 1, 'legacy list is returned');
+  assert.strictEqual(migratedNovel.nameList[0].original, 'Old');
+  assert(!('nameList' in mockDbStore['novel-legacy']), 'inline list stripped after migration');
+  const migratedRecord = mockDbStore['namelist::novel-legacy'];
+  assert(migratedRecord && migratedRecord.list.length === 1, 'legacy list moved to its own record');
+  console.log('✓ legacy inline name lists migrate to their own record');
+
+  console.log('\n🎉 All 20 Novel Name List tests passed!');
 }
 
 runTests().catch((err) => {
