@@ -16,12 +16,13 @@ if new utility classes → `npm run build:ext` → owner loads `dist/` → commi
 ## The check
 
 A **conflict** is a pair of entries where:
-- one `original` is a **suffix** of the other (`Byuk-ho` ⊂ `Jin Byuk-ho`; a shared given name used
-  alone), and
+- one `original` is a **prefix or suffix** of the other at a word boundary (`Byuk-ho` ⊂
+  `Jin Byuk-ho`, `Seokyung` ⊂ `Seokyung city`; a shared given/part used alone), and
 - the shorter's `translation` is **not** contained in the longer's.
 
-Suffix-only deliberately avoids false positives from parenthetical glosses or mid-string words
-(e.g. `Earth` inside `Cheonji (Heaven Earth) Heart Method` is not a suffix, so it isn't flagged).
+Affix-only (prefix/suffix) deliberately avoids false positives from parenthetical glosses or
+mid-string words (e.g. `Earth` inside `Cheonji (Heaven Earth) Heart Method` is neither, so it isn't
+flagged).
 
 Containment comparison has a **toggle**:
 - **Strict** — exact (case- and accent-sensitive).

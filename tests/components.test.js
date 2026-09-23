@@ -448,6 +448,14 @@ function test(name, fn) {
       { id: 'm', original: 'Cheonji (Heaven Earth) Heart Method', translation: 'Thiên Địa Tâm Pháp' },
       { id: 'e', original: 'Earth', translation: 'Địa Cầu' }
     ]).length, 0, 'a middle (non-suffix) part is not flagged');
+
+    const prefix = findNameConflicts([
+      { id: 's', original: 'Seokyung', translation: 'Seokyung' },
+      { id: 'sc', original: 'Seokyung city', translation: 'Tây Kinh thành' }
+    ]);
+    assert.strictEqual(prefix.length, 1, 'a prefix part is flagged');
+    assert.strictEqual(prefix[0].longerId, 'sc');
+    assert.strictEqual(prefix[0].shorterId, 's');
   });
 
   test('computeVirtualWindow slices the visible range with overscan', () => {
