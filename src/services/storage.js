@@ -93,6 +93,32 @@ function getAllFromStore(db, storeName) {
   });
 }
 
+// Extracts the optional `<<<NAME_LIST_START>>> ... <<<NAME_LIST_END>>>` block that
+// some translation models append. Returns the chapter text without the block plus the
+// parsed `source=translated` entries.
+function parseNameListBlock(text) {
+  const source = typeof text === 'string' ? text : '';
+  const marker = /<<<\s*NAME_LIST_START\s*>>>([\s\S]*?)<<<\s*NAME_LIST_END\s*>>>/i;
+  const match = source.match(marker);
+  if (!match) return { text: source, names: [] };
+
+  const names = [];
+  match[1].split(/[|\r\n]+/).forEach((segment) => {
+    const piece = segment.trim();
+    if (!piece) return;
+    const eq = piece.indexOf('=');
+    if (eq <= 0) return;
+    const original = piece.slice(0, eq).trim();
+    const translation = piece.slice(eq + 1).trim();
+    if (original && translation) names.push({ original, translation });
+  });
+
+  const cleaned = (source.slice(0, match.index) + source.slice(match.index + match[0].length))
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { text: cleaned, names };
+}
+
 const StorageService = {
   async _isDbInitialized() {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -363,6 +389,48 @@ const StorageService = {
     currentList.unshift(newEntry);
     await this.saveNameList(novelId, currentList);
     return newEntry;
+  },
+
+  parseNameListBlock,
+
+  /**
+   * Adds several name entries at once, skipping any whose source name already exists
+   * (case-insensitive). Saves the list once.
+   * @param {string} novelId
+   * @param {Array<{original: string, translation: string}>} entries
+   * @param {number|string} [chapterFirstSeen]
+   * @returns {Promise<Array>} the entries actually added
+   */
+  async addNameEntries(novelId, entries, chapterFirstSeen) {
+    if (!novelId || !Array.isArray(entries) || entries.length === 0) return [];
+    const currentList = await this.getNameList(novelId);
+    const seen = new Set(
+      currentList.map((e) => (e.original || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const added = [];
+    entries.forEach((entry) => {
+      const original = (entry && entry.original ? entry.original : '').trim();
+      const translation = (entry && entry.translation ? entry.translation : '').trim();
+      if (!original || !translation) return;
+      const key = original.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      added.push({
+        id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+        original,
+        translation,
+        chapterFirstSeen: chapterFirstSeen !== undefined && chapterFirstSeen !== '' ? chapterFirstSeen : null,
+        addedAt: Date.now()
+      });
+    });
+    if (added.length === 0) return [];
+    await this.saveNameList(novelId, [...added, ...currentList]);
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('novel-name-list-updated', {
+        detail: { novelId, count: currentList.length + added.length, added: added.length }
+      }));
+    }
+    return added;
   },
 
   /**
@@ -814,6 +882,7 @@ const StorageService = {
     let translationCost = null;
     let translationUsage = null;
     let reasoningText = null;
+    let capturedNames = [];
 
     // Optional DeepSeek translation pre-download
     if (options && options.translation && options.translation.enabled) {
@@ -917,7 +986,9 @@ const StorageService = {
         }
       });
 
-      finalText = result.translatedText;
+      const parsedNames = this.parseNameListBlock(result.translatedText);
+      finalText = parsedNames.text;
+      capturedNames = parsedNames.names;
       // Discard deepthink reasoning process - do not save to storage
       reasoningText = null;
       isTranslated = true;
@@ -946,6 +1017,14 @@ const StorageService = {
       translationCost: translationCost,
       translationUsage: translationUsage
     });
+
+    if (capturedNames.length > 0) {
+      try {
+        await this.addNameEntries(novel.id, capturedNames, Number(chapterNumber));
+      } catch (e) {
+        console.warn('[StorageService] Failed to save auto-detected name list:', e);
+      }
+    }
 
     if (options && typeof options.onProgress === 'function') {
       options.onProgress({ phase: 'completed', percent: 100, text: 'Completed' });

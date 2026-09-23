@@ -89,7 +89,16 @@ const sandbox = {
     }
   },
   localStorage: mockLocalStorage,
-  window: {}
+  window: {
+    _events: [],
+    dispatchEvent: function (e) { this._events.push(e); }
+  },
+  CustomEvent: class {
+    constructor(type, init) {
+      this.type = type;
+      this.detail = init && init.detail;
+    }
+  }
 };
 
 vm.createContext(sandbox);
@@ -330,7 +339,43 @@ async function runTests() {
   assert(exported.includes('Bai Xiaochun = Bạch Tiểu Thuần # Ch. 5'));
   console.log('✓ Bulk export generates clean Original = Translation format');
 
-  console.log('\n🎉 All 11 Novel Name List tests passed!');
+  // 12. Auto-detected name list block parsing
+  const withBlock = 'Chapter text line one.\n\n<<<NAME_LIST_START>>>\nYanguo=Yên quốc|Li Qiye=Lý Thất Dạ\n<<<NAME_LIST_END>>>\n';
+  const parsedBlock = StorageService.parseNameListBlock(withBlock);
+  assert.strictEqual(parsedBlock.names.length, 2);
+  assert.strictEqual(parsedBlock.names[0].original, 'Yanguo');
+  assert.strictEqual(parsedBlock.names[0].translation, 'Yên quốc');
+  assert.strictEqual(parsedBlock.names[1].original, 'Li Qiye');
+  assert(!parsedBlock.text.includes('NAME_LIST'), 'block markers must be stripped from the chapter');
+  assert(parsedBlock.text.includes('Chapter text line one.'), 'chapter text must be preserved');
+
+  const noBlock = StorageService.parseNameListBlock('Just a normal chapter.');
+  assert.strictEqual(noBlock.names.length, 0);
+  assert.strictEqual(noBlock.text, 'Just a normal chapter.');
+
+  const nlBlock = StorageService.parseNameListBlock('<<<NAME_LIST_START>>>A=a1\nB=b1\n<<<NAME_LIST_END>>>');
+  assert.strictEqual(nlBlock.names.length, 2, 'newline-separated entries must parse');
+  console.log('✓ Auto-detected name list block is parsed and stripped');
+
+  // 13. addNameEntries skips duplicates (case-insensitive) and batch duplicates
+  await StorageService.saveNameList('novel-test', [{ id: 'x1', original: 'Yanguo', translation: 'Yên quốc', chapterFirstSeen: 1, addedAt: 1 }]);
+  const addedEntries = await StorageService.addNameEntries('novel-test', [
+    { original: 'yanguo', translation: 'SHOULD NOT OVERWRITE' },
+    { original: 'Li Qiye', translation: 'Lý Thất Dạ' },
+    { original: 'li qiye', translation: 'SHOULD BE DEDUPED' }
+  ], 7);
+  assert.strictEqual(addedEntries.length, 1, 'only the genuinely new name is added');
+  assert.strictEqual(addedEntries[0].original, 'Li Qiye');
+  assert.strictEqual(addedEntries[0].chapterFirstSeen, 7);
+  const nameListEvents = sandbox.window._events.filter((e) => e.type === 'novel-name-list-updated');
+  assert.strictEqual(nameListEvents.length, 1, 'must emit novel-name-list-updated once');
+  assert.strictEqual(nameListEvents[0].detail.count, 2, 'event carries the new total count');
+  const afterAuto = await StorageService.getNameList('novel-test');
+  assert.strictEqual(afterAuto.length, 2);
+  assert.strictEqual(afterAuto.find((e) => e.original.toLowerCase() === 'yanguo').translation, 'Yên quốc', 'existing translation must be untouched');
+  console.log('✓ addNameEntries skips existing names and batch duplicates');
+
+  console.log('\n🎉 All 13 Novel Name List tests passed!');
 }
 
 runTests().catch((err) => {
