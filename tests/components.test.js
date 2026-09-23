@@ -315,11 +315,13 @@ function test(name, fn) {
   // --- nameListSource helpers ---
   const { findMatches, buildSnippets, splitByNames, createNameMatcher, findNameConflicts, computeVirtualWindow } = await loadComponent('components/react/novel/nameListSource.js');
 
-  test('findMatches locates case-insensitive source occurrences', () => {
+  test('findMatches locates whole-word, case-insensitive source occurrences', () => {
     assert.deepStrictEqual(findMatches('Wang Lin met wang lin.', 'Wang Lin').map((m) => m.index), [0, 13]);
     assert.deepStrictEqual(findMatches('abc', 'zzz'), []);
     assert.deepStrictEqual(findMatches('', 'a'), []);
-    assert.deepStrictEqual(findMatches('aaaa', 'aa').map((m) => m.index), [0, 2]);
+    assert.deepStrictEqual(findMatches('aaaa', 'aa'), [], 'partial (non-whole-word) hits are excluded');
+    assert.deepStrictEqual(findMatches('Just Ju.', 'Ju').map((m) => m.index), [5], 'Ju does not match inside Just');
+    assert.deepStrictEqual(findMatches('ju JU', 'Ju').map((m) => m.index), [0, 3], 'case-insensitive');
   });
 
   test('buildSnippets wraps the match with elided context and caps the count', () => {

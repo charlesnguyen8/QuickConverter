@@ -1,17 +1,24 @@
 import '../../../services/name-matcher.js';
 
+const escapeRegExp = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 export function findMatches(text, term) {
+  const source = typeof text === 'string' ? text : '';
+  const needle = String(term == null ? '' : term).trim();
+  if (!source || !needle) return [];
+
+  const api = typeof globalThis !== 'undefined' ? globalThis.NameMatcher : null;
+  if (api && typeof api.createMatcher === 'function') {
+    const matcher = api.createMatcher([{ id: 'term', original: needle }], { field: 'original', caseSensitive: false });
+    return matcher.findAll(source).map((match) => ({ index: match.index, length: match.length }));
+  }
+
+  const regex = new RegExp(`(?<![\\p{L}\\p{N}-])${escapeRegExp(needle)}(?![\\p{L}\\p{N}-])`, 'giu');
   const matches = [];
-  if (typeof text !== 'string' || !text || !term) return matches;
-  const haystack = text.toLowerCase();
-  const needle = String(term).toLowerCase();
-  if (!needle) return matches;
-  let from = 0;
-  while (from <= haystack.length) {
-    const index = haystack.indexOf(needle, from);
-    if (index === -1) break;
-    matches.push({ index, length: needle.length });
-    from = index + needle.length;
+  let match;
+  while ((match = regex.exec(source)) !== null) {
+    matches.push({ index: match.index, length: match[0].length });
+    if (match[0].length === 0) regex.lastIndex += 1;
   }
   return matches;
 }
