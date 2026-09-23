@@ -35,6 +35,7 @@ console.log('✓ services/storage.js supports reasoningText and local bridge aut
 const readerHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'reader.html'), 'utf8');
 const popupHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'popup.html'), 'utf8');
 const settingsHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'settings.html'), 'utf8');
+const novelHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'novel.html'), 'utf8');
 const readerSourceSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'reader', 'ReaderSourceDrawer.jsx'), 'utf8');
 const readerDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'reader', 'ReaderDeepseekCard.jsx'), 'utf8');
 const aiConfigSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'shared', 'AiConfigPanel.jsx'), 'utf8');
@@ -77,6 +78,20 @@ assert(settingsHas('bridge-preset-btn'), 'settings must have #bridge-preset-btn'
 assert(settingsHas('bridge-url-input'), 'settings must have #bridge-url-input');
 assert(settingsHas('test-bridge-btn'), 'settings must have #test-bridge-btn');
 console.log('✓ views/settings.html contains AI provider radio choices, preset button, and test connection button');
+
+// Test 4b: name-matcher.js must be loaded wherever tokenization/highlighting can run.
+const backgroundSrc = fs.readFileSync(path.join(repoRoot, 'src', 'scripts', 'background.js'), 'utf8');
+for (const [name, html] of [['novel.html', novelHtml], ['popup.html', popupHtml], ['reader.html', readerHtml]]) {
+  assert(html.includes('services/name-matcher.js'), `${name} must load services/name-matcher.js before storage.js`);
+}
+const importScriptsLine = backgroundSrc.match(/importScripts\(([^)]*)\)/);
+assert(importScriptsLine, 'background.js must call importScripts');
+assert(importScriptsLine[1].includes('services/name-matcher.js'), 'background.js importScripts must include services/name-matcher.js');
+assert(
+  importScriptsLine[1].indexOf('services/name-matcher.js') < importScriptsLine[1].indexOf('services/storage.js'),
+  'name-matcher.js must be imported before storage.js in the worker'
+);
+console.log('✓ name-matcher.js is loaded in the downloading views and the background worker');
 
 // Test 5: Verify live local bridge endpoint if running
 async function testLiveBridge() {

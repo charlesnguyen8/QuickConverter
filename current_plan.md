@@ -80,7 +80,7 @@ until rendering is actually slow.
 Cap the number of highlighted segments per paragraph so a pathological text can't create a huge
 DOM node count.
 
-### NL-9 — Load-site contract test  *(guard, small)*
+### NL-9 — Load-site contract test  *(guard, small)* — **done**
 Assert `name-matcher.js` is present in the downloading views (`novel/popup/reader.html`) and in
 `src/scripts/background.js` `importScripts`, so a missing tag can't silently degrade
 tokenization/highlighting.
