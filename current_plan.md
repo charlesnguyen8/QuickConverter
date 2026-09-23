@@ -26,8 +26,8 @@ independently revertible. Report any test change and why (owner rules in `AGENTS
   **complete and committed**.
 - This plan tracks **NL-1 … NL-10** below; **NL-4 moved to `nice_to_have_plan.md`** (conditional).
 - Done: **NL-1** (empty-translation guard), **NL-2** (dedicated name-list record), **NL-3** (drawer
-  virtualization), **NL-5** (astral-plane indexing), **NL-9** (load-site contract test). Remaining:
-  NL-6, NL-7, NL-8, NL-10.
+  virtualization), **NL-5** (astral-plane indexing), **NL-7** (highlight memoization), **NL-9**
+  (load-site contract test). Moved to `nice_to_have_plan.md`: NL-4, NL-6. Remaining: NL-8, NL-10.
 
 ---
 
@@ -76,13 +76,12 @@ are still reported in code units, so slicing/highlighting is unchanged.
 - Touches: `src/services/name-matcher.js`.
 - Tests: `components.test.js` astral-name match (length 2, correct slice) + `splitByNames`.
 
-### NL-6 — Case-folding edges  *(edge, likely no-op)*
-Case-insensitive highlight uses per-char `toLowerCase()` (no locale handling; some chars change
-length). Revisit only if odd names stop highlighting. Decide whether to keep naive folding.
-
-### NL-7 — Cache highlight segments per chapter  *(perf, defer)*
-Removes the per-render rescan; costs invalidation on name-list change / rename cascade. Defer
-until rendering is actually slow.
+### NL-7 — Cache highlight segments per chapter  *(perf, defer)* — **done**
+`ReaderChapter` recomputed highlight segments on every render (so theme/font/typography changes
+re-scanned the whole chapter). `paragraphs` is now memoized on the chapter text and the highlight
+segments are memoized on `[paragraphs, nameMatcher]`, so unrelated re-renders reuse them and a change
+to the text or name list recomputes automatically (no manual cache / invalidation).
+- Touches: `src/components/react/reader/ReaderChapter.jsx`.
 
 ### NL-8 — Bound matches per paragraph  *(hardening)*
 Cap the number of highlighted segments per paragraph so a pathological text can't create a huge

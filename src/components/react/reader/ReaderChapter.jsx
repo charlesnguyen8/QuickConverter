@@ -105,10 +105,10 @@ export default function ReaderChapter() {
   }, []);
 
   const text = chapter ? (chapter.convertedText || chapter.rawText || '') : '';
-  const paragraphs = text
+  const paragraphs = useMemo(() => text
     .split('\n\n')
     .map((p) => p.trim())
-    .filter((p) => p.length > 0 && p !== '&nbsp;');
+    .filter((p) => p.length > 0 && p !== '&nbsp;'), [text]);
 
   const charCount = text.length;
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
@@ -121,6 +121,10 @@ export default function ReaderChapter() {
   const novelTitle = (novel && novel.title) || 'Novel';
   const nameList = novel && Array.isArray(novel.nameList) ? novel.nameList : [];
   const nameMatcher = useMemo(() => createNameMatcher(nameList), [nameList]);
+  const highlightedParagraphs = useMemo(
+    () => paragraphs.map((paragraph) => nameMatcher.split(paragraph)),
+    [paragraphs, nameMatcher]
+  );
 
   const openNameEntry = (nameId, e) => {
     const el = e && e.currentTarget;
@@ -258,7 +262,7 @@ export default function ReaderChapter() {
       >
         {paragraphs.length === 0 ? (
           <p className="text-slate-400">No chapter text found.</p>
-        ) : paragraphs.map((p, idx) => (
+        ) : paragraphs.map((_, idx) => (
           <div key={idx} className="paragraph-block relative group rounded-md transition-all -mx-2 px-2 py-0.5 hover:bg-slate-800/30" data-idx={idx}>
             <p
               ref={(el) => { paragraphRefs.current[idx] = el; }}
@@ -267,7 +271,7 @@ export default function ReaderChapter() {
               title="Double-click to edit this paragraph"
               onDoubleClick={() => editParagraph(idx)}
             >
-              {nameMatcher.split(p).map((seg, i) => (seg.nameId ? (
+              {highlightedParagraphs[idx].map((seg, i) => (seg.nameId ? (
                 <span
                   key={i}
                   role="button"
