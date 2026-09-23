@@ -124,7 +124,7 @@ function TrashIcon({ size = 13 }) {
   );
 }
 
-const inputCls = 'px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
+const inputCls = 'px-3 py-2.5 sm:py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
 
 const ROW_HEIGHT = 96;
 const VIRTUAL_OVERSCAN = 6;
@@ -684,7 +684,7 @@ export default function NameListDrawer() {
           >
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-800 bg-slate-950/90 backdrop-blur sticky top-0 z-10 flex-shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                <button type="button" onClick={closeSource} className="md:hidden p-1.5 -ml-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer flex-shrink-0" title="Back to names">
+                <button type="button" onClick={closeSource} className="md:hidden inline-flex items-center justify-center min-h-10 min-w-10 p-2.5 -ml-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer flex-shrink-0" title="Back to names">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="15 18 9 12 15 6"></polyline>
                   </svg>
@@ -698,7 +698,7 @@ export default function NameListDrawer() {
                   <p className="text-[11px] text-slate-400">Occurrences in the source text</p>
                 </div>
               </div>
-              <button type="button" onClick={closeSource} className="hidden md:inline-flex p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer flex-shrink-0" title="Close source panel">
+              <button type="button" onClick={closeSource} className="hidden md:inline-flex p-2.5 sm:p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer flex-shrink-0" title="Close source panel">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -746,7 +746,7 @@ export default function NameListDrawer() {
                 type="button"
                 onClick={scanAllChapters}
                 disabled={scanAll && scanAll.loading}
-                className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="self-start inline-flex items-center gap-1.5 px-3 py-2.5 sm:py-1.5 rounded-lg text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {scanAll && scanAll.loading ? 'Scanning...' : 'Scan all downloaded chapters'}
               </button>
@@ -783,10 +783,10 @@ export default function NameListDrawer() {
           aria-labelledby="name-list-title"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-10 flex-shrink-0">
-            <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-10 flex-shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
               <span className="text-xl">📖</span>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h2 id="name-list-title" className="text-base font-bold text-slate-100">Name List &amp; Glossary</h2>
                   <span id="name-list-badge" className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">{entries.length}</span>
@@ -794,12 +794,12 @@ export default function NameListDrawer() {
                 <p className="text-xs text-slate-400 truncate max-w-xs" id="name-list-novel-title">Character &amp; place name glossary</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={toggleBulk} className="inline-flex items-center justify-center gap-1 h-8 whitespace-nowrap text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2.5 rounded-md transition cursor-pointer" title="Bulk Import / Export lines (Original = Translation)">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button type="button" onClick={toggleBulk} className="inline-flex items-center justify-center gap-1 h-10 sm:h-8 whitespace-nowrap text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 sm:px-2.5 rounded-md transition cursor-pointer" title="Bulk Import / Export lines (Original = Translation)">
                 <span>📥 Bulk</span>
               </button>
               {entries.length > 0 ? (
-                <button type="button" id="name-list-delete-all-btn" onClick={() => setDeleteAllPrompt(true)} className="inline-flex items-center justify-center gap-1.5 h-8 whitespace-nowrap text-xs font-semibold text-rose-300 hover:text-white bg-slate-800 hover:bg-rose-600 border border-rose-500/30 hover:border-rose-500 px-2.5 rounded-md transition cursor-pointer" title="Delete all names from the glossary">
+                <button type="button" id="name-list-delete-all-btn" onClick={() => setDeleteAllPrompt(true)} className="inline-flex items-center justify-center gap-1.5 h-10 sm:h-8 min-w-10 sm:min-w-0 whitespace-nowrap text-xs font-semibold text-rose-300 hover:text-white bg-slate-800 hover:bg-rose-600 border border-rose-500/30 hover:border-rose-500 px-3 sm:px-2.5 rounded-md transition cursor-pointer" title="Delete all names from the glossary">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -807,10 +807,10 @@ export default function NameListDrawer() {
                   <span className="hidden sm:inline">Delete All</span>
                 </button>
               ) : null}
-              <button type="button" onClick={checkNameForm} className="inline-flex items-center justify-center gap-1 h-8 whitespace-nowrap text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 border border-indigo-500 px-2.5 rounded-md transition cursor-pointer shadow-sm">
+              <button type="button" onClick={checkNameForm} className="inline-flex items-center justify-center gap-1 h-10 sm:h-8 whitespace-nowrap text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 border border-indigo-500 px-3 sm:px-2.5 rounded-md transition cursor-pointer shadow-sm">
                 <span>+ Add Name</span>
               </button>
-              <button type="button" onClick={closeDrawer} className="p-1.5 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer ml-1" title="Close Name List (Esc)">
+              <button type="button" onClick={closeDrawer} className="inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer sm:ml-1" title="Close Name List (Esc)">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -841,7 +841,7 @@ export default function NameListDrawer() {
                     <label className="text-[11px] font-semibold text-slate-300">Chapter First Seen</label>
                     <input type="text" value={formChapter} onChange={(e) => setFormChapter(e.target.value)} placeholder="e.g. 1 or Ch. 1" className={inputCls} />
                   </div>
-                  <button type="submit" className="flex-1 py-1.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer text-center">Save Entry</button>
+                  <button type="submit" className="flex-1 py-2.5 sm:py-1.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer text-center">Save Entry</button>
                 </div>
               </form>
             </div>
@@ -858,10 +858,10 @@ export default function NameListDrawer() {
               </p>
               <textarea rows="6" value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder={'Yanguo = Yên quốc\nLi Qiye = Lý Thất Dạ # Ch. 1\nWang Lin = Vương Lâm'} className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500" />
               <div className="flex items-center justify-between gap-3">
-                <button type="button" onClick={exportBulk} className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition cursor-pointer inline-flex items-center gap-1.5">
+                <button type="button" onClick={exportBulk} className="px-3 py-2.5 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition cursor-pointer inline-flex items-center gap-1.5">
                   <span>📋 Copy All to Clipboard</span>
                 </button>
-                <button type="button" onClick={importBulk} className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer">Import Lines</button>
+                <button type="button" onClick={importBulk} className="px-4 py-2.5 sm:py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer">Import Lines</button>
               </div>
               {bulkStatus ? <div className={bulkStatus.cls}>{bulkStatus.msg}</div> : null}
             </div>
@@ -875,7 +875,7 @@ export default function NameListDrawer() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search name or translation..."
-                className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-950 border border-slate-700/80 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                className="w-full pl-8 pr-7 py-2.5 sm:py-1.5 text-xs bg-slate-950 border border-slate-700/80 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
               />
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500">
                 <circle cx="11" cy="11" r="8" />
@@ -887,7 +887,7 @@ export default function NameListDrawer() {
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <span className="text-[11px] font-semibold text-slate-400">Sort:</span>
-              <select value={sort} onChange={(e) => setSort(e.target.value)} className="px-2.5 py-1.5 text-xs bg-slate-950 border border-slate-700/80 rounded-lg text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer">
+              <select value={sort} onChange={(e) => setSort(e.target.value)} className="px-2.5 py-2.5 sm:py-1.5 text-xs bg-slate-950 border border-slate-700/80 rounded-lg text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer">
                 <option value="time_desc">Time Added (Newest)</option>
                 <option value="time_asc">Time Added (Oldest)</option>
                 <option value="orig_asc">Name (A → Z)</option>
@@ -901,7 +901,7 @@ export default function NameListDrawer() {
                 type="button"
                 id="name-list-conflict-strict-toggle"
                 onClick={toggleStrictConflicts}
-                className="px-2.5 py-1.5 text-xs rounded-lg border border-slate-700/80 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-600 transition cursor-pointer flex-shrink-0"
+                className="px-2.5 py-2.5 sm:py-1.5 text-xs rounded-lg border border-slate-700/80 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-600 transition cursor-pointer flex-shrink-0"
                 title="Consistency check: how exact the translation match must be (Strict = case/accent sensitive)"
               >
                 Match: {strictConflicts ? 'Strict' : 'Forgiving'}
@@ -929,7 +929,7 @@ export default function NameListDrawer() {
                       key={`${conflict.longerId}>${conflict.shorterId}`}
                       type="button"
                       onClick={() => setConflictPrompt(conflictById.get(conflict.longerId) || conflict)}
-                      className="text-left text-[11px] leading-relaxed rounded-md px-2 py-1.5 bg-slate-900/60 border border-rose-500/25 hover:border-rose-500/50 hover:bg-slate-900 transition cursor-pointer"
+                      className="text-left text-[11px] leading-relaxed rounded-md px-2 py-2.5 sm:py-1.5 bg-slate-900/60 border border-rose-500/25 hover:border-rose-500/50 hover:bg-slate-900 transition cursor-pointer"
                       title="Review and fix"
                     >
                       <span className="font-mono text-slate-100">{conflict.longerOriginal}</span>
@@ -954,7 +954,7 @@ export default function NameListDrawer() {
                 <p className="text-xs text-slate-400 max-w-xs mb-4">
                   Add character, sect, and location names (e.g. <span className="text-slate-200 font-mono">Yanguo = Yên quốc</span>) to keep a handy reading glossary.
                 </p>
-                <button type="button" onClick={openAddForm} className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer">+ Add First Name</button>
+                <button type="button" onClick={openAddForm} className="px-3 py-2.5 sm:py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer">+ Add First Name</button>
               </div>
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
@@ -1011,10 +1011,10 @@ export default function NameListDrawer() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition flex-shrink-0">
-                          <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(entry); }} className="p-1.5 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700/60 transition cursor-pointer" title="Edit entry">
+                          <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(entry); }} className="inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700/60 transition cursor-pointer" title="Edit entry">
                             <EditIcon />
                           </button>
-                          <button type="button" onClick={(e) => { e.stopPropagation(); deleteEntry(entry.id); }} className="p-1.5 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-700/60 transition cursor-pointer" title="Delete entry">
+                          <button type="button" onClick={(e) => { e.stopPropagation(); deleteEntry(entry.id); }} className="inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-700/60 transition cursor-pointer" title="Delete entry">
                             <TrashIcon />
                           </button>
                         </div>
@@ -1049,8 +1049,8 @@ export default function NameListDrawer() {
               <span className="font-mono text-emerald-300">"{conflictPrompt.shorterTranslation}"</span>.
             </p>
             <div className="flex items-center justify-end gap-2.5">
-              <button type="button" onClick={dismissConflict} className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Keep as-is</button>
-              <button type="button" onClick={editConflict} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Edit entry</button>
+              <button type="button" onClick={dismissConflict} className="px-3.5 py-2.5 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Keep as-is</button>
+              <button type="button" onClick={editConflict} className="px-4 py-2.5 sm:py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Edit entry</button>
             </div>
           </div>
         </div>,
@@ -1076,8 +1076,8 @@ export default function NameListDrawer() {
               in {renamePrompt.chaptersChanged} downloaded chapter{renamePrompt.chaptersChanged === 1 ? '' : 's'}?
             </p>
             <div className="flex items-center justify-end gap-2.5">
-              <button type="button" onClick={() => setRenamePrompt(null)} className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Cancel</button>
-              <button type="button" onClick={confirmRename} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Replace chapters</button>
+              <button type="button" onClick={() => setRenamePrompt(null)} className="px-3.5 py-2.5 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Cancel</button>
+              <button type="button" onClick={confirmRename} className="px-4 py-2.5 sm:py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Replace chapters</button>
             </div>
           </div>
         </div>,
@@ -1102,8 +1102,8 @@ export default function NameListDrawer() {
               <span className="font-mono text-emerald-300">"{duplicatePrompt.translation}"</span>?
             </p>
             <div className="flex items-center justify-end gap-2.5">
-              <button type="button" onClick={() => setDuplicatePrompt(null)} className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Keep existing</button>
-              <button type="button" onClick={confirmDuplicate} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Replace</button>
+              <button type="button" onClick={() => setDuplicatePrompt(null)} className="px-3.5 py-2.5 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Keep existing</button>
+              <button type="button" onClick={confirmDuplicate} className="px-4 py-2.5 sm:py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Replace</button>
             </div>
           </div>
         </div>,
@@ -1126,8 +1126,8 @@ export default function NameListDrawer() {
               Remove <span className="font-semibold text-rose-300">{entries.length}</span> name{entries.length === 1 ? '' : 's'} from this novel's glossary? Downloaded chapters are not changed.
             </p>
             <div className="flex items-center justify-end gap-2.5">
-              <button type="button" onClick={() => setDeleteAllPrompt(false)} className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Cancel</button>
-              <button type="button" onClick={confirmDeleteAll} className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Delete all</button>
+              <button type="button" onClick={() => setDeleteAllPrompt(false)} className="px-3.5 py-2.5 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Cancel</button>
+              <button type="button" onClick={confirmDeleteAll} className="px-4 py-2.5 sm:py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Delete all</button>
             </div>
           </div>
         </div>,
@@ -1163,13 +1163,13 @@ function InlineEditRow({ entry, onCancel, onSave }) {
   return (
     <div className="flex flex-col gap-2 p-3 rounded-lg bg-slate-800/90 border border-indigo-500/60 ring-1 ring-indigo-500/25 transition">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <input ref={originalRef} type="text" value={original} onChange={(e) => setOriginal(e.target.value)} onKeyDown={handleKey} placeholder="Original Name" className="w-full min-w-0 px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
-        <input type="text" value={translation} onChange={(e) => setTranslation(e.target.value)} onKeyDown={handleKey} placeholder="Translated Name" className="w-full min-w-0 px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-emerald-300 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+        <input ref={originalRef} type="text" value={original} onChange={(e) => setOriginal(e.target.value)} onKeyDown={handleKey} placeholder="Original Name" className="w-full min-w-0 px-3 py-2.5 sm:py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+        <input type="text" value={translation} onChange={(e) => setTranslation(e.target.value)} onKeyDown={handleKey} placeholder="Translated Name" className="w-full min-w-0 px-3 py-2.5 sm:py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-emerald-300 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
       </div>
       <div className="flex items-center gap-2">
-        <input type="text" value={chapter} onChange={(e) => setChapter(e.target.value)} onKeyDown={handleKey} placeholder="Chapter First Seen (e.g. 1)" className="flex-1 min-w-0 px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
-        <button type="button" onClick={() => onSave({ original, translation, chapter })} className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer" title="Save changes (Enter)">Save</button>
-        <button type="button" onClick={onCancel} className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition cursor-pointer" title="Cancel (Esc)">Cancel</button>
+        <input type="text" value={chapter} onChange={(e) => setChapter(e.target.value)} onKeyDown={handleKey} placeholder="Chapter First Seen (e.g. 1)" className="flex-1 min-w-0 px-3 py-2.5 sm:py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+        <button type="button" onClick={() => onSave({ original, translation, chapter })} className="flex-shrink-0 px-3 py-2.5 sm:py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer" title="Save changes (Enter)">Save</button>
+        <button type="button" onClick={onCancel} className="flex-shrink-0 px-3 py-2.5 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition cursor-pointer" title="Cancel (Esc)">Cancel</button>
       </div>
     </div>
   );
