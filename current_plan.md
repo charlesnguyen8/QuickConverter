@@ -24,11 +24,11 @@ independently revertible. Report any test change and why (owner rules in `AGENTS
 
 - Prior work (React migration M1–M8, name-list source/rename/tokenize features, trie matcher) is
   **complete and committed**.
-- This plan tracks **NL-1 … NL-10** below; **NL-4 moved to `nice_to_have_plan.md`** (conditional).
+- All active items are **done**. Nice-to-haves (moved out) live in `nice_to_have_plan.md`: NL-4
+  (Aho–Corasick), NL-6 (case-folding), NL-10 (batch renames).
 - Done: **NL-1** (empty-translation guard), **NL-2** (dedicated name-list record), **NL-3** (drawer
   virtualization), **NL-5** (astral-plane indexing), **NL-7** (highlight memoization), **NL-8** (match
-  cap), **NL-9** (load-site contract test). Moved to `nice_to_have_plan.md`: NL-4, NL-6. Remaining:
-  NL-10.
+  cap), **NL-9** (load-site contract test).
 
 ---
 
@@ -97,10 +97,6 @@ Assert `name-matcher.js` is present in the downloading views (`novel/popup/reade
 `src/scripts/background.js` `importScripts`, so a missing tag can't silently degrade
 tokenization/highlighting.
 - Touches: a static contract test in `tests/` (allowed for manifest/script-tag checks).
-
-### NL-10 — Batch renames  *(perf, defer)*
-`replaceInChapters` rescans all chapters per rename; batch if users start renaming many names in
-a row.
 
 ---
 
