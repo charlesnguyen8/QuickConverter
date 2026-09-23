@@ -313,7 +313,7 @@ function test(name, fn) {
   });
 
   // --- nameListSource helpers ---
-  const { findMatches, buildSnippets, splitByNames, computeVirtualWindow } = await loadComponent('components/react/novel/nameListSource.js');
+  const { findMatches, buildSnippets, splitByNames, createNameMatcher, computeVirtualWindow } = await loadComponent('components/react/novel/nameListSource.js');
 
   test('findMatches locates case-insensitive source occurrences', () => {
     assert.deepStrictEqual(findMatches('Wang Lin met wang lin.', 'Wang Lin').map((m) => m.index), [0, 13]);
@@ -393,6 +393,15 @@ function test(name, fn) {
     for (let i = 0; i < 3000; i += 1) entries.push({ id: `n${i}`, original: `Name${i}`, translation: `Tên${i}` });
     const segs = splitByNames('Start Tên2500 and Tên3 end.', entries);
     assert.deepStrictEqual(segs.filter((s) => s.nameId).map((s) => s.nameId), ['n2500', 'n3']);
+  });
+
+  test('splitByNames caps highlights per paragraph', () => {
+    const matcher = createNameMatcher([{ id: 'a', original: 'x', translation: 'Aaa' }], { maxMatches: 2 });
+    const segs = matcher.split('Aaa Aaa Aaa Aaa');
+    assert.strictEqual(segs.filter((s) => s.nameId).length, 2, 'only the cap number is highlighted');
+    assert.strictEqual(segs.map((s) => s.text).join(''), 'Aaa Aaa Aaa Aaa', 'text is preserved');
+    const uncapped = splitByNames('Aaa Aaa Aaa Aaa', [{ id: 'b', original: 'x', translation: 'Aaa' }]);
+    assert.strictEqual(uncapped.filter((s) => s.nameId).length, 4, 'small inputs stay fully highlighted');
   });
 
   test('computeVirtualWindow slices the visible range with overscan', () => {

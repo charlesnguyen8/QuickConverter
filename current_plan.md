@@ -26,8 +26,9 @@ independently revertible. Report any test change and why (owner rules in `AGENTS
   **complete and committed**.
 - This plan tracks **NL-1 … NL-10** below; **NL-4 moved to `nice_to_have_plan.md`** (conditional).
 - Done: **NL-1** (empty-translation guard), **NL-2** (dedicated name-list record), **NL-3** (drawer
-  virtualization), **NL-5** (astral-plane indexing), **NL-7** (highlight memoization), **NL-9**
-  (load-site contract test). Moved to `nice_to_have_plan.md`: NL-4, NL-6. Remaining: NL-8, NL-10.
+  virtualization), **NL-5** (astral-plane indexing), **NL-7** (highlight memoization), **NL-8** (match
+  cap), **NL-9** (load-site contract test). Moved to `nice_to_have_plan.md`: NL-4, NL-6. Remaining:
+  NL-10.
 
 ---
 
@@ -76,16 +77,20 @@ are still reported in code units, so slicing/highlighting is unchanged.
 - Touches: `src/services/name-matcher.js`.
 - Tests: `components.test.js` astral-name match (length 2, correct slice) + `splitByNames`.
 
-### NL-7 — Cache highlight segments per chapter  *(perf, defer)* — **done**
+### NL-7 — Cache highlight segments per chapter  *(perf)* — **done**
 `ReaderChapter` recomputed highlight segments on every render (so theme/font/typography changes
 re-scanned the whole chapter). `paragraphs` is now memoized on the chapter text and the highlight
 segments are memoized on `[paragraphs, nameMatcher]`, so unrelated re-renders reuse them and a change
 to the text or name list recomputes automatically (no manual cache / invalidation).
 - Touches: `src/components/react/reader/ReaderChapter.jsx`.
 
-### NL-8 — Bound matches per paragraph  *(hardening)*
-Cap the number of highlighted segments per paragraph so a pathological text can't create a huge
-DOM node count.
+### NL-8 — Bound matches per paragraph  *(hardening)* — **done**
+Highlighting is capped at 200 matches per paragraph (rest of the paragraph stays plain), so a
+pathological "name dump" paragraph can't create a huge number of DOM nodes. The cap lives in the
+highlight path only (`nameListSource.createNameMatcher`, `maxMatches` option); the matcher itself is
+untouched so tokenization still replaces/restores every name.
+- Touches: `src/components/react/novel/nameListSource.js`.
+- Tests: `components.test.js` cap case (2 of 4 highlighted, text preserved).
 
 ### NL-9 — Load-site contract test  *(guard, small)* — **done**
 Assert `name-matcher.js` is present in the downloading views (`novel/popup/reader.html`) and in

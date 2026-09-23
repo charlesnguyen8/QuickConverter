@@ -38,8 +38,11 @@ export function buildSnippets(text, term, { context = 120, max = 100 } = {}) {
   return { count: matches.length, snippets };
 }
 
-export function createNameMatcher(entries) {
+const MAX_HIGHLIGHTS_PER_PARAGRAPH = 200;
+
+export function createNameMatcher(entries, options = {}) {
   const api = typeof globalThis !== 'undefined' ? globalThis.NameMatcher : null;
+  const maxMatches = Number.isFinite(options.maxMatches) ? options.maxMatches : MAX_HIGHLIGHTS_PER_PARAGRAPH;
   const list = (Array.isArray(entries) ? entries : [])
     .filter((entry) => entry && typeof entry.translation === 'string' && entry.translation.trim())
     .map((entry) => ({ id: entry.id, original: entry.original || '', translation: entry.translation.trim() }));
@@ -51,9 +54,10 @@ export function createNameMatcher(entries) {
       if (!matcher || !source) return [{ text: source }];
       const matches = matcher.findAll(source);
       if (matches.length === 0) return [{ text: source }];
+      const limited = matches.length > maxMatches ? matches.slice(0, maxMatches) : matches;
       const segments = [];
       let last = 0;
-      matches.forEach((match) => {
+      limited.forEach((match) => {
         if (match.index > last) segments.push({ text: source.slice(last, match.index) });
         segments.push({ text: source.slice(match.index, match.index + match.length), nameId: match.id, original: match.original || null });
         last = match.index + match.length;
