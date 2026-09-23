@@ -300,6 +300,32 @@ function test(name, fn) {
     assert.strictEqual('cooldown' in noTopLevel, false);
   });
 
+  // --- nameListSource helpers ---
+  const { findMatches, buildSnippets } = await loadComponent('components/react/novel/nameListSource.js');
+
+  test('findMatches locates case-insensitive source occurrences', () => {
+    assert.deepStrictEqual(findMatches('Wang Lin met wang lin.', 'Wang Lin').map((m) => m.index), [0, 13]);
+    assert.deepStrictEqual(findMatches('abc', 'zzz'), []);
+    assert.deepStrictEqual(findMatches('', 'a'), []);
+    assert.deepStrictEqual(findMatches('aaaa', 'aa').map((m) => m.index), [0, 2]);
+  });
+
+  test('buildSnippets wraps the match with elided context and caps the count', () => {
+    const text = 'A'.repeat(200) + ' Wang Lin ' + 'B'.repeat(200);
+    const { count, snippets } = buildSnippets(text, 'Wang Lin', { context: 10, max: 5 });
+    assert.strictEqual(count, 1);
+    assert.strictEqual(snippets.length, 1);
+    assert.strictEqual(snippets[0].match, 'Wang Lin');
+    assert(snippets[0].before.startsWith('…'), 'long leading context must be elided');
+    assert(snippets[0].after.endsWith('…'), 'long trailing context must be elided');
+    assert.strictEqual(snippets[0].before.length, 11, '10 chars of context plus the ellipsis');
+
+    const many = ('X Wang Lin ').repeat(8);
+    const capped = buildSnippets(many, 'Wang Lin', { max: 3 });
+    assert.strictEqual(capped.count, 8);
+    assert.strictEqual(capped.snippets.length, 3);
+  });
+
   // --- ReaderPrefsPopover ---
   const prefsMod = await loadComponent('components/react/reader/ReaderPrefsPopover.jsx');
   const ReaderPrefsPopover = prefsMod.default;

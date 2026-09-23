@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { buildSnippets } from './nameListSource.js';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -120,6 +121,16 @@ function TrashIcon({ size = 13 }) {
 
 const inputCls = 'px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
 
+function SourceSnippet({ snippet }) {
+  return (
+    <p className="text-xs text-slate-300 leading-relaxed break-words">
+      <span className="text-slate-500">{snippet.before}</span>
+      <mark className="bg-amber-500/30 text-amber-100 rounded px-0.5">{snippet.match}</mark>
+      <span className="text-slate-500">{snippet.after}</span>
+    </p>
+  );
+}
+
 export default function NameListDrawer() {
   const [novelId] = useState(getNovelId);
   const [open, setOpen] = useState(false);
@@ -137,6 +148,9 @@ export default function NameListDrawer() {
   const [bulkText, setBulkText] = useState('');
   const [bulkStatus, setBulkStatus] = useState(null);
   const searchInputRef = useRef(null);
+  const [sourceEntry, setSourceEntry] = useState(null);
+  const [sourceChapter, setSourceChapter] = useState(null);
+  const [scanAll, setScanAll] = useState(null);
 
   const setEntries = useCallback((next) => {
     setEntriesState(next);
@@ -173,7 +187,12 @@ export default function NameListDrawer() {
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape' && open) setOpen(false);
+      if (e.key !== 'Escape') return;
+      setSourceEntry((current) => {
+        if (current) return null;
+        if (open) setOpen(false);
+        return current;
+      });
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -184,7 +203,54 @@ export default function NameListDrawer() {
     setEditingId(null);
     setFormOpen(false);
     setBulkOpen(false);
+    setSourceEntry(null);
+    setSourceChapter(null);
+    setScanAll(null);
   }, []);
+
+  const openSource = useCallback(async (entry) => {
+    setSourceEntry(entry);
+    setScanAll(null);
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    const chNum = parseChapterNumber(entry.chapterFirstSeen);
+    if (!storage || !novelId || !Number.isFinite(chNum)) {
+      setSourceChapter({ loading: false, missing: true });
+      return;
+    }
+    setSourceChapter({ loading: true, chapterNumber: chNum });
+    try {
+      const record = await storage.getChapter(novelId, chNum);
+      if (!record) {
+        setSourceChapter({ loading: false, chapterNumber: chNum, missing: true });
+      } else {
+        setSourceChapter({ loading: false, chapterNumber: chNum, title: record.title, text: record.originalRawText || '' });
+      }
+    } catch (e) {
+      setSourceChapter({ loading: false, chapterNumber: chNum, error: e.message });
+    }
+  }, [novelId]);
+
+  const scanAllChapters = useCallback(async () => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novelId || !sourceEntry) return;
+    setScanAll({ loading: true, results: [] });
+    try {
+      const chapters = await storage.getNovelChapters(novelId);
+      const term = sourceEntry.original;
+      const results = [];
+      for (const chapter of chapters) {
+        const { count, snippets } = buildSnippets(chapter.originalRawText || '', term);
+        if (count > 0) {
+          results.push({ chapterNumber: chapter.chapterNumber, title: chapter.title, count, snippets });
+        }
+      }
+      setScanAll({ loading: false, results });
+    } catch (e) {
+      setScanAll({ loading: false, results: [], error: e.message });
+    }
+  }, [novelId, sourceEntry]);
+
+  const closeSource = useCallback(() => setSourceEntry(null), []);
 
   const filtered = useMemo(() => sortAndFilter(entries, search.trim(), sort), [entries, search, sort]);
 
@@ -318,9 +384,111 @@ export default function NameListDrawer() {
       onClick={closeDrawer}
     >
       <div className="fixed inset-0 flex justify-end overflow-hidden">
+        {sourceEntry ? (
+          <div
+            id="name-list-source-panel"
+            className="w-full md:max-w-md h-full bg-slate-950 border-l border-slate-700/80 shadow-2xl flex flex-col text-slate-100"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Source occurrences"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-800 bg-slate-950/90 backdrop-blur sticky top-0 z-10 flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <button type="button" onClick={closeSource} className="md:hidden p-1.5 -ml-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer flex-shrink-0" title="Back to names">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                  </svg>
+                </button>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-bold text-slate-100 font-mono truncate">{sourceEntry.original}</span>
+                    <span className="text-xs text-slate-500 font-bold flex-shrink-0">=</span>
+                    <span className="text-sm font-bold text-emerald-400 truncate">{sourceEntry.translation}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">Occurrences in the source text</p>
+                </div>
+              </div>
+              <button type="button" onClick={closeSource} className="hidden md:inline-flex p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer flex-shrink-0" title="Close source panel">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+              {sourceChapter && sourceChapter.loading ? (
+                <div className="flex items-center gap-2 text-xs text-slate-400 py-6 justify-center">
+                  <svg className="animate-spin h-4 w-4 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                  </svg>
+                  <span>Loading source chapter...</span>
+                </div>
+              ) : sourceChapter && sourceChapter.error ? (
+                <p className="text-xs text-rose-300">{sourceChapter.error}</p>
+              ) : sourceChapter && sourceChapter.missing ? (
+                <p className="text-xs text-slate-400">No chapter first seen recorded for this name, or its source text isn't downloaded yet.</p>
+              ) : sourceChapter && !sourceChapter.text ? (
+                <p className="text-xs text-slate-400">No source text saved for Chapter {cleanChapter(sourceChapter.chapterNumber)}.</p>
+              ) : sourceChapter ? (
+                (() => {
+                  const { count, snippets } = buildSnippets(sourceChapter.text, sourceEntry.original);
+                  return (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-semibold text-slate-300 truncate">{sourceChapter.title || `Chapter ${sourceChapter.chapterNumber}`}</span>
+                        <span className="text-[11px] text-slate-400 flex-shrink-0">{count} match{count === 1 ? '' : 'es'}</span>
+                      </div>
+                      {snippets.length === 0 ? (
+                        <p className="text-xs text-slate-400">Not found in this chapter. Try scanning all downloaded chapters below.</p>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          {snippets.map((snippet, i) => <SourceSnippet key={i} snippet={snippet} />)}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()
+              ) : null}
+
+              <button
+                type="button"
+                onClick={scanAllChapters}
+                disabled={scanAll && scanAll.loading}
+                className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {scanAll && scanAll.loading ? 'Scanning...' : 'Scan all downloaded chapters'}
+              </button>
+
+              {scanAll && !scanAll.loading ? (
+                scanAll.error ? (
+                  <p className="text-xs text-rose-300">{scanAll.error}</p>
+                ) : scanAll.results.length === 0 ? (
+                  <p className="text-xs text-slate-400">Not found in any downloaded chapter.</p>
+                ) : (
+                  <div className="flex flex-col gap-5">
+                    {scanAll.results.map((result) => (
+                      <div key={result.chapterNumber} className="flex flex-col gap-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-semibold text-slate-300 truncate">{result.title || `Chapter ${result.chapterNumber}`}</span>
+                          <span className="text-[11px] text-slate-400 flex-shrink-0">{result.count} match{result.count === 1 ? '' : 'es'}</span>
+                        </div>
+                        <div className="flex flex-col gap-3 border-l-2 border-slate-800 pl-3">
+                          {result.snippets.map((snippet, i) => <SourceSnippet key={i} snippet={snippet} />)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <div
           id="name-list-drawer-panel"
-          className={`w-full max-w-xl bg-slate-900 border-l border-slate-700/80 shadow-2xl flex flex-col h-full transform transition-transform duration-300 ease-out text-slate-100 ${open ? 'translate-x-0' : 'translate-x-full'}`}
+          className={`${sourceEntry ? 'hidden md:flex' : 'flex'} w-full max-w-xl bg-slate-900 border-l border-slate-700/80 shadow-2xl flex-col h-full transform transition-transform duration-300 ease-out text-slate-100 ${open ? 'translate-x-0' : 'translate-x-full'}`}
           role="dialog"
           aria-modal="true"
           aria-labelledby="name-list-title"
@@ -459,7 +627,15 @@ export default function NameListDrawer() {
                     onSave={(fields) => saveInline(entry.id, fields)}
                   />
                 ) : (
-                  <div key={entry.id} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-slate-800/70 border border-slate-700/60 hover:border-slate-600 transition group">
+                  <div
+                    key={entry.id}
+                    onClick={() => openSource(entry)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSource(entry); } }}
+                    title="View this name in the source text"
+                    className="flex items-center justify-between gap-3 p-3 rounded-lg bg-slate-800/70 border border-slate-700/60 hover:border-indigo-500/60 hover:bg-slate-800 transition group cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                  >
                     <div className="flex flex-col gap-1 min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-sm text-slate-100 font-mono tracking-tight">{entry.original}</span>
@@ -474,10 +650,10 @@ export default function NameListDrawer() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition flex-shrink-0">
-                      <button type="button" onClick={() => startEdit(entry)} className="p-1.5 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700/60 transition cursor-pointer" title="Edit entry">
+                      <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(entry); }} className="p-1.5 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700/60 transition cursor-pointer" title="Edit entry">
                         <EditIcon />
                       </button>
-                      <button type="button" onClick={() => deleteEntry(entry.id)} className="p-1.5 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-700/60 transition cursor-pointer" title="Delete entry">
+                      <button type="button" onClick={(e) => { e.stopPropagation(); deleteEntry(entry.id); }} className="p-1.5 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-700/60 transition cursor-pointer" title="Delete entry">
                         <TrashIcon />
                       </button>
                     </div>
