@@ -1,4 +1,5 @@
 import React from 'react';
+import AddBookButton from '../shared/AddBookButton.jsx';
 
 const BADGES = {
   checking: {
@@ -185,7 +186,7 @@ export default function PopupMainView({
           <div className="flex items-center justify-between px-0.5">
             <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Managing these novel</h2>
             <div className="flex items-center gap-1.5">
-              <add-book-button compact=""></add-book-button>
+              <AddBookButton compact />
               <span id="novel-count" className="text-xs text-indigo-400 font-medium bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
                 {novels.length} Novel{novels.length === 1 ? '' : 's'}
               </span>

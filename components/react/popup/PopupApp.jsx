@@ -351,6 +351,15 @@ export default function PopupApp() {
     })();
   }, [loadNovels, refreshStatus]);
 
+  useEffect(() => {
+    const onAdded = () => {
+      loadNovels();
+      refreshStatus();
+    };
+    window.addEventListener('novel-added', onAdded);
+    return () => window.removeEventListener('novel-added', onAdded);
+  }, [loadNovels, refreshStatus]);
+
   console.log('[PopupApp] render', { novels: novels.length, variant: status.variant, showDetail, addBusy });
 
   return (

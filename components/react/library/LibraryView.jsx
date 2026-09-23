@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import AddBookButton from '../shared/AddBookButton.jsx';
 
 const FALLBACK_THUMB = 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp';
 
@@ -153,7 +154,7 @@ export default function LibraryView() {
               <span>💾</span>
               <span id="library-disk-text">{diskText}</span>
             </span>
-            <add-book-button></add-book-button>
+            <AddBookButton />
             <SettingsLink />
           </div>
         </div>
@@ -169,7 +170,7 @@ export default function LibraryView() {
             <p className="text-sm text-slate-400 max-w-sm mt-1 mb-4">
               Paste a link from any supported novel website to add it to your library.
             </p>
-            <add-book-button></add-book-button>
+            <AddBookButton />
           </div>
         ) : (
           <div id="library-grid" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
