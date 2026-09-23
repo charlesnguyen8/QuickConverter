@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SettingsStorageTab from './SettingsStorageTab.jsx';
 import SettingsReaderTab from './SettingsReaderTab.jsx';
 import SettingsDeepSeekTab from './SettingsDeepSeekTab.jsx';
@@ -39,12 +39,25 @@ function resolveBack() {
 
 export default function SettingsView() {
   const [activeTab, setActiveTab] = useState('deepseek');
+  const [pillVisible, setPillVisible] = useState(false);
+  const [toast, setToast] = useState({ visible: false, msg: 'Settings saved' });
+  const pillTimer = useRef(null);
+  const toastTimer = useRef(null);
   const back = useMemo(resolveBack, []);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined' && typeof window.wireSettingsDeepseek === 'function') {
-      window.wireSettingsDeepseek();
-    }
+  const showSaved = useCallback((message = 'Settings saved') => {
+    setPillVisible(true);
+    if (pillTimer.current) clearTimeout(pillTimer.current);
+    pillTimer.current = setTimeout(() => setPillVisible(false), 1800);
+
+    setToast({ visible: true, msg: message });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast({ visible: false, msg: message }), 2200);
+  }, []);
+
+  useEffect(() => () => {
+    if (pillTimer.current) clearTimeout(pillTimer.current);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
 
   console.log('[SettingsView] render', { activeTab });
@@ -81,7 +94,7 @@ export default function SettingsView() {
           </div>
 
           <div className="flex items-center gap-2">
-            <span id="settings-save-pill" className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 opacity-0 transition-opacity duration-200">
+            <span id="settings-save-pill" className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 transition-opacity duration-200 ${pillVisible ? 'opacity-100' : 'opacity-0'}`}>
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12"></polyline>
               </svg>
@@ -109,7 +122,7 @@ export default function SettingsView() {
 
         <div className="flex-1 min-w-0 flex flex-col gap-6">
           <section id="tab-content-deepseek" className={`settings-tab-section flex flex-col gap-6${activeTab === 'deepseek' ? '' : ' hidden'}`}>
-            <SettingsDeepSeekTab />
+            <SettingsDeepSeekTab onSaved={showSaved} />
           </section>
 
           <section id="tab-content-reader" className={`settings-tab-section flex flex-col gap-6${activeTab === 'reader' ? '' : ' hidden'}`}>
@@ -155,10 +168,10 @@ export default function SettingsView() {
         </div>
       </main>
 
-      <div id="settings-toast" className="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-200 pointer-events-none">
+      <div id="settings-toast" className={`fixed bottom-6 right-6 z-50 transform transition-all duration-200 pointer-events-none ${toast.visible ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'}`}>
         <div className="bg-slate-800 text-slate-100 px-4 py-3 rounded-xl shadow-xl border border-slate-700 flex items-center gap-3 text-sm font-medium">
           <span id="settings-toast-icon">✓</span>
-          <span id="settings-toast-msg">Settings saved</span>
+          <span id="settings-toast-msg">{toast.msg}</span>
         </div>
       </div>
     </>

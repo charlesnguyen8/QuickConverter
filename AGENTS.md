@@ -71,8 +71,7 @@ nodes, so the helper's `render` strips `<!-- -->`).
   `add-book-button`) instead of duplicating provider/DeepSeek UI across views. The AI panel is React:
   wrap it with view-specific `variant`/`ids`/`hooks` and read it back through its imperative ref
   (`getDownloadOptions`/`refreshBalance`). Remaining classic globals (`services/`, `providers/`,
-  `components/add-book.js`, `components/settings-deepseek.js`) still load via `<script>`; register new
-  ones as IIFE + `window.*` export.
+  `components/add-book.js`) still load via `<script>`; register new ones as IIFE + `window.*` export.
 - Keep `DownloadQueueService` runnable both in-thread and via background worker delegation.
 
 ## View rewrite status

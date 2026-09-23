@@ -9,9 +9,10 @@
 changed → `npm run build:ext` → `npm test` green → commit → owner loads `dist/` for parity).
 No piecemeal approval requests. Commit per milestone so each is independently revertible.
 
-**Status (as of M1–M7 + M8a):** Popup, Settings, Reader and Novel are fully React; no `views/*.js`
-logic scripts remain. The shared AI panel is now React (**M8a** done). Next: **M8b** (Settings
-DeepSeek controller → React); `add-book.js` stays a classic custom element.
+**Status (as of M1–M7 + M8):** Popup, Settings, Reader and Novel are fully React; no `views/*.js`
+logic scripts remain, and the shared AI panel (M8a) plus the Settings DeepSeek controller (M8b) are
+React. Only `components/add-book.js` (a `<add-book-button>` custom element) stays classic — optional
+follow-up.
 
 **Related docs:** `context.md`, `AGENTS.md`.
 
@@ -23,8 +24,8 @@ DeepSeek controller → React); `add-book.js` stays a classic custom element.
    loadable (React pages need the bundle).
 2. **Static layers** — `services/` and `providers/` remain global scripts loaded via `<script>`
    before the view entry (converting them to ESM is dropped — not needed for the rewrite). The shared
-   AI panel is React as of **M8a**; `components/settings-deepseek.js` is converted in **M8b**; the
-   `<add-book-button>` custom element stays classic (optional follow-up).
+   AI panel (M8a) and the Settings DeepSeek controller (M8b) are React; only the `<add-book-button>`
+   custom element stays classic (optional follow-up).
 3. **Per-view entry** — `components/react/<view>/<view>-entry.jsx` mounts `<View>` into `#<view>-root`
    with `flushSync` (so sibling classic scripts that run at `DOMContentLoaded` still find DOM).
 4. **No `chrome.*` in `views/` or React components** — go through `services/` (platform/storage).
@@ -171,13 +172,13 @@ tests (added 4 option-builder tests).
 balance card, its own prompt + cooldown/backoff section) wired by `settings-deepseek.js` — it does
 not share the panel markup, so folding it in would break parity. Split out to M8b below.
 
-### M8b — Settings DeepSeek controller → React
-Convert `components/settings-deepseek.js` (`window.wireSettingsDeepseek`) + the
-`settings/SettingsDeepSeekTab.jsx` markup into a React controller (own layout, not the shared panel).
-Move `updateBalanceDisplay`/`triggerSaveIndicator` into React state; delete the classic module,
-`window.wireSettingsDeepseek`/`window.__settingsDeepseekWired`/`window.triggerSaveIndicator`/
-`window.updateBalanceDisplay`, and drop the `<script>` tag from `settings.html`. Behavior-preserving;
-keep balance/cooldown/cloud-sync behavior.
+### M8b — Settings DeepSeek controller → React — **done**
+`settings/SettingsDeepSeekTab.jsx` is now a stateful React controller (own layout, not the shared
+panel): master toggle, provider radio cards + bridge URL/test, model cards, key show/remember/clear/
+verify, balance display + auto-refresh, default prompt, and cooldown/backoff/retries. The save
+pill/toast moved to `SettingsView` state (`onSaved` callback). Deleted `components/settings-deepseek.js`
+and its `<script>` tag plus `window.wireSettingsDeepseek`/`window.__settingsDeepseekWired`/
+`window.triggerSaveIndicator`/`window.updateBalanceDisplay`.
 
 Out of scope: `components/add-book.js` (`<add-book-button>`) — independent custom element; convert
 later only if wanted.
