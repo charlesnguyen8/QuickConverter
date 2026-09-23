@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { splitByNames } from '../novel/nameListSource.js';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createNameMatcher } from '../novel/nameListSource.js';
 
 function getParams() {
   if (typeof window === 'undefined') return { id: null, ch: 0 };
@@ -120,6 +120,7 @@ export default function ReaderChapter() {
   const fallbackTitle = (chapter && chapter.title) || (catalogItem && catalogItem.title) || `Chapter ${params.ch}`;
   const novelTitle = (novel && novel.title) || 'Novel';
   const nameList = novel && Array.isArray(novel.nameList) ? novel.nameList : [];
+  const nameMatcher = useMemo(() => createNameMatcher(nameList), [nameList]);
 
   const openNameEntry = (nameId, e) => {
     const el = e && e.currentTarget;
@@ -266,7 +267,7 @@ export default function ReaderChapter() {
               title="Double-click to edit this paragraph"
               onDoubleClick={() => editParagraph(idx)}
             >
-              {splitByNames(p, nameList).map((seg, i) => (seg.nameId ? (
+              {nameMatcher.split(p).map((seg, i) => (seg.nameId ? (
                 <span
                   key={i}
                   role="button"

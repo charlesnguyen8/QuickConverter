@@ -361,6 +361,27 @@ function test(name, fn) {
     assert.strictEqual(hit.text, 'Vương Lâm');
   });
 
+  test('NameMatcher trie finds whole-word matches longest-first and replaces in one pass', () => {
+    const api = globalThis.NameMatcher;
+    assert(api && typeof api.createMatcher === 'function', 'NameMatcher must be exposed');
+    const matcher = api.createMatcher(
+      [{ id: 'a', original: 'Vương' }, { id: 'b', original: 'Vương Lâm' }],
+      { field: 'original', caseSensitive: true }
+    );
+    const hits = matcher.findAll('Vương Lâm met Vương Lâmx');
+    assert.deepStrictEqual(hits.map((h) => h.id), ['b'], 'Lâmx is not a whole-word match');
+    assert.strictEqual(hits[0].index, 0, 'longer name wins at the same start');
+    assert.strictEqual(matcher.findAll('vương lâm').length, 0, 'case-sensitive');
+    assert.strictEqual(matcher.replaceAll('Vương Lâm and Vương', (m) => `[${m.id}]`), '[b] and [a]', 'single-pass replace');
+  });
+
+  test('splitByNames scales to thousands of names', () => {
+    const entries = [];
+    for (let i = 0; i < 3000; i += 1) entries.push({ id: `n${i}`, original: `Name${i}`, translation: `Tên${i}` });
+    const segs = splitByNames('Start Tên2500 and Tên3 end.', entries);
+    assert.deepStrictEqual(segs.filter((s) => s.nameId).map((s) => s.nameId), ['n2500', 'n3']);
+  });
+
   // --- ReaderPrefsPopover ---
   const prefsMod = await loadComponent('components/react/reader/ReaderPrefsPopover.jsx');
   const ReaderPrefsPopover = prefsMod.default;

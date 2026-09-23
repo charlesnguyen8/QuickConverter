@@ -122,48 +122,56 @@ function parseNameListBlock(text) {
 // Rewrites occurrences of the novel's source names in `text` to stable @n@ tokens
 // (base36, numbered by first appearance) so translation models leave proper nouns
 // alone. Returns the tokenized text plus the ordered mapping.
+function resolveNameMatcher() {
+  if (typeof NameMatcher !== 'undefined' && NameMatcher && typeof NameMatcher.createMatcher === 'function') return NameMatcher;
+  if (typeof globalThis !== 'undefined' && globalThis.NameMatcher && typeof globalThis.NameMatcher.createMatcher === 'function') return globalThis.NameMatcher;
+  if (typeof window !== 'undefined' && window.NameMatcher && typeof window.NameMatcher.createMatcher === 'function') return window.NameMatcher;
+  return null;
+}
+
 function tokenizeSource(text, names) {
   const source = typeof text === 'string' ? text : '';
   const result = { text: source, mapping: [] };
-  if (!source || !Array.isArray(names)) return result;
+  if (!source || !Array.isArray(names) || names.length === 0) return result;
 
   const unique = [];
   const seen = new Set();
-  names.forEach((entry) => {
-    const name = entry && entry.original ? String(entry.original).trim() : '';
-    if (!name || seen.has(name)) return;
-    seen.add(name);
-    unique.push({
-      original: name,
-      translation: entry && entry.translation ? String(entry.translation).trim() : ''
-    });
+  names.forEach((entry, i) => {
+    const original = entry && entry.original ? String(entry.original).trim() : '';
+    const translation = entry && entry.translation ? String(entry.translation).trim() : '';
+    if (!original || seen.has(original)) return;
+    seen.add(original);
+    unique.push({ id: (entry && entry.id) || 'idx_' + i, original, translation });
   });
   if (unique.length === 0) return result;
 
-  const regexFor = (name) => new RegExp(
-    `(?<![\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`,
-    'gu'
-  );
+  const api = resolveNameMatcher();
+  if (!api) {
+    console.warn('[StorageService] NameMatcher module not loaded; skipping source tokenization.');
+    return result;
+  }
 
-  const present = [];
-  unique.forEach((entry) => {
-    const match = regexFor(entry.original).exec(source);
-    if (match) present.push({ entry, first: match.index });
+  const matcher = api.createMatcher(unique, { field: 'original', caseSensitive: true });
+  const matches = matcher.findAll(source);
+  if (matches.length === 0) return result;
+
+  const firstIndex = new Map();
+  matches.forEach((match) => {
+    if (!firstIndex.has(match.id)) firstIndex.set(match.id, match.index);
   });
-  present.sort((a, b) => a.first - b.first);
+  const orderedIds = [...firstIndex.keys()].sort((a, b) => firstIndex.get(a) - firstIndex.get(b));
 
-  const mapping = present.map((item, i) => ({
-    token: `@${(i + 1).toString(36)}@`,
-    original: item.entry.original,
-    translation: item.entry.translation
-  }));
-
-  let out = source;
-  [...mapping].sort((a, b) => b.original.length - a.original.length).forEach(({ token, original }) => {
-    out = out.replace(regexFor(original), token);
+  const infoById = new Map(unique.map((item) => [item.id, item]));
+  const tokenById = new Map();
+  const mapping = orderedIds.map((id, i) => {
+    const item = infoById.get(id) || { original: '', translation: '' };
+    const token = `@${(i + 1).toString(36)}@`;
+    tokenById.set(id, token);
+    return { token, original: item.original, translation: item.translation };
   });
 
-  return { text: out, mapping };
+  const tokenized = matcher.replaceAll(source, (match) => tokenById.get(match.id) || match.value);
+  return { text: tokenized, mapping };
 }
 
 // Swaps @n@ tokens back to their translated names. Case-insensitive and tolerant of
