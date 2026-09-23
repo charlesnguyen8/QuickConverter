@@ -413,7 +413,7 @@ async function runTests() {
 
   // 15. tokenizeSource (translation pre-processing)
   const tok = StorageService.tokenizeSource('Li Qiye met Wang Lin. Wang Lin knew Li Qiye.', [
-    { original: 'Wang Lin' }, { original: 'Li Qiye' }
+    { original: 'Wang Lin', translation: 'Vương Lâm' }, { original: 'Li Qiye', translation: 'Lý Thất Dạ' }
   ]);
   assert.strictEqual(tok.mapping.length, 2);
   assert.strictEqual(tok.mapping[0].token, '@1@');
@@ -421,12 +421,15 @@ async function runTests() {
   assert.strictEqual(tok.mapping[1].token, '@2@');
   assert.strictEqual(tok.text, '@1@ met @2@. @2@ knew @1@.');
 
-  const whole = StorageService.tokenizeSource('Ling and Lin met.', [{ original: 'Li' }, { original: 'Lin' }]);
+  const whole = StorageService.tokenizeSource('Ling and Lin met.', [{ original: 'Li', translation: 'Li' }, { original: 'Lin', translation: 'Lin' }]);
   assert.strictEqual(whole.mapping.length, 1, 'only whole-word matches tokenize');
   assert.strictEqual(whole.mapping[0].original, 'Lin');
-  assert.strictEqual(StorageService.tokenizeSource('wang lin', [{ original: 'Wang Lin' }]).mapping.length, 0, 'case-sensitive');
+  assert.strictEqual(StorageService.tokenizeSource('wang lin', [{ original: 'Wang Lin', translation: 'Vương Lâm' }]).mapping.length, 0, 'case-sensitive');
 
-  const manyNames = Array.from({ length: 11 }, (_, i) => ({ original: 'N' + String.fromCharCode(97 + i) }));
+  const manyNames = Array.from({ length: 11 }, (_, i) => {
+    const name = 'N' + String.fromCharCode(97 + i);
+    return { original: name, translation: name };
+  });
   const tokMany = StorageService.tokenizeSource(manyNames.map((n) => n.original).join(' '), manyNames);
   assert.strictEqual(tokMany.mapping[9].token, '@a@', '10th token is base36 a');
   assert.strictEqual(tokMany.mapping[10].token, '@b@', '11th token is base36 b');
@@ -459,7 +462,18 @@ async function runTests() {
   assert.strictEqual(deduped.find((e) => e.original.toLowerCase() === 'yanguo').translation, 'Older', 'oldest translation wins');
   console.log('✓ saveNameList merges duplicate names, keeping the oldest');
 
-  console.log('\n🎉 All 17 Novel Name List tests passed!');
+  // 18. tokenizeSource must not tokenize names with an empty translation
+  const emptyTok = StorageService.tokenizeSource('Yanguo met Li Qiye.', [
+    { id: 'e1', original: 'Yanguo', translation: '' },
+    { id: 'e2', original: 'Li Qiye', translation: 'Lý Thất Dạ' }
+  ]);
+  assert.strictEqual(emptyTok.mapping.length, 1, 'only names with a translation are tokenized');
+  assert.strictEqual(emptyTok.mapping[0].original, 'Li Qiye');
+  assert.strictEqual(emptyTok.text, 'Yanguo met @1@.', 'blank-translation name is left untouched');
+  assert.strictEqual(StorageService.restoreTokens(emptyTok.text, emptyTok.mapping), 'Yanguo met Lý Thất Dạ.', 'no token leaks');
+  console.log('✓ tokenizeSource skips names with an empty translation');
+
+  console.log('\n🎉 All 18 Novel Name List tests passed!');
 }
 
 runTests().catch((err) => {

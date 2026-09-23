@@ -139,7 +139,7 @@ function tokenizeSource(text, names) {
   names.forEach((entry, i) => {
     const original = entry && entry.original ? String(entry.original).trim() : '';
     const translation = entry && entry.translation ? String(entry.translation).trim() : '';
-    if (!original || seen.has(original)) return;
+    if (!original || !translation || seen.has(original)) return;
     seen.add(original);
     unique.push({ id: (entry && entry.id) || 'idx_' + i, original, translation });
   });
