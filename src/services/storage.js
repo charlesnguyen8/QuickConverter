@@ -423,6 +423,8 @@ const StorageService = {
       await this.saveNameList(novelId, cleanUpdates.nameList);
       delete cleanUpdates.nameList;
     }
+    // Flush any legacy inline list into its own record before rewriting the novel.
+    await this.getNameList(novelId);
     const db = await openDatabase();
     return new Promise((resolve, reject) => {
       const tx = db.transaction('novels', 'readwrite');

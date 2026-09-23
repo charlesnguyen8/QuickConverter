@@ -496,7 +496,19 @@ async function runTests() {
   assert(migratedRecord && migratedRecord.list.length === 1, 'legacy list moved to its own record');
   console.log('✓ legacy inline name lists migrate to their own record');
 
-  console.log('\n🎉 All 20 Novel Name List tests passed!');
+  // 21. updateNovel must not re-embed a legacy inline list
+  mockDbStore['novel-sync'] = {
+    id: 'novel-sync', title: 'Sync', slug: 'sync', url: '', domain: 'x.com', totalChapters: 3, chapterList: [],
+    nameList: [{ id: 's1', original: 'Aa', translation: 'Bb', addedAt: 1 }]
+  };
+  await StorageService.updateNovel('novel-sync', { totalChapters: 42 });
+  assert.strictEqual(mockDbStore['novel-sync'].totalChapters, 42);
+  assert(!('nameList' in mockDbStore['novel-sync']), 'updateNovel must not keep the legacy inline list');
+  const syncRecord = mockDbStore['namelist::novel-sync'];
+  assert(syncRecord && syncRecord.list.length === 1, 'legacy list flushed to its own record first');
+  console.log('✓ updateNovel flushes a legacy inline list instead of re-embedding it');
+
+  console.log('\n🎉 All 21 Novel Name List tests passed!');
 }
 
 runTests().catch((err) => {
