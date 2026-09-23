@@ -160,7 +160,7 @@ function test(name, fn) {
   const header = render(h(ReaderHeader));
   test('ReaderHeader renders nav, font stepper and typography popover', () => {
     for (const id of ['reading-progress-bar', 'back-to-novel-btn', 'header-novel-title',
-      'header-chapter-title', 'toggle-source-drawer-btn', 'font-dec-btn', 'font-size-label',
+      'header-chapter-title', 'toggle-source-drawer-btn', 'toggle-name-list-btn', 'font-dec-btn', 'font-size-label',
       'font-inc-btn', 'reader-typography-wrapper', 'reader-typography-popover',
       'toggle-typography-popover-btn', 'reader-settings-btn']) {
       assert(header.includes(`id="${id}"`), `missing #${id}`);
@@ -225,10 +225,11 @@ function test(name, fn) {
   const ReaderApp = (await loadComponent('components/react/reader/ReaderApp.jsx')).default;
   const readerApp = render(h(ReaderApp));
 
-  test('ReaderApp renders the header, loading state, source drawer and toast', () => {
-    for (const id of ['reading-progress-bar', 'reader-loading', 'source-drawer', 'save-toast', 'save-toast-msg']) {
+  test('ReaderApp renders the header, loading state, source drawer, name list and toast', () => {
+    for (const id of ['reading-progress-bar', 'reader-loading', 'source-drawer', 'name-list-drawer-panel', 'save-toast', 'save-toast-msg']) {
       assert(readerApp.includes(`id="${id}"`), `missing #${id}`);
     }
+    assert(readerApp.includes('id="toggle-name-list-btn"'), 'reader header must expose the Name List trigger');
     assert(!readerApp.includes('id="reader-not-saved"'), 'not-saved panel must not render while loading');
     assert(!readerApp.includes('id="reader-content-view"'), 'content view must not render while loading');
   });

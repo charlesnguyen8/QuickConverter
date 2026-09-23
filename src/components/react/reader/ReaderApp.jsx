@@ -5,6 +5,7 @@ import ReaderNav from './ReaderNav.jsx';
 import ReaderSourceDrawer from './ReaderSourceDrawer.jsx';
 import ReaderNotSaved from './ReaderNotSaved.jsx';
 import ReaderToast from './ReaderToast.jsx';
+import NameListDrawer from '../novel/NameListDrawer.jsx';
 
 function getParams() {
   if (typeof window === 'undefined') return { id: null, ch: NaN };
@@ -85,6 +86,12 @@ export default function ReaderApp() {
       if ((e.key === 's' || e.key === 'S') && chapter && chapter.originalRawText) {
         e.preventDefault();
         window.dispatchEvent(new Event('reader-open-source'));
+        return;
+      }
+
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        window.dispatchEvent(new Event('novel-open-name-list'));
         return;
       }
 
@@ -212,6 +219,7 @@ export default function ReaderApp() {
 
       <ReaderSourceDrawer />
       <ReaderToast />
+      <NameListDrawer />
     </>
   );
 }

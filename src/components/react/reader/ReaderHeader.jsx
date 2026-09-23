@@ -34,6 +34,10 @@ export default function ReaderHeader({
     window.dispatchEvent(new Event('reader-open-source'));
   };
 
+  const openNameList = () => {
+    window.dispatchEvent(new Event('novel-open-name-list'));
+  };
+
   return (
     <>
       <div
@@ -82,6 +86,17 @@ export default function ReaderHeader({
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              id="toggle-name-list-btn"
+              onClick={openNameList}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+              title="Open Name List & Glossary (N)"
+            >
+              <span aria-hidden="true">📖</span>
+              <span className="hidden sm:inline">Names</span>
+            </button>
+
             <button
               type="button"
               id="toggle-source-drawer-btn"
