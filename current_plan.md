@@ -8,15 +8,15 @@ observable behavior.
 
 **Background / where we are:** the shared trie matcher already landed
 (`src/services/name-matcher.js`, used by `splitByNames` and `tokenizeSource`; the 500-name cap
-and the `N`-full-text-scan tokenizer are gone). Full analysis and rationale live in
-`explanation.md`. The items below are the leftovers from that doc's "Remaining concerns" list.
+and the `N`-full-text-scan tokenizer are gone). The items below are the remaining scalability
+concerns for the name list.
 
 **Rule of engagement:** one item at a time to completion.
 `npm test` green (test-first where behavior changes) → `npm run build:css` if new utility classes
 → `npm run build:ext` → owner loads `dist/` for parity → commit per item so each is
 independently revertible. Report any test change and why (owner rules in `AGENTS.md`).
 
-**Related docs:** `context.md`, `AGENTS.md`, `explanation.md`.
+**Related docs:** `context.md`, `AGENTS.md`, `nice_to_have_plan.md`.
 
 ---
 
@@ -24,7 +24,9 @@ independently revertible. Report any test change and why (owner rules in `AGENTS
 
 - Prior work (React migration M1–M8, name-list source/rename/tokenize features, trie matcher) is
   **complete and committed**.
-- This plan tracks **NL-1 … NL-10** below. Nothing here is started yet.
+- This plan tracks **NL-1 … NL-10** below; **NL-4 moved to `nice_to_have_plan.md`** (conditional).
+- Done: **NL-1** (empty-translation guard), **NL-2** (dedicated name-list record), **NL-3** (drawer
+  virtualization), **NL-9** (load-site contract test). Remaining: NL-5, NL-6, NL-7, NL-8, NL-10.
 
 ---
 
@@ -63,12 +65,6 @@ taller). Search/sort reset the scroll; "open + scroll to a name" scrolls by inde
 (`index * ROW_HEIGHT` centred) when virtualized, else keeps `scrollIntoView`.
 - Touches: `src/components/react/novel/NameListDrawer.jsx`, `.../nameListSource.js`.
 - Tests: `computeVirtualWindow` unit cases in `components.test.js`.
-
-### NL-4 — Trie worst case → Aho–Corasick  *(only if profiling shows it)*
-Trie is `O(T×L)` on text sharing long prefixes with names. Aho–Corasick gives `O(T + matches)`
-behind the same `createMatcher` API, so the swap is internal.
-- Touches: `src/services/name-matcher.js`.
-- Verify: matcher tests + a shared-prefix stress case; measure before/after.
 
 ### NL-5 — Astral-plane indexing  *(edge)*
 The trie walks the pattern by code point but `findAll` indexes the text by code unit, so
