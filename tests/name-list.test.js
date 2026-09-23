@@ -381,6 +381,7 @@ async function runTests() {
   assert.strictEqual(addedEntries.length, 1, 'only the genuinely new name is added');
   assert.strictEqual(addedEntries[0].original, 'Li Qiye');
   assert.strictEqual(addedEntries[0].chapterFirstSeen, 7);
+  assert.strictEqual(addedEntries[0].isNew, true, 'auto-captured names are flagged new');
   const nameListEvents = sandbox.window._events.filter((e) => e.type === 'novel-name-list-updated');
   assert.strictEqual(nameListEvents.length, 1, 'must emit novel-name-list-updated once');
   assert.strictEqual(nameListEvents[0].detail.count, 2, 'event carries the new total count');

@@ -506,7 +506,8 @@ const StorageService = {
         original,
         translation,
         chapterFirstSeen: chapterFirstSeen !== undefined && chapterFirstSeen !== '' ? chapterFirstSeen : null,
-        addedAt: Date.now()
+        addedAt: Date.now(),
+        isNew: true
       });
     });
     if (added.length === 0) return [];

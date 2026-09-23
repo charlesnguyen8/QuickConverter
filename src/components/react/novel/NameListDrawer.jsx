@@ -272,6 +272,16 @@ export default function NameListDrawer() {
 
   const closeSource = useCallback(() => setSourceEntry(null), []);
 
+  const markNameSeen = useCallback((id) => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novelId) return;
+    const next = entries.map((entry) => (entry.id === id ? { ...entry, isNew: false } : entry));
+    setEntries(next);
+    if (typeof storage.saveNameList === 'function') {
+      Promise.resolve(storage.saveNameList(novelId, next)).catch((e) => console.error('Failed to mark name seen:', e));
+    }
+  }, [entries, novelId, setEntries]);
+
   const applyTranslationRename = useCallback(async (oldName, newName) => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!storage || !novelId || !oldName || !newName || oldName === newName) return;
@@ -765,18 +775,21 @@ export default function NameListDrawer() {
                 ) : (
                   <div
                     key={entry.id}
-                    onClick={() => openSource(entry)}
+                    onClick={() => { if (entry.isNew) markNameSeen(entry.id); openSource(entry); }}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSource(entry); } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (entry.isNew) markNameSeen(entry.id); openSource(entry); } }}
                     title="View this name in the source text"
-                    className="flex items-center justify-between gap-3 p-3 rounded-lg bg-slate-800/70 border border-slate-700/60 hover:border-indigo-500/60 hover:bg-slate-800 transition group cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                    className={`flex items-center justify-between gap-3 p-3 rounded-lg border transition group cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/50 ${entry.isNew ? 'bg-amber-500/10 border-amber-500/40 hover:border-amber-400 hover:bg-amber-500/15' : 'bg-slate-800/70 border-slate-700/60 hover:border-indigo-500/60 hover:bg-slate-800'}`}
                   >
                     <div className="flex flex-col gap-1 min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-sm text-slate-100 font-mono tracking-tight">{entry.original}</span>
                         <span className="text-xs text-slate-500 font-bold">=</span>
                         <span className="font-bold text-sm text-emerald-400">{entry.translation}</span>
+                        {entry.isNew ? (
+                          <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-500/40">New</span>
+                        ) : null}
                         {cleanChapter(entry.chapterFirstSeen) ? (
                           <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">Ch. {cleanChapter(entry.chapterFirstSeen)}</span>
                         ) : null}
