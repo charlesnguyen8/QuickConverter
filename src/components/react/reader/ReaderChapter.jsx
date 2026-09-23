@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { splitByNames } from '../novel/nameListSource.js';
 
 function getParams() {
   if (typeof window === 'undefined') return { id: null, ch: 0 };
@@ -118,6 +119,16 @@ export default function ReaderChapter() {
     : null;
   const fallbackTitle = (chapter && chapter.title) || (catalogItem && catalogItem.title) || `Chapter ${params.ch}`;
   const novelTitle = (novel && novel.title) || 'Novel';
+  const nameList = novel && Array.isArray(novel.nameList) ? novel.nameList : [];
+
+  const openNameEntry = (nameId, e) => {
+    const el = e && e.currentTarget;
+    if (el && el.closest && el.closest('[contenteditable="true"]')) return;
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('novel-open-name-list', { detail: { nameId } }));
+    }
+  };
 
   const persistParagraphs = async () => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -255,7 +266,21 @@ export default function ReaderChapter() {
               title="Double-click to edit this paragraph"
               onDoubleClick={() => editParagraph(idx)}
             >
-              {p}
+              {splitByNames(p, nameList).map((seg, i) => (seg.nameId ? (
+                <span
+                  key={i}
+                  role="button"
+                  tabIndex={0}
+                  title={`View "${seg.original}" in the Name List`}
+                  onClick={(e) => openNameEntry(seg.nameId, e)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNameEntry(seg.nameId, e); } }}
+                  className="rounded-sm bg-indigo-500/15 px-0.5 -mx-0.5 border-b border-dotted border-indigo-400/70 hover:bg-indigo-500/25 hover:border-solid cursor-pointer transition"
+                >
+                  {seg.text}
+                </span>
+              ) : (
+                <React.Fragment key={i}>{seg.text}</React.Fragment>
+              )))}
             </p>
             <div className="paragraph-actions absolute right-2 -top-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none select-none">
               <button

@@ -165,6 +165,7 @@ export default function NameListDrawer() {
   const [duplicatePrompt, setDuplicatePrompt] = useState(null);
   const duplicatePromptRef = useRef(null);
   duplicatePromptRef.current = duplicatePrompt;
+  const [focusedNameId, setFocusedNameId] = useState(null);
 
   const setEntries = useCallback((next) => {
     setEntriesState(next);
@@ -187,10 +188,25 @@ export default function NameListDrawer() {
   useEffect(() => { reload(); }, [reload]);
 
   useEffect(() => {
-    const onOpen = () => setOpen(true);
+    const onOpen = (e) => {
+      setOpen(true);
+      const nameId = e && e.detail && e.detail.nameId;
+      if (nameId) {
+        setSearch('');
+        setFocusedNameId(nameId);
+      }
+    };
     window.addEventListener('novel-open-name-list', onOpen);
     return () => window.removeEventListener('novel-open-name-list', onOpen);
   }, []);
+
+  useEffect(() => {
+    if (!open || !focusedNameId) return undefined;
+    const el = typeof document !== 'undefined' ? document.getElementById(`name-list-item-${focusedNameId}`) : null;
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const timer = setTimeout(() => setFocusedNameId(null), 1600);
+    return () => clearTimeout(timer);
+  }, [open, focusedNameId, entries]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -775,12 +791,13 @@ export default function NameListDrawer() {
                 ) : (
                   <div
                     key={entry.id}
+                    id={`name-list-item-${entry.id}`}
                     onClick={() => { if (entry.isNew) markNameSeen(entry.id); openSource(entry); }}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (entry.isNew) markNameSeen(entry.id); openSource(entry); } }}
                     title="View this name in the source text"
-                    className={`flex items-center justify-between gap-3 p-3 rounded-lg border transition group cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/50 ${entry.isNew ? 'bg-amber-500/10 border-amber-500/40 hover:border-amber-400 hover:bg-amber-500/15' : 'bg-slate-800/70 border-slate-700/60 hover:border-indigo-500/60 hover:bg-slate-800'}`}
+                    className={`flex items-center justify-between gap-3 p-3 rounded-lg border transition group cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/50 ${entry.isNew ? 'bg-amber-500/10 border-amber-500/40 hover:border-amber-400 hover:bg-amber-500/15' : 'bg-slate-800/70 border-slate-700/60 hover:border-indigo-500/60 hover:bg-slate-800'}${focusedNameId === entry.id ? ' ring-2 ring-indigo-400 border-indigo-400' : ''}`}
                   >
                     <div className="flex flex-col gap-1 min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">

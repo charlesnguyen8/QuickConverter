@@ -35,3 +35,30 @@ export function buildSnippets(text, term, { context = 120, max = 100 } = {}) {
   }
   return { count: matches.length, snippets };
 }
+
+const escapeRegExp = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export function splitByNames(text, entries) {
+  const source = typeof text === 'string' ? text : '';
+  const list = (Array.isArray(entries) ? entries : [])
+    .filter((entry) => entry && typeof entry.translation === 'string' && entry.translation.trim())
+    .map((entry) => ({ id: entry.id, original: entry.original || '', translation: entry.translation.trim() }));
+  if (!source || list.length === 0) return [{ text: source }];
+
+  const byLength = [...list].sort((a, b) => b.translation.length - a.translation.length).slice(0, 500);
+  const byLower = new Map(byLength.map((entry) => [entry.translation.toLowerCase(), entry]));
+  const pattern = byLength.map((entry) => escapeRegExp(entry.translation)).join('|');
+  const regex = new RegExp(`(?<![\\p{L}\\p{N}])(${pattern})(?![\\p{L}\\p{N}])`, 'giu');
+
+  const segments = [];
+  let last = 0;
+  let match;
+  while ((match = regex.exec(source)) !== null) {
+    if (match.index > last) segments.push({ text: source.slice(last, match.index) });
+    const entry = byLower.get(match[0].toLowerCase());
+    segments.push({ text: match[0], nameId: entry ? entry.id : null, original: entry ? entry.original : null });
+    last = match.index + match[0].length;
+  }
+  if (last < source.length) segments.push({ text: source.slice(last) });
+  return segments;
+}

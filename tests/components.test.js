@@ -313,7 +313,7 @@ function test(name, fn) {
   });
 
   // --- nameListSource helpers ---
-  const { findMatches, buildSnippets } = await loadComponent('components/react/novel/nameListSource.js');
+  const { findMatches, buildSnippets, splitByNames } = await loadComponent('components/react/novel/nameListSource.js');
 
   test('findMatches locates case-insensitive source occurrences', () => {
     assert.deepStrictEqual(findMatches('Wang Lin met wang lin.', 'Wang Lin').map((m) => m.index), [0, 13]);
@@ -336,6 +336,29 @@ function test(name, fn) {
     const capped = buildSnippets(many, 'Wang Lin', { max: 3 });
     assert.strictEqual(capped.count, 8);
     assert.strictEqual(capped.snippets.length, 3);
+  });
+
+  test('splitByNames marks whole-word, case-insensitive name matches', () => {
+    const entries = [
+      { id: 'n1', original: 'Li Qiye', translation: 'Lý Thất Dạ' },
+      { id: 'n2', original: 'Wang Lin', translation: 'Vương Lâm' }
+    ];
+    const segs = splitByNames('Lý Thất Dạ met vương lâm and Lý Thất Dạx.', entries);
+    assert.deepStrictEqual(segs.filter((s) => s.nameId).map((s) => s.nameId), ['n1', 'n2'], 'word boundary prevents Dạx');
+    assert.strictEqual(segs.filter((s) => s.nameId)[1].text, 'vương lâm', 'case-insensitive');
+    assert.strictEqual(segs.map((s) => s.text).join(''), 'Lý Thất Dạ met vương lâm and Lý Thất Dạx.', 'text is preserved');
+    assert.deepStrictEqual(splitByNames('plain text', []), [{ text: 'plain text' }]);
+  });
+
+  test('splitByNames prefers the longest overlapping name', () => {
+    const entries = [
+      { id: 'short', original: 'a', translation: 'Vương' },
+      { id: 'long', original: 'b', translation: 'Vương Lâm' }
+    ];
+    const segs = splitByNames('Vương Lâm arrived.', entries);
+    const hit = segs.find((s) => s.nameId);
+    assert.strictEqual(hit.nameId, 'long');
+    assert.strictEqual(hit.text, 'Vương Lâm');
   });
 
   // --- ReaderPrefsPopover ---
