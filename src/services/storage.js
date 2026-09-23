@@ -185,6 +185,22 @@ function restoreTokens(text, mapping) {
   });
 }
 
+// Collapses entries that share a source name (trimmed, case-insensitive), keeping
+// the oldest translation so established names win.
+function dedupeNameList(list) {
+  const out = [];
+  const indexByKey = new Map();
+  list.forEach((entry) => {
+    if (!entry) return;
+    const key = (entry.original || '').trim().toLowerCase();
+    if (!key) { out.push(entry); return; }
+    if (!indexByKey.has(key)) { indexByKey.set(key, out.length); out.push(entry); return; }
+    const idx = indexByKey.get(key);
+    if ((entry.addedAt || 0) < (out[idx].addedAt || 0)) out[idx] = entry;
+  });
+  return out;
+}
+
 const StorageService = {
   async _isDbInitialized() {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -431,7 +447,7 @@ const StorageService = {
    */
   async saveNameList(novelId, nameList) {
     if (!novelId) return [];
-    const list = Array.isArray(nameList) ? nameList : [];
+    const list = dedupeNameList(Array.isArray(nameList) ? nameList : []);
     await this.updateNovel(novelId, { nameList: list });
     return list;
   },

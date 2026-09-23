@@ -19,6 +19,10 @@ function cleanChapter(val) {
   return String(val).replace(/^ch(?:apter)?\.?\s*/i, '');
 }
 
+function nameKey(val) {
+  return (val || '').trim().toLowerCase();
+}
+
 function formatAddedTime(ts) {
   if (!ts) return '';
   const d = new Date(ts);
@@ -155,6 +159,12 @@ export default function NameListDrawer() {
   const [renamePrompt, setRenamePrompt] = useState(null);
   const renamePromptRef = useRef(null);
   renamePromptRef.current = renamePrompt;
+  const [deleteAllPrompt, setDeleteAllPrompt] = useState(false);
+  const deleteAllPromptRef = useRef(false);
+  deleteAllPromptRef.current = deleteAllPrompt;
+  const [duplicatePrompt, setDuplicatePrompt] = useState(null);
+  const duplicatePromptRef = useRef(null);
+  duplicatePromptRef.current = duplicatePrompt;
 
   const setEntries = useCallback((next) => {
     setEntriesState(next);
@@ -193,6 +203,8 @@ export default function NameListDrawer() {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
       if (renamePromptRef.current) { setRenamePrompt(null); return; }
+      if (duplicatePromptRef.current) { setDuplicatePrompt(null); return; }
+      if (deleteAllPromptRef.current) { setDeleteAllPrompt(false); return; }
       setSourceEntry((current) => {
         if (current) return null;
         if (open) setOpen(false);
@@ -212,6 +224,8 @@ export default function NameListDrawer() {
     setSourceChapter(null);
     setScanAll(null);
     setRenamePrompt(null);
+    setDeleteAllPrompt(false);
+    setDuplicatePrompt(null);
   }, []);
 
   const openSource = useCallback(async (entry) => {
@@ -285,6 +299,47 @@ export default function NameListDrawer() {
     }
   }, [novelId, renamePrompt]);
 
+  const confirmDeleteAll = useCallback(async () => {
+    setDeleteAllPrompt(false);
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novelId) return;
+    try {
+      if (typeof storage.saveNameList === 'function') await storage.saveNameList(novelId, []);
+      setSourceEntry(null);
+      setEditingId(null);
+      await reload();
+    } catch (e) {
+      console.error('Error clearing name list:', e);
+    }
+  }, [novelId, reload]);
+
+  const confirmDuplicate = useCallback(async () => {
+    const prompt = duplicatePrompt;
+    setDuplicatePrompt(null);
+    if (!prompt) return;
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novelId) return;
+    try {
+      const existing = entries.find((entry) => entry.id === prompt.existingId);
+      if (typeof storage.updateNameEntry === 'function') {
+        await storage.updateNameEntry(novelId, prompt.existingId, {
+          original: prompt.original,
+          translation: prompt.translation,
+          chapterFirstSeen: prompt.chapter || (existing ? existing.chapterFirstSeen : null)
+        });
+      }
+      if (prompt.removeId && prompt.removeId !== prompt.existingId && typeof storage.deleteNameEntry === 'function') {
+        await storage.deleteNameEntry(novelId, prompt.removeId);
+      }
+      if (prompt.existingTranslation && prompt.existingTranslation !== prompt.translation) {
+        await applyTranslationRename(prompt.existingTranslation, prompt.translation);
+      }
+      await reload();
+    } catch (e) {
+      console.error('Error resolving duplicate name:', e);
+    }
+  }, [duplicatePrompt, entries, novelId, reload, applyTranslationRename]);
+
   const filtered = useMemo(() => sortAndFilter(entries, search.trim(), sort), [entries, search, sort]);
 
   const resetForm = () => {
@@ -314,6 +369,22 @@ export default function NameListDrawer() {
     const ch = formChapter.trim();
     if (!orig || !trans) return;
 
+    const duplicate = entries.find((entry) => nameKey(entry.original) === nameKey(orig) && entry.id !== formId);
+    if (duplicate) {
+      setDuplicatePrompt({
+        existingId: duplicate.id,
+        existingOriginal: duplicate.original,
+        existingTranslation: duplicate.translation,
+        original: duplicate.original,
+        translation: trans,
+        chapter: ch,
+        removeId: formId || null
+      });
+      setFormOpen(false);
+      resetForm();
+      return;
+    }
+
     if (formId) {
       const existing = entries.find((entry) => entry.id === formId);
       const oldTranslation = existing ? existing.translation : '';
@@ -341,6 +412,22 @@ export default function NameListDrawer() {
     const orig = fields.original.trim();
     const trans = fields.translation.trim();
     if (!orig || !trans) return;
+
+    const duplicate = entries.find((entry) => nameKey(entry.original) === nameKey(orig) && entry.id !== id);
+    if (duplicate) {
+      setDuplicatePrompt({
+        existingId: duplicate.id,
+        existingOriginal: duplicate.original,
+        existingTranslation: duplicate.translation,
+        original: duplicate.original,
+        translation: trans,
+        chapter: fields.chapter.trim(),
+        removeId: id
+      });
+      setEditingId(null);
+      return;
+    }
+
     const existing = entries.find((entry) => entry.id === id);
     const oldTranslation = existing ? existing.translation : '';
     if (typeof storage.updateNameEntry === 'function') {
@@ -549,6 +636,15 @@ export default function NameListDrawer() {
               <button type="button" onClick={toggleBulk} className="inline-flex items-center justify-center gap-1 h-8 whitespace-nowrap text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2.5 rounded-md transition cursor-pointer" title="Bulk Import / Export lines (Original = Translation)">
                 <span>📥 Bulk</span>
               </button>
+              {entries.length > 0 ? (
+                <button type="button" id="name-list-delete-all-btn" onClick={() => setDeleteAllPrompt(true)} className="inline-flex items-center justify-center gap-1.5 h-8 whitespace-nowrap text-xs font-semibold text-rose-300 hover:text-white bg-slate-800 hover:bg-rose-600 border border-rose-500/30 hover:border-rose-500 px-2.5 rounded-md transition cursor-pointer" title="Delete all names from the glossary">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  <span className="hidden sm:inline">Delete All</span>
+                </button>
+              ) : null}
               <button type="button" onClick={checkNameForm} className="inline-flex items-center justify-center gap-1 h-8 whitespace-nowrap text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 border border-indigo-500 px-2.5 rounded-md transition cursor-pointer shadow-sm">
                 <span>+ Add Name</span>
               </button>
@@ -727,6 +823,56 @@ export default function NameListDrawer() {
             <div className="flex items-center justify-end gap-2.5">
               <button type="button" onClick={() => setRenamePrompt(null)} className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Cancel</button>
               <button type="button" onClick={confirmRename} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Replace chapters</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+      {duplicatePrompt ? createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setDuplicatePrompt(null); }}
+        >
+          <div className="w-full max-w-sm bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-5 flex flex-col gap-4 text-slate-100" role="dialog" aria-modal="true">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0">⚠️</div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100">Name already in the list</h3>
+                <p className="text-[11px] text-slate-400">Replace updates the existing entry and downloaded chapters.</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              <span className="font-mono text-slate-100">"{duplicatePrompt.original}"</span> is currently translated as{' '}
+              <span className="font-mono text-slate-200">"{duplicatePrompt.existingTranslation}"</span>. Replace it with{' '}
+              <span className="font-mono text-emerald-300">"{duplicatePrompt.translation}"</span>?
+            </p>
+            <div className="flex items-center justify-end gap-2.5">
+              <button type="button" onClick={() => setDuplicatePrompt(null)} className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Keep existing</button>
+              <button type="button" onClick={confirmDuplicate} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Replace</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+      {deleteAllPrompt ? createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setDeleteAllPrompt(false); }}
+        >
+          <div className="w-full max-w-sm bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-5 flex flex-col gap-4 text-slate-100" role="dialog" aria-modal="true">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 flex-shrink-0">🗑</div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100">Delete all names?</h3>
+                <p className="text-[11px] text-slate-400">This cannot be undone.</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Remove <span className="font-semibold text-rose-300">{entries.length}</span> name{entries.length === 1 ? '' : 's'} from this novel's glossary? Downloaded chapters are not changed.
+            </p>
+            <div className="flex items-center justify-end gap-2.5">
+              <button type="button" onClick={() => setDeleteAllPrompt(false)} className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Cancel</button>
+              <button type="button" onClick={confirmDeleteAll} className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Delete all</button>
             </div>
           </div>
         </div>,

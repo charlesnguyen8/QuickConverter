@@ -445,7 +445,18 @@ async function runTests() {
   );
   console.log('✓ restoreTokens swaps @n@ back to translated names (case-insensitive, spaces tolerated)');
 
-  console.log('\n🎉 All 16 Novel Name List tests passed!');
+  // 17. saveNameList collapses duplicate source names (oldest wins)
+  await StorageService.saveNameList('novel-test', [
+    { id: 'd1', original: 'Yanguo', translation: 'Newer', addedAt: 200 },
+    { id: 'd2', original: 'yanguo', translation: 'Older', addedAt: 100 },
+    { id: 'd3', original: 'Other', translation: 'X', addedAt: 50 }
+  ]);
+  const deduped = await StorageService.getNameList('novel-test');
+  assert.strictEqual(deduped.length, 2, 'duplicate source names collapse to one');
+  assert.strictEqual(deduped.find((e) => e.original.toLowerCase() === 'yanguo').translation, 'Older', 'oldest translation wins');
+  console.log('✓ saveNameList merges duplicate names, keeping the oldest');
+
+  console.log('\n🎉 All 17 Novel Name List tests passed!');
 }
 
 runTests().catch((err) => {
