@@ -375,6 +375,19 @@ function test(name, fn) {
     assert.strictEqual(matcher.replaceAll('Vương Lâm and Vương', (m) => `[${m.id}]`), '[b] and [a]', 'single-pass replace');
   });
 
+  test('NameMatcher matches astral-plane (surrogate-pair) names', () => {
+    const api = globalThis.NameMatcher;
+    const astral = String.fromCodePoint(0x20000);
+    const matcher = api.createMatcher([{ id: 'z', original: astral, translation: astral }], { field: 'original', caseSensitive: true });
+    const text = `Met ${astral} here.`;
+    const hits = matcher.findAll(text);
+    assert.strictEqual(hits.length, 1, 'astral name must match');
+    assert.strictEqual(hits[0].length, 2, 'match length is measured in code units');
+    assert.strictEqual(text.slice(hits[0].index, hits[0].index + hits[0].length), astral);
+    const segs = splitByNames(`Go ${astral}.`, [{ id: 'z', original: 'x', translation: astral }]);
+    assert.strictEqual(segs.find((s) => s.nameId === 'z').text, astral, 'splitByNames highlights astral names');
+  });
+
   test('splitByNames scales to thousands of names', () => {
     const entries = [];
     for (let i = 0; i < 3000; i += 1) entries.push({ id: `n${i}`, original: `Name${i}`, translation: `Tên${i}` });

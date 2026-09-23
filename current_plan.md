@@ -26,7 +26,8 @@ independently revertible. Report any test change and why (owner rules in `AGENTS
   **complete and committed**.
 - This plan tracks **NL-1 … NL-10** below; **NL-4 moved to `nice_to_have_plan.md`** (conditional).
 - Done: **NL-1** (empty-translation guard), **NL-2** (dedicated name-list record), **NL-3** (drawer
-  virtualization), **NL-9** (load-site contract test). Remaining: NL-5, NL-6, NL-7, NL-8, NL-10.
+  virtualization), **NL-5** (astral-plane indexing), **NL-9** (load-site contract test). Remaining:
+  NL-6, NL-7, NL-8, NL-10.
 
 ---
 
@@ -66,11 +67,14 @@ taller). Search/sort reset the scroll; "open + scroll to a name" scrolls by inde
 - Touches: `src/components/react/novel/NameListDrawer.jsx`, `.../nameListSource.js`.
 - Tests: `computeVirtualWindow` unit cases in `components.test.js`.
 
-### NL-5 — Astral-plane indexing  *(edge)*
-The trie walks the pattern by code point but `findAll` indexes the text by code unit, so
-surrogate-pair names can miss. Iterate the text by code point.
+### NL-5 — Astral-plane indexing  *(edge)* — **done**
+The trie is built by code point but `findAll` indexed the text by code unit, so
+surrogate-pair names (rare CJK ext, emoji) never matched. `findAll` now reads a full code point
+at each position (`charAt`) and advances by its length, and the boundary check uses
+`charBefore`/`charAt` so a low surrogate isn't mistaken for a non-word boundary. Offsets/lengths
+are still reported in code units, so slicing/highlighting is unchanged.
 - Touches: `src/services/name-matcher.js`.
-- Tests: a surrogate-pair name match case.
+- Tests: `components.test.js` astral-name match (length 2, correct slice) + `splitByNames`.
 
 ### NL-6 — Case-folding edges  *(edge, likely no-op)*
 Case-insensitive highlight uses per-char `toLowerCase()` (no locale handling; some chars change

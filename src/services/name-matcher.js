@@ -7,6 +7,21 @@
     return !!ch && WORD_CHAR.test(ch);
   }
 
+  function charAt(text, index) {
+    const code = text.codePointAt(index);
+    return code === undefined ? '' : String.fromCodePoint(code);
+  }
+
+  function charBefore(text, index) {
+    if (index <= 0) return '';
+    const low = text.charCodeAt(index - 1);
+    if (low >= 0xDC00 && low <= 0xDFFF && index >= 2) {
+      const high = text.charCodeAt(index - 2);
+      if (high >= 0xD800 && high <= 0xDBFF) return text.slice(index - 2, index);
+    }
+    return text[index - 1];
+  }
+
   function createMatcher(entries, options) {
     const opts = options || {};
     const field = opts.field || 'original';
@@ -54,16 +69,17 @@
         let j = i;
         let last = null;
         while (j < source.length) {
-          const next = node.children.get(fold(source[j]));
+          const ch = charAt(source, j);
+          const next = node.children.get(fold(ch));
           if (!next) break;
           node = next;
-          j += 1;
+          j += ch.length;
           if (node.terminal) last = { end: j, meta: node.terminal };
         }
 
         if (last) {
-          const before = i > 0 ? source[i - 1] : '';
-          const after = last.end < source.length ? source[last.end] : '';
+          const before = charBefore(source, i);
+          const after = charAt(source, last.end);
           if (!isWordChar(before) && !isWordChar(after)) {
             matches.push({
               index: i,
@@ -77,7 +93,7 @@
             continue;
           }
         }
-        i += 1;
+        i += (charAt(source, i) || '').length || 1;
       }
       return matches;
     }
