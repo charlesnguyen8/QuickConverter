@@ -54,7 +54,20 @@ const mockDatabase = {
             if (req.onsuccess) req.onsuccess();
           }, 0);
           return req;
-        }
+        },
+        index: () => ({
+          getAll: (novelId) => {
+            const req = {
+              result: Object.values(mockDbStore).filter((r) => r && r.novelId === novelId),
+              onsuccess: null,
+              onerror: null
+            };
+            setTimeout(() => {
+              if (req.onsuccess) req.onsuccess();
+            }, 0);
+            return req;
+          }
+        })
       }),
       oncomplete: null,
       onerror: null
@@ -89,6 +102,7 @@ const sandbox = {
     }
   },
   localStorage: mockLocalStorage,
+  IDBKeyRange: { only: (value) => value },
   window: {
     _events: [],
     dispatchEvent: function (e) { this._events.push(e); }
@@ -375,7 +389,26 @@ async function runTests() {
   assert.strictEqual(afterAuto.find((e) => e.original.toLowerCase() === 'yanguo').translation, 'Yên quốc', 'existing translation must be untouched');
   console.log('✓ addNameEntries skips existing names and batch duplicates');
 
-  console.log('\n🎉 All 13 Novel Name List tests passed!');
+  // 14. replaceInChapters (whole-word, case-sensitive, translated text only)
+  mockDbStore['novel-test_ch1'] = { id: 'novel-test_ch1', novelId: 'novel-test', chapterNumber: 1, title: 'Ch 1', rawText: 'Lý Thất Dạ met Lý Thất Dạ, friend of Lý Thất Dạx.', originalRawText: 'SOURCE Lý Thất Dạ' };
+  mockDbStore['novel-test_ch2'] = { id: 'novel-test_ch2', novelId: 'novel-test', chapterNumber: 2, title: 'Ch 2', rawText: 'lý thất dạ and LýThấtDạ', originalRawText: 'src' };
+
+  const dry = await StorageService.replaceInChapters('novel-test', 'Lý Thất Dạ', 'Lý Tinh', { dryRun: true });
+  assert.strictEqual(dry.count, 2, 'dry run counts only whole-word matches');
+  assert.strictEqual(dry.chaptersChanged, 1);
+
+  const applied = await StorageService.replaceInChapters('novel-test', 'Lý Thất Dạ', 'Lý Tinh');
+  assert.strictEqual(applied.count, 2);
+
+  const replacedCh1 = await StorageService.getChapter('novel-test', 1);
+  assert.strictEqual(replacedCh1.rawText, 'Lý Tinh met Lý Tinh, friend of Lý Thất Dạx.');
+  assert.strictEqual(replacedCh1.originalRawText, 'SOURCE Lý Thất Dạ', 'source text must be untouched');
+
+  const replacedCh2 = await StorageService.getChapter('novel-test', 2);
+  assert.strictEqual(replacedCh2.rawText, 'lý thất dạ and LýThấtDạ', 'case-sensitive + word-boundary guards apply');
+  console.log('✓ replaceInChapters renames whole-word matches in translated text only');
+
+  console.log('\n🎉 All 14 Novel Name List tests passed!');
 }
 
 runTests().catch((err) => {

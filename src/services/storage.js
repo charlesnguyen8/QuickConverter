@@ -738,6 +738,42 @@ const StorageService = {
     });
   },
 
+  /**
+   * Replaces a translated name throughout every downloaded chapter's translated text
+   * (rawText, not the source). wholeWord uses letter/number lookarounds so short names
+   * don't hit longer words. Pass dryRun to only count. Returns { count, chaptersChanged,
+   * chaptersScanned }.
+   */
+  async replaceInChapters(novelId, search, replacement, options = {}) {
+    const { dryRun = false, wholeWord = true, caseSensitive = true } = options;
+    const result = { count: 0, chaptersChanged: 0, chaptersScanned: 0 };
+    if (!novelId || !search || search === replacement) return result;
+
+    const escaped = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const flags = caseSensitive ? 'gu' : 'giu';
+    const regex = wholeWord
+      ? new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, flags)
+      : new RegExp(escaped, flags);
+
+    const chapters = await this.getNovelChapters(novelId);
+    result.chaptersScanned = chapters.length;
+
+    for (const chapter of chapters) {
+      if (typeof chapter.rawText !== 'string' || !chapter.rawText) continue;
+      regex.lastIndex = 0;
+      const matches = chapter.rawText.match(regex);
+      if (!matches || matches.length === 0) continue;
+      result.count += matches.length;
+      result.chaptersChanged += 1;
+      if (!dryRun) {
+        regex.lastIndex = 0;
+        const nextText = chapter.rawText.replace(regex, replacement);
+        await this.updateChapter(novelId, chapter.chapterNumber, { rawText: nextText });
+      }
+    }
+    return result;
+  },
+
   formatBytes(bytes) {
     if (bytes === null || bytes === undefined || isNaN(bytes) || bytes <= 0) return '0 B';
     if (bytes < 1024) return `${bytes} B`;

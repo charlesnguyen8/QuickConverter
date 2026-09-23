@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { buildSnippets } from './nameListSource.js';
 
 function getNovelId() {
@@ -151,6 +152,9 @@ export default function NameListDrawer() {
   const [sourceEntry, setSourceEntry] = useState(null);
   const [sourceChapter, setSourceChapter] = useState(null);
   const [scanAll, setScanAll] = useState(null);
+  const [renamePrompt, setRenamePrompt] = useState(null);
+  const renamePromptRef = useRef(null);
+  renamePromptRef.current = renamePrompt;
 
   const setEntries = useCallback((next) => {
     setEntriesState(next);
@@ -188,6 +192,7 @@ export default function NameListDrawer() {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
+      if (renamePromptRef.current) { setRenamePrompt(null); return; }
       setSourceEntry((current) => {
         if (current) return null;
         if (open) setOpen(false);
@@ -206,6 +211,7 @@ export default function NameListDrawer() {
     setSourceEntry(null);
     setSourceChapter(null);
     setScanAll(null);
+    setRenamePrompt(null);
   }, []);
 
   const openSource = useCallback(async (entry) => {
@@ -252,6 +258,33 @@ export default function NameListDrawer() {
 
   const closeSource = useCallback(() => setSourceEntry(null), []);
 
+  const applyTranslationRename = useCallback(async (oldName, newName) => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novelId || !oldName || !newName || oldName === newName) return;
+    if (typeof storage.replaceInChapters !== 'function') return;
+    try {
+      const preview = await storage.replaceInChapters(novelId, oldName, newName, { dryRun: true });
+      if (!preview.count) return;
+      setRenamePrompt({ oldName, newName, count: preview.count, chaptersChanged: preview.chaptersChanged });
+    } catch (e) {
+      console.error('Error counting name occurrences:', e);
+    }
+  }, [novelId]);
+
+  const confirmRename = useCallback(async () => {
+    const prompt = renamePrompt;
+    setRenamePrompt(null);
+    if (!prompt) return;
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || typeof storage.replaceInChapters !== 'function') return;
+    try {
+      await storage.replaceInChapters(novelId, prompt.oldName, prompt.newName);
+      window.dispatchEvent(new Event('reader-chapter-refresh'));
+    } catch (e) {
+      console.error('Error replacing name across chapters:', e);
+    }
+  }, [novelId, renamePrompt]);
+
   const filtered = useMemo(() => sortAndFilter(entries, search.trim(), sort), [entries, search, sort]);
 
   const resetForm = () => {
@@ -282,9 +315,12 @@ export default function NameListDrawer() {
     if (!orig || !trans) return;
 
     if (formId) {
+      const existing = entries.find((entry) => entry.id === formId);
+      const oldTranslation = existing ? existing.translation : '';
       if (typeof storage.updateNameEntry === 'function') {
         await storage.updateNameEntry(novelId, formId, { original: orig, translation: trans, chapterFirstSeen: ch || null });
       }
+      if (oldTranslation && oldTranslation !== trans) await applyTranslationRename(oldTranslation, trans);
     } else if (typeof storage.addNameEntry === 'function') {
       await storage.addNameEntry(novelId, { original: orig, translation: trans, chapterFirstSeen: ch || null });
     }
@@ -305,9 +341,12 @@ export default function NameListDrawer() {
     const orig = fields.original.trim();
     const trans = fields.translation.trim();
     if (!orig || !trans) return;
+    const existing = entries.find((entry) => entry.id === id);
+    const oldTranslation = existing ? existing.translation : '';
     if (typeof storage.updateNameEntry === 'function') {
       await storage.updateNameEntry(novelId, id, { original: orig, translation: trans, chapterFirstSeen: fields.chapter.trim() || null });
     }
+    if (oldTranslation && oldTranslation !== trans) await applyTranslationRename(oldTranslation, trans);
     setEditingId(null);
     await reload();
   };
@@ -378,6 +417,7 @@ export default function NameListDrawer() {
   };
 
   return (
+    <>
     <div
       className={`fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
       aria-hidden={!open}
@@ -665,6 +705,34 @@ export default function NameListDrawer() {
         </div>
       </div>
     </div>
+      {renamePrompt ? createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setRenamePrompt(null); }}
+        >
+          <div className="w-full max-w-sm bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-5 flex flex-col gap-4 text-slate-100" role="dialog" aria-modal="true">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0">✏️</div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100">Rename in downloaded chapters?</h3>
+                <p className="text-[11px] text-slate-400">Updates the translated text and saves it to storage.</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Replace <span className="font-semibold text-amber-200">{renamePrompt.count}</span> occurrence{renamePrompt.count === 1 ? '' : 's'} of{' '}
+              <span className="font-mono text-slate-100">"{renamePrompt.oldName}"</span> with{' '}
+              <span className="font-mono text-emerald-300">"{renamePrompt.newName}"</span>{' '}
+              in {renamePrompt.chaptersChanged} downloaded chapter{renamePrompt.chaptersChanged === 1 ? '' : 's'}?
+            </p>
+            <div className="flex items-center justify-end gap-2.5">
+              <button type="button" onClick={() => setRenamePrompt(null)} className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Cancel</button>
+              <button type="button" onClick={confirmRename} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Replace chapters</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+    </>
   );
 }
 
