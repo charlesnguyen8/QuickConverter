@@ -375,6 +375,16 @@ function test(name, fn) {
     assert.strictEqual(matcher.replaceAll('Vương Lâm and Vương', (m) => `[${m.id}]`), '[b] and [a]', 'single-pass replace');
   });
 
+  test('whole-word matching treats hyphens as part of the word', () => {
+    const api = globalThis.NameMatcher;
+    const onlyJu = api.createMatcher([{ id: 'ju', original: 'Ju' }], { field: 'original', caseSensitive: true });
+    assert.strictEqual(onlyJu.findAll('Ju-han').length, 0, 'Ju must not match inside Ju-han');
+    assert.strictEqual(onlyJu.findAll('Just').length, 0, 'Ju must not match inside Just');
+    assert.strictEqual(onlyJu.findAll('Ju.').length, 1, 'Ju matches standalone');
+    const full = api.createMatcher([{ id: 'jh', original: 'Ju-han' }], { field: 'original', caseSensitive: true });
+    assert.strictEqual(full.findAll('Ju-han met Ju-han.').length, 2, 'the full hyphenated name still matches');
+  });
+
   test('NameMatcher matches astral-plane (surrogate-pair) names', () => {
     const api = globalThis.NameMatcher;
     const astral = String.fromCodePoint(0x20000);

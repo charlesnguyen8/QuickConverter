@@ -1,7 +1,7 @@
 (function (global) {
   'use strict';
 
-  const WORD_CHAR = /[\p{L}\p{N}]/u;
+  const WORD_CHAR = /[\p{L}\p{N}-]/u;
 
   function isWordChar(ch) {
     return !!ch && WORD_CHAR.test(ch);
