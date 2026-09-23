@@ -76,8 +76,8 @@ const mockStorageService = {
 global.StorageService = mockStorageService;
 
 // Load DownloadQueueService fresh
-delete require.cache[require.resolve('../services/download-queue.js')];
-const DownloadQueueService = require('../services/download-queue.js');
+delete require.cache[require.resolve('../src/services/download-queue.js')];
+const DownloadQueueService = require('../src/services/download-queue.js');
 DownloadQueueService.cooldownEnabled = false;
 
 async function runTests() {

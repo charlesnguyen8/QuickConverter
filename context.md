@@ -10,12 +10,12 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 
 ### Current Implementation Stack
 - **Interface**: React 19 + Vite for the view layer (built to `dist/`; load unpacked from there), with the classic global-script services as the data layer. Tailwind CSS (compiled via CLI).
-- **View apps**: Popup (`PopupApp`), Settings (`SettingsView`), Reader (`ReaderApp`) and Novel (`NovelApp`) are fully React; each HTML file is a shell mounting one `components/react/<view>/<view>-entry.jsx` into `#<view>-root` (see `current_plan.md`).
-- **Persistent Storage**: W3C **IndexedDB** (`services/storage.js`) for novel metadata and chapter texts.
-- **Queue & Background**: Centralized sequential FIFO queue (`services/download-queue.js`) with concurrency control (strictly 1 task at a time), pause/resume, individual item cancellation, and live circular progress.
-- **Dock UI**: Reusable solid, opaque floating dock React component (`components/react/shared/QueueDock.jsx`) with expanded/collapsed modes, mounted via `components/react/shared/queue-dock-entry.jsx`.
-- **AI Translation Coordinator**: `services/ai-service.js` routing between `services/deepseek.js` (Official Cloud API) and `services/custom-api.js` (Local Web Bridge / Custom OpenAI-compatible endpoints) with SSE streaming delta accumulation and DeepThink reasoning extraction/discarding.
-- **Shared View Modules**: `components/react/shared/AiConfigPanel.jsx` is the single DeepSeek / AI-provider configuration panel (provider, API key, model, prompt, cooldown, balance) used by the novel, popup and reader views — each view wraps it and passes `variant`/`ids`/`hooks`, and reads it back via an imperative ref (`getDownloadOptions`, `refreshBalance`). The Settings view has its own React DeepSeek controller (`components/react/settings/SettingsDeepSeekTab.jsx`). `components/react/shared/AddBookButton.jsx` is the reusable "Add Book by Link" button + modal used by the library and popup.
+- **View apps**: Popup (`PopupApp`), Settings (`SettingsView`), Reader (`ReaderApp`) and Novel (`NovelApp`) are fully React; each HTML file is a shell mounting one `src/components/react/<view>/<view>-entry.jsx` into `#<view>-root` (see `current_plan.md`).
+- **Persistent Storage**: W3C **IndexedDB** (`src/services/storage.js`) for novel metadata and chapter texts.
+- **Queue & Background**: Centralized sequential FIFO queue (`src/services/download-queue.js`) with concurrency control (strictly 1 task at a time), pause/resume, individual item cancellation, and live circular progress.
+- **Dock UI**: Reusable solid, opaque floating dock React component (`src/components/react/shared/QueueDock.jsx`) with expanded/collapsed modes, mounted via `src/components/react/shared/queue-dock-entry.jsx`.
+- **AI Translation Coordinator**: `src/services/ai-service.js` routing between `src/services/deepseek.js` (Official Cloud API) and `src/services/custom-api.js` (Local Web Bridge / Custom OpenAI-compatible endpoints) with SSE streaming delta accumulation and DeepThink reasoning extraction/discarding.
+- **Shared View Modules**: `src/components/react/shared/AiConfigPanel.jsx` is the single DeepSeek / AI-provider configuration panel (provider, API key, model, prompt, cooldown, balance) used by the novel, popup and reader views — each view wraps it and passes `variant`/`ids`/`hooks`, and reads it back via an imperative ref (`getDownloadOptions`, `refreshBalance`). The Settings view has its own React DeepSeek controller (`src/components/react/settings/SettingsDeepSeekTab.jsx`). `src/components/react/shared/AddBookButton.jsx` is the reusable "Add Book by Link" button + modal used by the library and popup.
 - **Testing**: `npm test` runs 13 suites via `tests/run_all.js` — twelve zero-dependency Node suites (unit + static/contract) plus `tests/components.test.js`, which renders the React components with `react-dom/server` (`renderToString`); JSX is compiled by the `esbuild` devDependency via `tests/helpers/render.js`. Effects don't run server-side, so component tests cover prop → markup only.
 - **Testing rules (owner)**: test-first for behavior and bug fixes; never edit an assertion just because the code disagrees (only when the expectation was wrong about behavior, or a file/format proxy moved); never weaken/delete assertions to go green; prefer behavior-level render assertions over static source greps; report every test change and why in the commit. See `AGENTS.md`.
 
@@ -25,16 +25,21 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 
 ```text
 QuickConverter/
-├── components/          # React view components: shared/ + <view>/ folders
-├── fonts/               # 11 offline web font binaries (Merriweather, Inter, etc.)
-├── icons/               # Extension icons (16, 48, 128px)
-├── providers/           # Web scraping catalog & content extractors (wetriedtls.js)
-├── scripts/             # Chrome extension background service workers
-├── services/            # Core business logic (Storage, AI, Queue, Custom API, Cloud Sync)
-├── styles/              # input.css and tailwind.css build output
+├── src/                 # All application source (Vite root; built to dist/)
+│   ├── components/      # React view components: shared/ + <view>/ folders
+│   ├── dev/             # QueueDock dev harness (npm run dev)
+│   ├── fonts/           # 11 offline web font binaries (Merriweather, Inter, etc.)
+│   ├── icons/           # Extension icons (16, 48, 128px)
+│   ├── providers/       # Web scraping catalog & content extractors (wetriedtls.js)
+│   ├── scripts/         # Chrome extension background service worker + content script
+│   ├── services/        # Core business logic (Storage, AI, Queue, Custom API, Cloud Sync)
+│   ├── styles/          # input.css and tailwind.css build output
+│   └── views/           # Application page shells (library, novel, reader, settings, popup)
 ├── tests/               # Automated unit & integration tests
-├── views/               # Application pages (library, novel, reader, settings, popup)
-├── manifest.json        # Chrome Extension MV3 manifest
+├── dist/                # Built extension (load unpacked from here)
+├── manifest.json        # Chrome Extension MV3 manifest (paths match dist/)
+├── vite.config.mjs      # root: src → outDir: dist
+├── tailwind.config.js
 ├── API_DOC.md           # Backend AI API documentation
 └── context.md           # This document: architectural context & port rules
 ```
@@ -46,8 +51,8 @@ QuickConverter/
 To ensure that 95%+ of the codebase can be wrapped directly into an Android app (via Capacitor) or Desktop app without a rewrite, all new features and modifications **must adhere to these rules**:
 
 ### Rule 1: Strict Platform API Isolation (No Direct `chrome.*` in Views or Components)
-- **Never call `chrome.storage`, `chrome.runtime`, or `chrome.tabs` directly inside `views/` or `components/`.**
-- All storage operations must go through `StorageService` (`services/storage.js`).
+- **Never call `chrome.storage`, `chrome.runtime`, or `chrome.tabs` directly inside `src/views/` or `src/components/`.**
+- All storage operations must go through `StorageService` (`src/services/storage.js`).
 - If extension-specific APIs must be used (such as opening options pages or background message dispatching), always provide a fallback check:
   ```javascript
   // Good: Platform-safe navigation
@@ -73,14 +78,14 @@ To ensure that 95%+ of the codebase can be wrapped directly into an Android app 
 - **Safe Areas**: Use Tailwind safe-padding utilities where necessary for mobile status bars and navigation notches (`env(safe-area-inset-bottom)`).
 
 ### Rule 4: Decouple Queue Execution from Extension Service Workers
-- Currently, `scripts/background.js` executes queue tasks because Chrome MV3 extension tabs unload when navigated.
+- Currently, `src/scripts/background.js` executes queue tasks because Chrome MV3 extension tabs unload when navigated.
 - In a native Android app (via Capacitor) or Desktop app (Electron/Tauri), the app is a single persistent web context.
 - **Rule**: Keep `DownloadQueueService` capable of running either:
   1. In a UI thread / Web Worker directly (when running as an App or standalone tab).
   2. Delegating to `chrome.runtime.sendMessage` (only when running inside a Chrome extension popup/tab).
 
 ### Rule 5: Portable File and Image Assets
-- Font binaries, icons, and stylesheets must always be referenced using **relative paths** (e.g. `../fonts/Merriweather-Regular.woff2` or `styles/tailwind.css`), rather than hardcoded `chrome-extension://...` URLs.
+- Font binaries, icons, and stylesheets must always be referenced using **relative paths** (e.g. `../fonts/Merriweather-Regular.woff2` or `src/styles/tailwind.css`), rather than hardcoded `chrome-extension://...` URLs.
 - This allows Android WebViews and local desktop web servers to resolve assets instantly without network requests.
 
 ### Rule 6: Offline-First Reliability

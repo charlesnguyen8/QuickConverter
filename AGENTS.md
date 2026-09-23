@@ -9,7 +9,7 @@ for directory layout, porting rules, and feature checklists.
 ## Commands
 
 - `npm test` — run the full Node test suite (13 suites) (`tests/run_all.js`). Must pass before finishing a task.
-- `npm run build:css` — rebuild `styles/tailwind.css` from `styles/input.css` + scanned content.
+- `npm run build:css` — rebuild `src/styles/tailwind.css` from `src/styles/input.css` + scanned content.
 - `npm run watch:css` — watch mode while developing UI.
 
 **Loading the extension:** run `npm run build:ext`, then load unpacked from `dist/` in
@@ -19,7 +19,7 @@ build, so the repo root is no longer a loadable target. `npm run dev` is for UI 
 **CSS gotcha:** Tailwind is compiled and committed. After editing any markup/JS that
 introduces new utility classes, run `npm run build:css` (or the `watch` script). Missing
 classes silently break layout (e.g. a missing `justify-end` makes the drawer anchor left)
-because the committed `styles/tailwind.css` is stale.
+because the committed `src/styles/tailwind.css` is stale.
 
 **Testing:** `npm test` runs 13 suites via `tests/run_all.js`. Twelve are zero-dependency Node
 suites (unit + static/contract, no DOM); the thirteenth, `tests/components.test.js`, renders the
@@ -52,8 +52,9 @@ nodes, so the helper's `render` strips `<!-- -->`).
 
 ## Architecture rules (see `context.md` for full detail)
 
-1. **Platform API isolation** — never call `chrome.*` directly in `views/` or `components/`;
-   go through `services/` (e.g. `StorageService`) and guard with `typeof chrome !== 'undefined'`.
+1. **Platform API isolation** — never call `chrome.*` directly in `src/views/` or
+   `src/components/`; go through `src/services/` (e.g. `StorageService`) and guard with
+   `typeof chrome !== 'undefined'`.
 2. **Web standards only** — `window.indexedDB`, `fetch`/`EventSource`/`ReadableStream`,
    `TextDecoder`/`TextEncoder`/`crypto.subtle`. No Node-only deps in frontend code.
 3. **Mobile-first** — must render at 360px; touch targets >= 40x40px; never hide critical
@@ -63,19 +64,19 @@ nodes, so the helper's `render` strips `<!-- -->`).
 
 ## Code style
 
-- **Views are React**, one folder per view under `components/react/<view>/` (plus `shared/`), mounted
-  from a per-view entry (`<view>-entry.jsx` → `#<view>-root`); `services/`, `providers/` and shared
-  `components/*.js` stay classic global scripts.
+- **Views are React**, one folder per view under `src/components/react/<view>/` (plus `shared/`),
+  mounted from a per-view entry (`<view>-entry.jsx` → `#<view>-root`); `src/services/`,
+  `src/providers/` stay classic global scripts.
 - **Do not add comments unless asked.**
-- Reuse shared view modules (`components/react/shared/AiConfigPanel.jsx`, `QueueDock.jsx`,
+- Reuse shared view modules (`src/components/react/shared/AiConfigPanel.jsx`, `QueueDock.jsx`,
   `AddBookButton.jsx`) instead of duplicating provider/DeepSeek UI across views. The AI panel is React:
   wrap it with view-specific `variant`/`ids`/`hooks` and read it back through its imperative ref
-  (`getDownloadOptions`/`refreshBalance`). Remaining classic globals (`services/`, `providers/`) still
-  load via `<script>`; register new ones as IIFE + `window.*` export.
+  (`getDownloadOptions`/`refreshBalance`). Remaining classic globals (`src/services/`,
+  `src/providers/`) still load via `<script>`; register new ones as IIFE + `window.*` export.
 - Keep `DownloadQueueService` runnable both in-thread and via background worker delegation.
 
 ## View rewrite status
 
-Popup, Settings, Reader and Novel are fully React (no `views/*.js` logic scripts remain).
-`current_plan.md` tracks the milestones (M1–M7 complete). Shells are `views/<view>.html` +
-`components/react/<view>/<view>-entry.jsx`.
+Popup, Settings, Reader and Novel are fully React (no `src/views/*.js` logic scripts remain).
+`current_plan.md` tracks the milestones (M1–M8 complete). Shells are `src/views/<view>.html` +
+`src/components/react/<view>/<view>-entry.jsx`.

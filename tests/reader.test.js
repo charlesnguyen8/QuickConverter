@@ -6,7 +6,7 @@ const vm = require('vm');
 console.log('--- Running Reader & Storage Flow Test Suite ---');
 
 const repoRoot = path.resolve(__dirname, '..');
-const storageCode = fs.readFileSync(path.join(repoRoot, 'services', 'storage.js'), 'utf8');
+const storageCode = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'storage.js'), 'utf8');
 
 const mockDbStore = {};
 const mockDatabase = {

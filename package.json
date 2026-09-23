@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build:ext": "vite build",
-    "build:css": "tailwindcss -i ./styles/input.css -o ./styles/tailwind.css --minify",
-    "watch:css": "tailwindcss -i ./styles/input.css -o ./styles/tailwind.css --watch",
+    "build:css": "tailwindcss -i ./src/styles/input.css -o ./src/styles/tailwind.css --minify",
+    "watch:css": "tailwindcss -i ./src/styles/input.css -o ./src/styles/tailwind.css --watch",
     "test": "node tests/run_all.js"
   },
   "keywords": [

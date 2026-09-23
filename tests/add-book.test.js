@@ -10,9 +10,9 @@ const vm = require('vm');
 console.log('\n--- Running Add Book & Provider Resolution Test Suite ---');
 
 const repoRoot = path.resolve(__dirname, '..');
-const wetriedtlsCode = fs.readFileSync(path.join(repoRoot, 'providers', 'wetriedtls.js'), 'utf8');
-const registryCode = fs.readFileSync(path.join(repoRoot, 'providers', 'registry.js'), 'utf8');
-const storageCode = fs.readFileSync(path.join(repoRoot, 'services', 'storage.js'), 'utf8');
+const wetriedtlsCode = fs.readFileSync(path.join(repoRoot, 'src', 'providers', 'wetriedtls.js'), 'utf8');
+const registryCode = fs.readFileSync(path.join(repoRoot, 'src', 'providers', 'registry.js'), 'utf8');
+const storageCode = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'storage.js'), 'utf8');
 
 // Mock indexedDB & environment
 const mockDbStore = {};

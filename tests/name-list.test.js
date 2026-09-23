@@ -10,7 +10,7 @@ const vm = require('vm');
 console.log('\n--- Running Novel Name List & Glossary Test Suite ---');
 
 const repoRoot = path.resolve(__dirname, '..');
-const storageCode = fs.readFileSync(path.join(repoRoot, 'services', 'storage.js'), 'utf8');
+const storageCode = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'storage.js'), 'utf8');
 
 // Mock indexedDB & environment
 const mockDbStore = {

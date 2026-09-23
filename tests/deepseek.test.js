@@ -4,7 +4,7 @@ const path = require('path');
 console.log('--- Running DeepSeek Cost & Pricing Test Suite ---');
 
 const repoRoot = path.resolve(__dirname, '..');
-const DeepSeekService = require(path.join(repoRoot, 'services', 'deepseek.js'));
+const DeepSeekService = require(path.join(repoRoot, 'src', 'services', 'deepseek.js'));
 
 // Test 1: DeepSeek Peak vs Off-Peak Schedule Determination
 // Monday 02:00 UTC (Peak)

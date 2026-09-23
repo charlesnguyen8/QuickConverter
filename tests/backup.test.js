@@ -6,7 +6,7 @@ const vm = require('vm');
 console.log('--- Running Cloud Backup Export / Import Test Suite ---');
 
 const repoRoot = path.resolve(__dirname, '..');
-const storageCode = fs.readFileSync(path.join(repoRoot, 'services', 'storage.js'), 'utf8');
+const storageCode = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'storage.js'), 'utf8');
 
 const stores = { novels: {}, chapters: {} };
 

@@ -186,7 +186,13 @@ in the Post-M8 step below.
 link-inspection modal, preview states, add-to-library + `novel-added`) with a reusable React
 component (`compact`/`buttonClass` props). `library/LibraryView.jsx` and `popup/PopupMainView.jsx`
 use it; deleted `components/add-book.js` and its `<script>` tags. `components/` now holds only React
-code.
+code. (Paths shown here are pre-`src/`; see the reorg entry below.)
+
+### Post-M8 — repo reorg into `src/` — **done**
+All application source moved under `src/` (`components/`, `services/`, `providers/`, `views/`,
+`scripts/`, `styles/`, `fonts/`, `icons/`, `dev/`). `vite.config.mjs` now uses `root: 'src'` with
+`outDir: '../dist'` so the built layout (and `manifest.json` paths) are unchanged; `tailwind.config.js`
+scans `./src/**`. Tests/`tests/helpers/render.js` resolve app files under `src/`. No behavior change.
 
 ### Post-M7 — components/react reorg — **done**
 `components/react/` is now one folder per view (`library/`, `novel/`, `popup/`, `reader/`,

@@ -20,26 +20,26 @@ const fonts = [
 // 1. Verify font files exist on disk
 for (const font of fonts) {
   for (const file of font.files) {
-    const fullPath = path.join(repoRoot, file);
+    const fullPath = path.join(repoRoot, 'src', file);
     assert(fs.existsSync(fullPath), `Missing font file on disk: ${file}`);
   }
 }
 console.log('✓ All 11 font binaries exist on disk in fonts/');
 
 // 2. Inspect views/reader.html
-const readerHtml = fs.readFileSync(path.join(repoRoot, 'views', 'reader.html'), 'utf8');
+const readerHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'reader.html'), 'utf8');
 assert(readerHtml.includes('href="../styles/tailwind.css"'), 'Missing ../styles/tailwind.css in views/reader.html');
 for (const font of fonts) {
   assert(readerHtml.includes(`font-family: '${font.name}'`), `Missing @font-face for ${font.name} in views/reader.html`);
-  const readerPrefsSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'reader', 'ReaderPrefsPopover.jsx'), 'utf8');
+  const readerPrefsSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'reader', 'ReaderPrefsPopover.jsx'), 'utf8');
 assert(readerPrefsSrc.includes(`['${font.key}',`), `Missing font option '${font.key}' in components/react/reader/ReaderPrefsPopover.jsx`);
 }
 assert(readerHtml.includes("url('../fonts/"), 'Font URLs in views/reader.html must use ../fonts/ prefix');
 console.log('✓ views/reader.html: verified stylesheet, @font-face rules, and font options');
 
 // 3. Inspect views/settings.html
-const settingsHtml = fs.readFileSync(path.join(repoRoot, 'views', 'settings.html'), 'utf8');
-const settingsReaderSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'settings', 'SettingsReaderTab.jsx'), 'utf8');
+const settingsHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'settings.html'), 'utf8');
+const settingsReaderSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'settings', 'SettingsReaderTab.jsx'), 'utf8');
 assert(settingsHtml.includes('href="../styles/tailwind.css"'), 'Missing ../styles/tailwind.css in views/settings.html');
 for (const font of fonts) {
   assert(settingsHtml.includes(`font-family: '${font.name}'`), `Missing @font-face for ${font.name} in views/settings.html`);
@@ -49,7 +49,7 @@ assert(settingsHtml.includes("url('../fonts/"), 'Font URLs in views/settings.htm
 console.log('✓ views/settings.html: verified stylesheet, @font-face rules, and font options');
 
 // 4. Inspect ReaderChapter.jsx & SettingsReaderTab.jsx font resolvers
-const readerChapterSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'reader', 'ReaderChapter.jsx'), 'utf8');
+const readerChapterSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'reader', 'ReaderChapter.jsx'), 'utf8');
 for (const font of fonts) {
   assert(readerChapterSrc.includes(`case '${font.key}':`), `Missing case '${font.key}' in components/react/reader/ReaderChapter.jsx`);
   assert(readerChapterSrc.includes(`return "${font.css}"`), `Missing return "${font.css}" in components/react/reader/ReaderChapter.jsx`);

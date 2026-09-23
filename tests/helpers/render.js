@@ -10,7 +10,7 @@ const REPO = path.join(__dirname, '..', '..');
 const TMP = path.join(__dirname, '..', '.tmp');
 
 async function loadComponent(relPath) {
-  const abs = path.resolve(REPO, relPath);
+  const abs = path.resolve(REPO, 'src', relPath);
   fs.mkdirSync(TMP, { recursive: true });
   const outfile = path.join(TMP, path.basename(abs).replace(/[^\w.-]/g, '_') + '.mjs');
   await esbuild.build({

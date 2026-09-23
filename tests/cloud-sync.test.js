@@ -54,7 +54,7 @@ global.fetch = async (url, options = {}) => {
   return makeResponse(404, {});
 };
 
-const CloudSyncService = require(path.join(repoRoot, 'services', 'cloud-sync.js'));
+const CloudSyncService = require(path.join(repoRoot, 'src', 'services', 'cloud-sync.js'));
 
 (async () => {
   const connectResult = await CloudSyncService.connect();

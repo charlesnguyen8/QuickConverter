@@ -14,7 +14,7 @@ assert.strictEqual(manifest.options_ui.open_in_tab, true, 'options_ui.open_in_ta
 console.log('✓ manifest.json options_ui properly registered with views/settings.html');
 
 // Test 2: views/settings.html interactive elements
-const settingsHtml = fs.readFileSync(path.join(repoRoot, 'views', 'settings.html'), 'utf8');
+const settingsHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'settings.html'), 'utf8');
 const requiredSettingsIds = [
   'settings-back-btn',
   'settings-back-text',
@@ -35,18 +35,18 @@ const requiredSettingsIds = [
   'model-radio-reasoner'
 ];
 
-const storageTabSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'settings', 'SettingsStorageTab.jsx'), 'utf8');
+const storageTabSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'settings', 'SettingsStorageTab.jsx'), 'utf8');
 for (const id of ['storage-used-display', 'storage-progress-bar', 'refresh-storage-btn']) {
   assert(storageTabSrc.includes(`id="${id}"`), `Missing required element #${id} in components/react/settings/SettingsStorageTab.jsx`);
 }
 
-const readerTabSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'settings', 'SettingsReaderTab.jsx'), 'utf8');
+const readerTabSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'settings', 'SettingsReaderTab.jsx'), 'utf8');
 for (const id of ['reader-font-family', 'reader-column-width', 'reader-font-size', 'reader-line-height', 'typography-preview-container', 'typography-preview-text']) {
   assert(readerTabSrc.includes(`id="${id}"`), `Missing required element #${id} in components/react/settings/SettingsReaderTab.jsx`);
 }
 
-const deepseekMarkupSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'settings', 'SettingsDeepSeekTab.jsx'), 'utf8');
-const settingsViewSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'settings', 'SettingsView.jsx'), 'utf8');
+const deepseekMarkupSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'settings', 'SettingsDeepSeekTab.jsx'), 'utf8');
+const settingsViewSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'settings', 'SettingsView.jsx'), 'utf8');
 for (const id of requiredSettingsIds) {
   assert(
     settingsHtml.includes(`id="${id}"`) || deepseekMarkupSrc.includes(`id="${id}"`) || settingsViewSrc.includes(`id="${id}"`),
@@ -56,26 +56,26 @@ for (const id of requiredSettingsIds) {
 console.log(`✓ views/settings.html contains all ${requiredSettingsIds.length} required interactive element IDs`);
 
 // Test 3: Settings button presence in views
-const libraryViewSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'library', 'LibraryView.jsx'), 'utf8');
-const novelAppSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'novel', 'NovelApp.jsx'), 'utf8');
-const readerHtml = fs.readFileSync(path.join(repoRoot, 'views', 'reader.html'), 'utf8');
-const popupHtml = fs.readFileSync(path.join(repoRoot, 'views', 'popup.html'), 'utf8');
+const libraryViewSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'library', 'LibraryView.jsx'), 'utf8');
+const novelAppSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'novel', 'NovelApp.jsx'), 'utf8');
+const readerHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'reader.html'), 'utf8');
+const popupHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'popup.html'), 'utf8');
 
 assert(libraryViewSrc.includes('id="library-settings-btn"'), 'Missing #library-settings-btn in components/react/library/LibraryView.jsx');
 assert(novelAppSrc.includes('id="novel-settings-btn"'), 'Missing #novel-settings-btn in components/react/novel/NovelApp.jsx');
 assert(
-  readerHtml.includes('id="reader-settings-btn"') || fs.readFileSync(path.join(repoRoot, 'components', 'react', 'reader', 'ReaderHeader.jsx'), 'utf8').includes('id="reader-settings-btn"'),
+  readerHtml.includes('id="reader-settings-btn"') || fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'reader', 'ReaderHeader.jsx'), 'utf8').includes('id="reader-settings-btn"'),
   'Missing #reader-settings-btn in views/reader.html or ReaderHeader.jsx'
 );
 assert(
-  popupHtml.includes('id="settings-btn"') || fs.readFileSync(path.join(repoRoot, 'components', 'react', 'popup', 'PopupMainView.jsx'), 'utf8').includes('id="settings-btn"'),
+  popupHtml.includes('id="settings-btn"') || fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'popup', 'PopupMainView.jsx'), 'utf8').includes('id="settings-btn"'),
   'Missing #settings-btn in popup'
 );
 console.log('✓ All 4 views have dedicated settings button anchors');
 
 // Test 4: Contextual settings links in NovelApp.jsx & the React reader popover
-const novelAppJsx = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'novel', 'NovelApp.jsx'), 'utf8');
-const readerPrefsSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'reader', 'ReaderPrefsPopover.jsx'), 'utf8');
+const novelAppJsx = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'novel', 'NovelApp.jsx'), 'utf8');
+const readerPrefsSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'reader', 'ReaderPrefsPopover.jsx'), 'utf8');
 
 assert(novelAppJsx.includes('settings.html?from=novel'), 'NovelApp.jsx must dynamically wire settings button with contextual return');
 assert(readerPrefsSrc.includes('settings.html?from=reader'), 'ReaderPrefsPopover.jsx must link the settings page back to the reader');
@@ -112,7 +112,7 @@ assert.strictEqual(libraryReturn.label, 'Back to Library');
 console.log('✓ Contextual return navigation parser handles all cases accurately');
 
 // Test 6: DeepSeekService balance method signatures in services/deepseek.js
-const deepseekJs = fs.readFileSync(path.join(repoRoot, 'services', 'deepseek.js'), 'utf8');
+const deepseekJs = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'deepseek.js'), 'utf8');
 assert(deepseekJs.includes('getBalance(apiKey'), 'DeepSeekService must define getBalance');
 assert(deepseekJs.includes('fetchBalance(apiKey'), 'DeepSeekService must define fetchBalance alias');
 console.log('✓ DeepSeekService getBalance and fetchBalance methods verified in services/deepseek.js');

@@ -14,7 +14,7 @@ assert(manifest.host_permissions.includes('http://localhost:*/*'), 'manifest.jso
 console.log('✓ manifest.json host_permissions properly permit local bridge connections');
 
 // Test 2: Verify DeepSeekService service exports & constants
-const deepseekCode = fs.readFileSync(path.join(repoRoot, 'services', 'deepseek.js'), 'utf8');
+const deepseekCode = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'deepseek.js'), 'utf8');
 assert(deepseekCode.includes('PROVIDER_OFFICIAL'), 'DeepSeekService must define PROVIDER_OFFICIAL');
 assert(deepseekCode.includes('PROVIDER_CUSTOM'), 'DeepSeekService must define PROVIDER_CUSTOM');
 assert(deepseekCode.includes('PROVIDER_LOCAL_BRIDGE'), 'DeepSeekService must define PROVIDER_LOCAL_BRIDGE');
@@ -26,18 +26,18 @@ assert(deepseekCode.includes('reasoningText'), 'DeepSeekService must return reas
 console.log('✓ services/deepseek.js defines provider constants (Official, Custom) and reasoning extraction logic');
 
 // Test 3: Verify storage service handles reasoningText in schema and downloadChapter
-const storageCode = fs.readFileSync(path.join(repoRoot, 'services', 'storage.js'), 'utf8');
+const storageCode = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'storage.js'), 'utf8');
 assert(storageCode.includes('reasoningText'), 'StorageService must support reasoningText field in chapter');
 assert(storageCode.includes('cleanKey = \'sk-local\''), 'StorageService must default cleanKey to sk-local for local bridge');
 console.log('✓ services/storage.js supports reasoningText and local bridge authentication default');
 
 // Test 4: Verify Translation on Download cards have Official vs Custom API switcher across all views
-const readerHtml = fs.readFileSync(path.join(repoRoot, 'views', 'reader.html'), 'utf8');
-const popupHtml = fs.readFileSync(path.join(repoRoot, 'views', 'popup.html'), 'utf8');
-const settingsHtml = fs.readFileSync(path.join(repoRoot, 'views', 'settings.html'), 'utf8');
-const readerSourceSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'reader', 'ReaderSourceDrawer.jsx'), 'utf8');
-const readerDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'reader', 'ReaderDeepseekCard.jsx'), 'utf8');
-const aiConfigSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'shared', 'AiConfigPanel.jsx'), 'utf8');
+const readerHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'reader.html'), 'utf8');
+const popupHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'popup.html'), 'utf8');
+const settingsHtml = fs.readFileSync(path.join(repoRoot, 'src', 'views', 'settings.html'), 'utf8');
+const readerSourceSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'reader', 'ReaderSourceDrawer.jsx'), 'utf8');
+const readerDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'reader', 'ReaderDeepseekCard.jsx'), 'utf8');
+const aiConfigSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'shared', 'AiConfigPanel.jsx'), 'utf8');
 
 // Reader View — the wrapper owns the id map; the shared panel renders the switcher markup.
 for (const id of ['reader-provider-btn-official', 'reader-provider-btn-custom', 'reader-custom-base-url',
@@ -49,7 +49,7 @@ assert(readerSourceSrc.includes('DeepThink Reasoning Process'), 'ReaderSourceDra
 console.log('✓ ReaderDeepseekCard.jsx & ReaderSourceDrawer.jsx contain provider switcher, custom URL, and DeepThink drawer section');
 
 // Novel View
-const novelDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'novel', 'NovelDeepseekCard.jsx'), 'utf8');
+const novelDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'novel', 'NovelDeepseekCard.jsx'), 'utf8');
 for (const id of ['novel-provider-btn-official', 'novel-provider-btn-custom', 'novel-custom-base-url',
   'novel-bridge-preset-btn', 'novel-test-custom-btn', 'novel-api-key-label']) {
   assert(novelDeepseekSrc.includes(`'${id}'`), `NovelDeepseekCard.jsx must map #${id}`);
@@ -58,7 +58,7 @@ assert(aiConfigSrc.includes("'deepseek-reasoner'"), 'AiConfigPanel.jsx must offe
 console.log('✓ NovelDeepseekCard.jsx contains provider switcher buttons, custom URL input, and reasoner model option');
 
 // Popup View
-const popupMarkupSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'popup', 'PopupDeepseekCard.jsx'), 'utf8');
+const popupMarkupSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'popup', 'PopupDeepseekCard.jsx'), 'utf8');
 const popupHas = (id) => popupHtml.includes(`id="${id}"`) || popupMarkupSrc.includes(`'${id}'`);
 assert(popupHas('popup-provider-btn-official'), 'popup must have #popup-provider-btn-official');
 assert(popupHas('popup-provider-btn-custom'), 'popup must have #popup-provider-btn-custom');
@@ -69,7 +69,7 @@ assert(popupHas('popup-api-key-label'), 'popup must have #popup-api-key-label');
 console.log('✓ views/popup.html contains provider switcher buttons, custom URL input, and preset button');
 
 // Settings View
-const settingsDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'components', 'react', 'settings', 'SettingsDeepSeekTab.jsx'), 'utf8');
+const settingsDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'settings', 'SettingsDeepSeekTab.jsx'), 'utf8');
 const settingsHas = (id) => settingsHtml.includes(`id="${id}"`) || settingsDeepseekSrc.includes(`id="${id}"`);
 assert(settingsHas('provider-radio-official'), 'settings must have #provider-radio-official');
 assert(settingsHas('provider-radio-bridge'), 'settings must have #provider-radio-bridge');

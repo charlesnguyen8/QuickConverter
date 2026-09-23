@@ -35,9 +35,9 @@ global.chrome = {
   }
 };
 
-const CustomApiService = require(path.join(repoRoot, 'services', 'custom-api.js'));
-const DeepSeekService = require(path.join(repoRoot, 'services', 'deepseek.js'));
-const AIService = require(path.join(repoRoot, 'services', 'ai-service.js'));
+const CustomApiService = require(path.join(repoRoot, 'src', 'services', 'custom-api.js'));
+const DeepSeekService = require(path.join(repoRoot, 'src', 'services', 'deepseek.js'));
+const AIService = require(path.join(repoRoot, 'src', 'services', 'ai-service.js'));
 
 // Test 1: Verify CustomApiService constants and standalone helpers
 assert(CustomApiService.DEFAULT_BASE_URL === 'http://127.0.0.1:8000/v1', 'CustomApiService DEFAULT_BASE_URL must be http://127.0.0.1:8000/v1');

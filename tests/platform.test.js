@@ -4,7 +4,7 @@ const path = require('path');
 console.log('--- Running Platform Adapter Test Suite ---');
 
 const repoRoot = path.resolve(__dirname, '..');
-const Platform = require(path.join(repoRoot, 'services', 'platform.js'));
+const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
 
 (async () => {
   assert.ok(Platform, 'Platform export must exist');
