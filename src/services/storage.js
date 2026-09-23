@@ -119,6 +119,72 @@ function parseNameListBlock(text) {
   return { text: cleaned, names };
 }
 
+// Rewrites occurrences of the novel's source names in `text` to stable @n@ tokens
+// (base36, numbered by first appearance) so translation models leave proper nouns
+// alone. Returns the tokenized text plus the ordered mapping.
+function tokenizeSource(text, names) {
+  const source = typeof text === 'string' ? text : '';
+  const result = { text: source, mapping: [] };
+  if (!source || !Array.isArray(names)) return result;
+
+  const unique = [];
+  const seen = new Set();
+  names.forEach((entry) => {
+    const name = entry && entry.original ? String(entry.original).trim() : '';
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    unique.push({
+      original: name,
+      translation: entry && entry.translation ? String(entry.translation).trim() : ''
+    });
+  });
+  if (unique.length === 0) return result;
+
+  const regexFor = (name) => new RegExp(
+    `(?<![\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`,
+    'gu'
+  );
+
+  const present = [];
+  unique.forEach((entry) => {
+    const match = regexFor(entry.original).exec(source);
+    if (match) present.push({ entry, first: match.index });
+  });
+  present.sort((a, b) => a.first - b.first);
+
+  const mapping = present.map((item, i) => ({
+    token: `@${(i + 1).toString(36)}@`,
+    original: item.entry.original,
+    translation: item.entry.translation
+  }));
+
+  let out = source;
+  [...mapping].sort((a, b) => b.original.length - a.original.length).forEach(({ token, original }) => {
+    out = out.replace(regexFor(original), token);
+  });
+
+  return { text: out, mapping };
+}
+
+// Swaps @n@ tokens back to their translated names. Case-insensitive and tolerant of
+// spaces inside the token; unknown tokens are left untouched.
+function restoreTokens(text, mapping) {
+  const source = typeof text === 'string' ? text : '';
+  if (!source || !Array.isArray(mapping) || mapping.length === 0) return source;
+
+  const byCode = {};
+  mapping.forEach(({ token, translation }) => {
+    const code = String(token || '').replace(/@/g, '').toLowerCase();
+    if (code && translation) byCode[code] = translation;
+  });
+  if (Object.keys(byCode).length === 0) return source;
+
+  return source.replace(/@\s*([0-9a-z]+)\s*@/gi, (match, code) => {
+    const found = byCode[String(code).toLowerCase()];
+    return found !== undefined ? found : match;
+  });
+}
+
 const StorageService = {
   async _isDbInitialized() {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -392,6 +458,10 @@ const StorageService = {
   },
 
   parseNameListBlock,
+
+  tokenizeSource,
+
+  restoreTokens,
 
   /**
    * Adds several name entries at once, skipping any whose source name already exists
@@ -975,6 +1045,14 @@ const StorageService = {
       const effectivePrompt = prompt || novel.translationPrompt ||
         'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
 
+      // Tokenize known source names to @n@ placeholders before translation.
+      const nameEntries = Array.isArray(novel.nameList) ? novel.nameList : [];
+      const tokenized = nameEntries.length > 0 ? tokenizeSource(content.rawText, nameEntries) : null;
+      const sourceForTranslation = tokenized && tokenized.mapping.length > 0 ? tokenized.text : content.rawText;
+      const promptForTranslation = tokenized && tokenized.mapping.length > 0
+        ? `${effectivePrompt}\n\nKeep every placeholder token such as @1@ or @a@ exactly as written - do not translate, alter, or remove them.`
+        : effectivePrompt;
+
       // Estimate expected translated character count (CJK: ~2.8x, Latin: ~1.1x)
       const rawLen = content.rawText ? content.rawText.length : 1000;
       const isCJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\uac00-\ud7af]/.test(content.rawText || '');
@@ -983,8 +1061,8 @@ const StorageService = {
 
       const result = await client.translateChapter({
         apiKey: cleanKey,
-        prompt: effectivePrompt,
-        rawText: content.rawText,
+        prompt: promptForTranslation,
+        rawText: sourceForTranslation,
         model: model || (activeProvider === 'local_bridge' ? 'deepseek-chat' : 'deepseek-flash'),
         provider: activeProvider,
         baseUrl: effectiveBaseUrl,
@@ -1022,7 +1100,11 @@ const StorageService = {
         }
       });
 
-      const parsedNames = this.parseNameListBlock(result.translatedText);
+      const tokenMapping = tokenized ? tokenized.mapping : [];
+      const restoredText = tokenMapping.length > 0
+        ? restoreTokens(result.translatedText, tokenMapping)
+        : result.translatedText;
+      const parsedNames = this.parseNameListBlock(restoredText);
       finalText = parsedNames.text;
       capturedNames = parsedNames.names;
       // Discard deepthink reasoning process - do not save to storage

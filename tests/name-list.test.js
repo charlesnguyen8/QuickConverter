@@ -408,7 +408,44 @@ async function runTests() {
   assert.strictEqual(replacedCh2.rawText, 'lý thất dạ and LýThấtDạ', 'case-sensitive + word-boundary guards apply');
   console.log('✓ replaceInChapters renames whole-word matches in translated text only');
 
-  console.log('\n🎉 All 14 Novel Name List tests passed!');
+  // 15. tokenizeSource (translation pre-processing)
+  const tok = StorageService.tokenizeSource('Li Qiye met Wang Lin. Wang Lin knew Li Qiye.', [
+    { original: 'Wang Lin' }, { original: 'Li Qiye' }
+  ]);
+  assert.strictEqual(tok.mapping.length, 2);
+  assert.strictEqual(tok.mapping[0].token, '@1@');
+  assert.strictEqual(tok.mapping[0].original, 'Li Qiye', 'numbered by first appearance');
+  assert.strictEqual(tok.mapping[1].token, '@2@');
+  assert.strictEqual(tok.text, '@1@ met @2@. @2@ knew @1@.');
+
+  const whole = StorageService.tokenizeSource('Ling and Lin met.', [{ original: 'Li' }, { original: 'Lin' }]);
+  assert.strictEqual(whole.mapping.length, 1, 'only whole-word matches tokenize');
+  assert.strictEqual(whole.mapping[0].original, 'Lin');
+  assert.strictEqual(StorageService.tokenizeSource('wang lin', [{ original: 'Wang Lin' }]).mapping.length, 0, 'case-sensitive');
+
+  const manyNames = Array.from({ length: 11 }, (_, i) => ({ original: 'N' + String.fromCharCode(97 + i) }));
+  const tokMany = StorageService.tokenizeSource(manyNames.map((n) => n.original).join(' '), manyNames);
+  assert.strictEqual(tokMany.mapping[9].token, '@a@', '10th token is base36 a');
+  assert.strictEqual(tokMany.mapping[10].token, '@b@', '11th token is base36 b');
+  console.log('✓ tokenizeSource rewrites source names to ordered base36 @n@ tokens');
+
+  // 16. restoreTokens (translation post-processing)
+  const rmap = StorageService.tokenizeSource('Li Qiye met Wang Lin.', [
+    { original: 'Li Qiye', translation: 'Lý Thất Dạ' },
+    { original: 'Wang Lin', translation: 'Vương Lâm' }
+  ]).mapping;
+  assert.strictEqual(rmap[0].translation, 'Lý Thất Dạ', 'mapping carries the translated name');
+
+  const restored = StorageService.restoreTokens('@1@ met @2@ and @ 1 @ and @9@.', rmap);
+  assert.strictEqual(restored, 'Lý Thất Dạ met Vương Lâm and Lý Thất Dạ and @9@.', 'unknown tokens stay, spaces tolerated');
+  assert.strictEqual(
+    StorageService.restoreTokens('@A@', [{ token: '@a@', original: 'X', translation: 'Ex' }]),
+    'Ex',
+    'case-insensitive token match'
+  );
+  console.log('✓ restoreTokens swaps @n@ back to translated names (case-insensitive, spaces tolerated)');
+
+  console.log('\n🎉 All 16 Novel Name List tests passed!');
 }
 
 runTests().catch((err) => {
