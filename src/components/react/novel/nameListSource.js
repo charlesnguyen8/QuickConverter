@@ -97,6 +97,7 @@ export function findNameConflicts(entries, options = {}) {
     matcher.findAll(longer.original, { all: true }).forEach((match) => {
       if (!match.id || match.id === longer.id) return;
       if (match.length >= longer.original.length) return;
+      if (match.index + match.length !== longer.original.length) return;
       const shorter = byId.get(match.id);
       if (!shorter) return;
       if (foldForCompare(longer.translation, strict).includes(foldForCompare(shorter.translation, strict))) return;

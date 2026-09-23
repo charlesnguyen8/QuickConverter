@@ -431,6 +431,11 @@ function test(name, fn) {
       { id: 'x', original: 'Alpha', translation: 'One' },
       { id: 'y', original: 'Beta', translation: 'Two' }
     ]).length, 0, 'non-overlapping names never conflict');
+
+    assert.strictEqual(findNameConflicts([
+      { id: 'm', original: 'Cheonji (Heaven Earth) Heart Method', translation: 'Thiên Địa Tâm Pháp' },
+      { id: 'e', original: 'Earth', translation: 'Địa Cầu' }
+    ]).length, 0, 'a middle (non-suffix) part is not flagged');
   });
 
   test('computeVirtualWindow slices the visible range with overscan', () => {
