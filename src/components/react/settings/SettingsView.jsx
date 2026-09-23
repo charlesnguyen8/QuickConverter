@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import SettingsStorageTab from './SettingsStorageTab.jsx';
 import SettingsReaderTab from './SettingsReaderTab.jsx';
 import SettingsDeepSeekTab from './SettingsDeepSeekTab.jsx';
+import SettingsNotesTab from './SettingsNotesTab.jsx';
 
 const TABS = [
   { id: 'deepseek', icon: '🌐', label: 'DeepSeek AI' },
   { id: 'reader', icon: '📖', label: 'Reader Typography' },
   { id: 'storage', icon: '💾', label: 'Storage & Quota' },
+  { id: 'notes', icon: '📝', label: 'Notes' },
   { id: 'about', icon: 'ℹ️', label: 'About' }
 ];
 
@@ -131,6 +133,10 @@ export default function SettingsView() {
 
           <section id="tab-content-storage" className={`settings-tab-section flex flex-col gap-6${activeTab === 'storage' ? '' : ' hidden'}`}>
             <SettingsStorageTab />
+          </section>
+
+          <section id="tab-content-notes" className={`settings-tab-section flex flex-col gap-6${activeTab === 'notes' ? '' : ' hidden'}`}>
+            <SettingsNotesTab onSaved={showSaved} />
           </section>
 
           <section id="tab-content-about" className={`settings-tab-section flex flex-col gap-6${activeTab === 'about' ? '' : ' hidden'}`}>

@@ -146,11 +146,22 @@ function test(name, fn) {
   test('SettingsView renders the shell, tabs and toast', () => {
     for (const id of ['settings-back-btn', 'settings-back-text', 'settings-save-pill',
       'settings-toast', 'settings-toast-msg', 'tab-content-deepseek', 'tab-content-reader',
-      'tab-content-storage', 'tab-content-about']) {
+      'tab-content-storage', 'tab-content-notes', 'tab-content-about']) {
       assert(shell.includes(`id="${id}"`), `missing #${id}`);
     }
     assert(shell.includes('settings-nav-btn active'), 'expected the first tab to be active');
     assert(shell.includes('About QuickConverter'), 'expected the About content');
+  });
+
+  // --- SettingsNotesTab ---
+  const SettingsNotesTab = (await loadComponent('components/react/settings/SettingsNotesTab.jsx')).default;
+  const notesTab = render(h(SettingsNotesTab));
+
+  test('SettingsNotesTab renders the New Note button and empty state', () => {
+    assert(notesTab.includes('id="notes-new-btn"'), 'expected the New Note button');
+    assert(notesTab.includes('No notes yet'), 'expected the empty notes message');
+    assert(notesTab.includes('No note selected'), 'expected the empty editor state');
+    assert(!notesTab.includes('id="note-title-input"'), 'editor must not render without a note');
   });
 
   // --- ReaderHeader ---
