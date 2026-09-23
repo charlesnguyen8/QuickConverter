@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { buildSnippets } from './nameListSource.js';
+import { buildSnippets, computeVirtualWindow } from './nameListSource.js';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -126,6 +126,10 @@ function TrashIcon({ size = 13 }) {
 
 const inputCls = 'px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
 
+const ROW_HEIGHT = 64;
+const VIRTUAL_OVERSCAN = 6;
+const VIRTUALIZE_AT = 80;
+
 function SourceSnippet({ snippet }) {
   return (
     <p className="text-xs text-slate-300 leading-relaxed break-words">
@@ -153,6 +157,10 @@ export default function NameListDrawer() {
   const [bulkText, setBulkText] = useState('');
   const [bulkStatus, setBulkStatus] = useState(null);
   const searchInputRef = useRef(null);
+  const listRef = useRef(null);
+  const scrollRaf = useRef(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [listViewport, setListViewport] = useState(600);
   const [sourceEntry, setSourceEntry] = useState(null);
   const [sourceChapter, setSourceChapter] = useState(null);
   const [scanAll, setScanAll] = useState(null);
@@ -202,11 +210,44 @@ export default function NameListDrawer() {
 
   useEffect(() => {
     if (!open || !focusedNameId) return undefined;
-    const el = typeof document !== 'undefined' ? document.getElementById(`name-list-item-${focusedNameId}`) : null;
-    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const list = filteredRef.current || [];
+    const index = list.findIndex((e) => e.id === focusedNameId);
+    const container = listRef.current;
+    const virtual = list.length > VIRTUALIZE_AT && !editingId;
+    if (container && virtual && index >= 0) {
+      const top = Math.max(0, index * ROW_HEIGHT - (container.clientHeight - ROW_HEIGHT) / 2);
+      container.scrollTop = top;
+      setScrollTop(top);
+    } else {
+      const el = typeof document !== 'undefined' ? document.getElementById(`name-list-item-${focusedNameId}`) : null;
+      if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
     const timer = setTimeout(() => setFocusedNameId(null), 1600);
     return () => clearTimeout(timer);
-  }, [open, focusedNameId, entries]);
+  }, [open, focusedNameId, editingId]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const container = listRef.current;
+    if (!container) return undefined;
+    const measure = () => setListViewport(container.clientHeight || 600);
+    measure();
+    window.addEventListener('resize', measure);
+    let observer = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(measure);
+      observer.observe(container);
+    }
+    return () => {
+      window.removeEventListener('resize', measure);
+      if (observer) observer.disconnect();
+    };
+  }, [open]);
+
+  useEffect(() => {
+    setScrollTop(0);
+    if (listRef.current) listRef.current.scrollTop = 0;
+  }, [search, sort]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -367,6 +408,20 @@ export default function NameListDrawer() {
   }, [duplicatePrompt, entries, novelId, reload, applyTranslationRename]);
 
   const filtered = useMemo(() => sortAndFilter(entries, search.trim(), sort), [entries, search, sort]);
+  const filteredRef = useRef([]);
+  filteredRef.current = filtered;
+  const virtualize = !editingId && filtered.length > VIRTUALIZE_AT;
+  const windowRange = virtualize
+    ? computeVirtualWindow(filtered.length, scrollTop, listViewport, ROW_HEIGHT, VIRTUAL_OVERSCAN)
+    : { start: 0, end: filtered.length };
+  const visibleEntries = virtualize ? filtered.slice(windowRange.start, windowRange.end) : filtered;
+
+  const onListScroll = (e) => {
+    const top = e.currentTarget.scrollTop;
+    if (typeof requestAnimationFrame === 'undefined') { setScrollTop(top); return; }
+    if (scrollRaf.current) return;
+    scrollRaf.current = requestAnimationFrame(() => { scrollRaf.current = 0; setScrollTop(top); });
+  };
 
   const resetForm = () => {
     setFormId('');
@@ -764,7 +819,7 @@ export default function NameListDrawer() {
             </div>
           </div>
 
-          <div id="name-list-items" className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+          <div id="name-list-items" ref={listRef} onScroll={onListScroll} className="flex-1 overflow-y-auto p-4 flex flex-col">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
                 <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xl text-slate-400 mb-3">📖</div>
@@ -780,52 +835,58 @@ export default function NameListDrawer() {
                 <button type="button" onClick={() => setSearch('')} className="text-xs text-indigo-400 hover:text-indigo-300 underline cursor-pointer">Clear search filter</button>
               </div>
             ) : (
-              filtered.map((entry) => (
-                editingId === entry.id ? (
-                  <InlineEditRow
-                    key={entry.id}
-                    entry={entry}
-                    onCancel={() => setEditingId(null)}
-                    onSave={(fields) => saveInline(entry.id, fields)}
-                  />
-                ) : (
-                  <div
-                    key={entry.id}
-                    id={`name-list-item-${entry.id}`}
-                    onClick={() => { if (entry.isNew) markNameSeen(entry.id); openSource(entry); }}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (entry.isNew) markNameSeen(entry.id); openSource(entry); } }}
-                    title="View this name in the source text"
-                    className={`flex items-center justify-between gap-3 p-3 rounded-lg border transition group cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/50 ${entry.isNew ? 'bg-amber-500/10 border-amber-500/40 hover:border-amber-400 hover:bg-amber-500/15' : 'bg-slate-800/70 border-slate-700/60 hover:border-indigo-500/60 hover:bg-slate-800'}${focusedNameId === entry.id ? ' ring-2 ring-indigo-400 border-indigo-400' : ''}`}
-                  >
-                    <div className="flex flex-col gap-1 min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-sm text-slate-100 font-mono tracking-tight">{entry.original}</span>
-                        <span className="text-xs text-slate-500 font-bold">=</span>
-                        <span className="font-bold text-sm text-emerald-400">{entry.translation}</span>
-                        {entry.isNew ? (
-                          <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-500/40">New</span>
-                        ) : null}
-                        {cleanChapter(entry.chapterFirstSeen) ? (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">Ch. {cleanChapter(entry.chapterFirstSeen)}</span>
-                        ) : null}
-                      </div>
-                      <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
-                        <span>Added: {formatAddedTime(entry.addedAt)}</span>
+              <>
+                {virtualize && windowRange.start > 0 ? <div style={{ height: windowRange.start * ROW_HEIGHT }} aria-hidden="true" /> : null}
+                {visibleEntries.map((entry) => (
+                  editingId === entry.id ? (
+                    <div key={entry.id} className="pb-2">
+                      <InlineEditRow
+                        entry={entry}
+                        onCancel={() => setEditingId(null)}
+                        onSave={(fields) => saveInline(entry.id, fields)}
+                      />
+                    </div>
+                  ) : (
+                    <div key={entry.id} style={virtualize ? { height: ROW_HEIGHT } : undefined} className="pb-2">
+                      <div
+                        id={`name-list-item-${entry.id}`}
+                        onClick={() => { if (entry.isNew) markNameSeen(entry.id); openSource(entry); }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (entry.isNew) markNameSeen(entry.id); openSource(entry); } }}
+                        title="View this name in the source text"
+                        className={`flex items-center justify-between gap-3 p-3 rounded-lg border transition group cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/50${virtualize ? ' h-full overflow-hidden' : ''} ${entry.isNew ? 'bg-amber-500/10 border-amber-500/40 hover:border-amber-400 hover:bg-amber-500/15' : 'bg-slate-800/70 border-slate-700/60 hover:border-indigo-500/60 hover:bg-slate-800'}${focusedNameId === entry.id ? ' ring-2 ring-indigo-400 border-indigo-400' : ''}`}
+                      >
+                        <div className="flex flex-col gap-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-bold text-sm text-slate-100 font-mono tracking-tight truncate">{entry.original}</span>
+                            <span className="text-xs text-slate-500 font-bold flex-shrink-0">=</span>
+                            <span className="font-bold text-sm text-emerald-400 truncate">{entry.translation}</span>
+                            {entry.isNew ? (
+                              <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-500/40 flex-shrink-0">New</span>
+                            ) : null}
+                            {cleanChapter(entry.chapterFirstSeen) ? (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25 flex-shrink-0">Ch. {cleanChapter(entry.chapterFirstSeen)}</span>
+                            ) : null}
+                          </div>
+                          <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                            <span>Added: {formatAddedTime(entry.addedAt)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition flex-shrink-0">
+                          <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(entry); }} className="p-1.5 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700/60 transition cursor-pointer" title="Edit entry">
+                            <EditIcon />
+                          </button>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); deleteEntry(entry.id); }} className="p-1.5 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-700/60 transition cursor-pointer" title="Delete entry">
+                            <TrashIcon />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition flex-shrink-0">
-                      <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(entry); }} className="p-1.5 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700/60 transition cursor-pointer" title="Edit entry">
-                        <EditIcon />
-                      </button>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); deleteEntry(entry.id); }} className="p-1.5 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-700/60 transition cursor-pointer" title="Delete entry">
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  </div>
-                )
-              ))
+                  )
+                ))}
+                {virtualize && windowRange.end < filtered.length ? <div style={{ height: (filtered.length - windowRange.end) * ROW_HEIGHT }} aria-hidden="true" /> : null}
+              </>
             )}
           </div>
         </div>

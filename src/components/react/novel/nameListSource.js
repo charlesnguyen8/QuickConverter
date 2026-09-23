@@ -67,3 +67,14 @@ export function createNameMatcher(entries) {
 export function splitByNames(text, entries) {
   return createNameMatcher(entries).split(text);
 }
+
+export function computeVirtualWindow(total, scrollTop, viewportHeight, rowHeight, overscan = 6) {
+  const count = Math.max(0, Math.floor(total) || 0);
+  const height = Math.max(1, rowHeight);
+  if (count === 0) return { start: 0, end: 0 };
+  const first = Math.max(0, Math.floor((scrollTop || 0) / height) - overscan);
+  const start = Math.min(first, count - 1);
+  const visible = Math.ceil((Math.max(0, viewportHeight) || 0) / height) + overscan * 2 + 1;
+  const end = Math.min(count, start + visible);
+  return { start, end };
+}

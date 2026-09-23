@@ -313,7 +313,7 @@ function test(name, fn) {
   });
 
   // --- nameListSource helpers ---
-  const { findMatches, buildSnippets, splitByNames } = await loadComponent('components/react/novel/nameListSource.js');
+  const { findMatches, buildSnippets, splitByNames, computeVirtualWindow } = await loadComponent('components/react/novel/nameListSource.js');
 
   test('findMatches locates case-insensitive source occurrences', () => {
     assert.deepStrictEqual(findMatches('Wang Lin met wang lin.', 'Wang Lin').map((m) => m.index), [0, 13]);
@@ -380,6 +380,20 @@ function test(name, fn) {
     for (let i = 0; i < 3000; i += 1) entries.push({ id: `n${i}`, original: `Name${i}`, translation: `Tên${i}` });
     const segs = splitByNames('Start Tên2500 and Tên3 end.', entries);
     assert.deepStrictEqual(segs.filter((s) => s.nameId).map((s) => s.nameId), ['n2500', 'n3']);
+  });
+
+  test('computeVirtualWindow slices the visible range with overscan', () => {
+    assert.deepStrictEqual(computeVirtualWindow(0, 0, 640, 64, 6), { start: 0, end: 0 });
+    const top = computeVirtualWindow(1000, 0, 640, 64, 6);
+    assert.strictEqual(top.start, 0);
+    assert(top.end > 0 && top.end < 60, 'first window is ~a screen plus overscan, not the whole list');
+    const mid = computeVirtualWindow(1000, 6400, 640, 64, 6);
+    assert.strictEqual(mid.start, 94, 'window follows the scroll position (100 - overscan)');
+    assert(mid.end <= 1000);
+    assert(mid.end > mid.start);
+    const bottom = computeVirtualWindow(100, 999999, 640, 64, 6);
+    assert.strictEqual(bottom.end, 100, 'end clamps to the list length');
+    assert(bottom.start <= 100 && bottom.end > bottom.start, 'start stays inside the list');
   });
 
   // --- ReaderPrefsPopover ---

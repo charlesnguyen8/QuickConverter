@@ -52,12 +52,17 @@ service worker (unlike a preference, which isn't available in a worker).
   moves any inline `nameList` into the record form.
 - Verify: `npm test` (name-list 20/20, backup/cloud-sync/reader all green), `build:ext`.
 
-### NL-3 — Virtualize the Name List drawer  *(UI, when felt)*
-`sortAndFilter` copies+sorts every render and every entry renders a row with handlers; thousands
-of rows will jank. Window/memoize rows (e.g. react-window-style slicing or a simple
-scroll-window) while keeping search/sort and the "open + scroll to a name" behavior.
-- Touches: `src/components/react/novel/NameListDrawer.jsx`.
-- Verify: `npm test` (component suite), `build:css`, manual scroll check at thousands of rows.
+### NL-3 — Virtualize the Name List drawer  *(UI, when felt)* — **done**
+`sortAndFilter` copies+sorts every render and every entry rendered a row with handlers; thousands
+of rows would jank. The list now renders only the visible window plus overscan. A pure
+`computeVirtualWindow(total, scrollTop, viewportHeight, rowHeight, overscan)` lives in
+`nameListSource.js`; `NameListDrawer` tracks `scrollTop`/viewport (ResizeObserver + window resize),
+renders `filtered.slice(start, end)` with top/bottom spacers, and uses fixed-height single-line rows
+(truncated) of `ROW_HEIGHT`. Virtualization is skipped while inline-editing a row (its editor is
+taller). Search/sort reset the scroll; "open + scroll to a name" scrolls by index math
+(`index * ROW_HEIGHT` centred) when virtualized, else keeps `scrollIntoView`.
+- Touches: `src/components/react/novel/NameListDrawer.jsx`, `.../nameListSource.js`.
+- Tests: `computeVirtualWindow` unit cases in `components.test.js`.
 
 ### NL-4 — Trie worst case → Aho–Corasick  *(only if profiling shows it)*
 Trie is `O(T×L)` on text sharing long prefixes with names. Aho–Corasick gives `O(T + matches)`
