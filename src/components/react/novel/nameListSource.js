@@ -72,6 +72,51 @@ export function splitByNames(text, entries) {
   return createNameMatcher(entries).split(text);
 }
 
+function foldForCompare(value, strict) {
+  const str = String(value == null ? '' : value);
+  return strict ? str : str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+export function findNameConflicts(entries, options = {}) {
+  const strict = !!options.strict;
+  const list = (Array.isArray(entries) ? entries : [])
+    .filter((entry) => entry && entry.original && entry.translation);
+  if (list.length < 2) return [];
+  const api = typeof globalThis !== 'undefined' ? globalThis.NameMatcher : null;
+  if (!api || typeof api.createMatcher !== 'function') return [];
+
+  const matcher = api.createMatcher(
+    list.map((entry) => ({ id: entry.id, original: entry.original })),
+    { field: 'original', caseSensitive: true }
+  );
+  const byId = new Map(list.map((entry) => [entry.id, entry]));
+  const seen = new Set();
+  const conflicts = [];
+
+  list.forEach((longer) => {
+    matcher.findAll(longer.original, { all: true }).forEach((match) => {
+      if (!match.id || match.id === longer.id) return;
+      if (match.length >= longer.original.length) return;
+      const shorter = byId.get(match.id);
+      if (!shorter) return;
+      if (foldForCompare(longer.translation, strict).includes(foldForCompare(shorter.translation, strict))) return;
+      const key = `${longer.id}>${shorter.id}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      conflicts.push({
+        longerId: longer.id,
+        shorterId: shorter.id,
+        longerOriginal: longer.original,
+        shorterOriginal: shorter.original,
+        longerTranslation: longer.translation,
+        shorterTranslation: shorter.translation
+      });
+    });
+  });
+
+  return conflicts;
+}
+
 export function computeVirtualWindow(total, scrollTop, viewportHeight, rowHeight, overscan = 6) {
   const count = Math.max(0, Math.floor(total) || 0);
   const height = Math.max(1, rowHeight);

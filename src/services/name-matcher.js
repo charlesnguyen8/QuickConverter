@@ -60,7 +60,8 @@
 
     const fold = (ch) => (caseSensitive ? ch : ch.toLowerCase());
 
-    function findAll(text) {
+    function findAll(text, options) {
+      const all = !!(options && options.all);
       const source = typeof text === 'string' ? text : '';
       const matches = [];
       let i = 0;
@@ -68,13 +69,35 @@
         let node = root;
         let j = i;
         let last = null;
+        const terminals = [];
         while (j < source.length) {
           const ch = charAt(source, j);
           const next = node.children.get(fold(ch));
           if (!next) break;
           node = next;
           j += ch.length;
-          if (node.terminal) last = { end: j, meta: node.terminal };
+          if (node.terminal) {
+            if (all) terminals.push({ end: j, meta: node.terminal });
+            else last = { end: j, meta: node.terminal };
+          }
+        }
+
+        if (all) {
+          const before = charBefore(source, i);
+          terminals.forEach((terminal) => {
+            const after = charAt(source, terminal.end);
+            if (isWordChar(before) || isWordChar(after)) return;
+            matches.push({
+              index: i,
+              length: terminal.end - i,
+              id: terminal.meta.id,
+              value: terminal.meta.value,
+              original: terminal.meta.original,
+              translation: terminal.meta.translation
+            });
+          });
+          i += (charAt(source, i) || '').length || 1;
+          continue;
         }
 
         if (last) {

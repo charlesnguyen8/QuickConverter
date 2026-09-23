@@ -313,7 +313,7 @@ function test(name, fn) {
   });
 
   // --- nameListSource helpers ---
-  const { findMatches, buildSnippets, splitByNames, createNameMatcher, computeVirtualWindow } = await loadComponent('components/react/novel/nameListSource.js');
+  const { findMatches, buildSnippets, splitByNames, createNameMatcher, findNameConflicts, computeVirtualWindow } = await loadComponent('components/react/novel/nameListSource.js');
 
   test('findMatches locates case-insensitive source occurrences', () => {
     assert.deepStrictEqual(findMatches('Wang Lin met wang lin.', 'Wang Lin').map((m) => m.index), [0, 13]);
@@ -402,6 +402,35 @@ function test(name, fn) {
     assert.strictEqual(segs.map((s) => s.text).join(''), 'Aaa Aaa Aaa Aaa', 'text is preserved');
     const uncapped = splitByNames('Aaa Aaa Aaa Aaa', [{ id: 'b', original: 'x', translation: 'Aaa' }]);
     assert.strictEqual(uncapped.filter((s) => s.nameId).length, 4, 'small inputs stay fully highlighted');
+  });
+
+  test('findNameConflicts flags mismatched overlapping names', () => {
+    const mismatch = [
+      { id: 'a', original: 'Byuk-ho', translation: 'Bich Ho' },
+      { id: 'b', original: 'Jin Byuk-ho', translation: 'Tran Bich Hao' }
+    ];
+    const forgiving = findNameConflicts(mismatch);
+    assert.strictEqual(forgiving.length, 1, 'overlapping entries with mismatched parts are flagged');
+    assert.strictEqual(forgiving[0].longerId, 'b');
+    assert.strictEqual(forgiving[0].shorterId, 'a');
+
+    const contained = [
+      { id: 'a', original: 'Byuk-ho', translation: 'Bích Hào' },
+      { id: 'b', original: 'Jin Byuk-ho', translation: 'Trần Bích Hào' }
+    ];
+    assert.strictEqual(findNameConflicts(contained, { strict: true }).length, 0, 'contained translation is consistent');
+
+    const caseDiff = [
+      { id: 'a', original: 'Byuk-ho', translation: 'Bich Ho' },
+      { id: 'b', original: 'Jin Byuk-ho', translation: 'Tran bich ho' }
+    ];
+    assert.strictEqual(findNameConflicts(caseDiff, { strict: true }).length, 1, 'strict flags a case difference');
+    assert.strictEqual(findNameConflicts(caseDiff, { strict: false }).length, 0, 'forgiving ignores case');
+
+    assert.strictEqual(findNameConflicts([
+      { id: 'x', original: 'Alpha', translation: 'One' },
+      { id: 'y', original: 'Beta', translation: 'Two' }
+    ]).length, 0, 'non-overlapping names never conflict');
   });
 
   test('computeVirtualWindow slices the visible range with overscan', () => {

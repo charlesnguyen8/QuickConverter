@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { buildSnippets, computeVirtualWindow } from './nameListSource.js';
+import { buildSnippets, computeVirtualWindow, findNameConflicts } from './nameListSource.js';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -174,6 +174,21 @@ export default function NameListDrawer() {
   const duplicatePromptRef = useRef(null);
   duplicatePromptRef.current = duplicatePrompt;
   const [focusedNameId, setFocusedNameId] = useState(null);
+  const [nameConflicts, setNameConflicts] = useState([]);
+  const [dismissedConflicts, setDismissedConflicts] = useState(() => new Set());
+  const [conflictPrompt, setConflictPrompt] = useState(null);
+  const conflictPromptRef = useRef(null);
+  conflictPromptRef.current = conflictPrompt;
+  const [strictConflicts, setStrictConflicts] = useState(() => {
+    const S = typeof window !== 'undefined' ? window.StorageService : null;
+    try {
+      return S && typeof S.getPreference === 'function'
+        ? S.getPreference('quickconverter_namelist_strict_conflicts', 'false') === 'true'
+        : false;
+    } catch (e) {
+      return false;
+    }
+  });
 
   const setEntries = useCallback((next) => {
     setEntriesState(next);
@@ -250,6 +265,24 @@ export default function NameListDrawer() {
   }, [search, sort]);
 
   useEffect(() => {
+    setDismissedConflicts(new Set());
+  }, [entries, strictConflicts]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const compute = () => {
+      try {
+        setNameConflicts(findNameConflicts(entries, { strict: strictConflicts }));
+      } catch (e) {
+        console.error('Name conflict check failed:', e);
+      }
+    };
+    if (typeof requestAnimationFrame === 'undefined') { compute(); return undefined; }
+    const id = requestAnimationFrame(compute);
+    return () => cancelAnimationFrame(id);
+  }, [open, entries, strictConflicts]);
+
+  useEffect(() => {
     if (typeof document === 'undefined') return;
     document.body.style.overflow = open ? 'hidden' : '';
     if (open && searchInputRef.current) searchInputRef.current.focus();
@@ -259,6 +292,7 @@ export default function NameListDrawer() {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
+      if (conflictPromptRef.current) { setConflictPrompt(null); return; }
       if (renamePromptRef.current) { setRenamePrompt(null); return; }
       if (duplicatePromptRef.current) { setDuplicatePrompt(null); return; }
       if (deleteAllPromptRef.current) { setDeleteAllPrompt(false); return; }
@@ -283,6 +317,7 @@ export default function NameListDrawer() {
     setRenamePrompt(null);
     setDeleteAllPrompt(false);
     setDuplicatePrompt(null);
+    setConflictPrompt(null);
   }, []);
 
   const openSource = useCallback(async (entry) => {
@@ -415,6 +450,42 @@ export default function NameListDrawer() {
     ? computeVirtualWindow(filtered.length, scrollTop, listViewport, ROW_HEIGHT, VIRTUAL_OVERSCAN)
     : { start: 0, end: filtered.length };
   const visibleEntries = virtualize ? filtered.slice(windowRange.start, windowRange.end) : filtered;
+
+  const conflictById = useMemo(() => {
+    const map = new Map();
+    nameConflicts.forEach((conflict) => { if (!map.has(conflict.longerId)) map.set(conflict.longerId, conflict); });
+    return map;
+  }, [nameConflicts]);
+  const activeConflictIds = useMemo(() => {
+    const ids = new Set();
+    conflictById.forEach((conflict, id) => { if (!dismissedConflicts.has(id)) ids.add(id); });
+    return ids;
+  }, [conflictById, dismissedConflicts]);
+
+  const toggleStrictConflicts = () => {
+    setStrictConflicts((prev) => {
+      const next = !prev;
+      const storage = typeof window !== 'undefined' ? window.StorageService : null;
+      try {
+        if (storage && typeof storage.setPreference === 'function') storage.setPreference('quickconverter_namelist_strict_conflicts', next ? 'true' : 'false');
+      } catch (e) {}
+      return next;
+    });
+  };
+
+  const dismissConflict = () => {
+    const conflict = conflictPrompt;
+    setConflictPrompt(null);
+    if (conflict) setDismissedConflicts((prev) => new Set(prev).add(conflict.longerId));
+  };
+
+  const editConflict = () => {
+    const conflict = conflictPrompt;
+    setConflictPrompt(null);
+    if (!conflict) return;
+    const entry = entries.find((e) => e.id === conflict.longerId);
+    if (entry) startEdit(entry);
+  };
 
   const onListScroll = (e) => {
     const top = e.currentTarget.scrollTop;
@@ -816,6 +887,15 @@ export default function NameListDrawer() {
                 <option value="ch_asc">Chapter First Seen (Low → High)</option>
                 <option value="ch_desc">Chapter First Seen (High → Low)</option>
               </select>
+              <button
+                type="button"
+                id="name-list-conflict-strict-toggle"
+                onClick={toggleStrictConflicts}
+                className="px-2.5 py-1.5 text-xs rounded-lg border border-slate-700/80 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-600 transition cursor-pointer flex-shrink-0"
+                title="Consistency check: how exact the translation match must be (Strict = case/accent sensitive)"
+              >
+                Match: {strictConflicts ? 'Strict' : 'Forgiving'}
+              </button>
             </div>
           </div>
 
@@ -868,6 +948,16 @@ export default function NameListDrawer() {
                             {cleanChapter(entry.chapterFirstSeen) ? (
                               <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25 flex-shrink-0">Ch. {cleanChapter(entry.chapterFirstSeen)}</span>
                             ) : null}
+                            {activeConflictIds.has(entry.id) ? (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setConflictPrompt(conflictById.get(entry.id)); }}
+                                className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-200 border border-rose-500/40 flex-shrink-0 cursor-pointer hover:bg-rose-500/30"
+                                title="Inconsistent translation with a part of this name"
+                              >
+                                ⚠ Inconsistent
+                              </button>
+                            ) : null}
                           </div>
                           <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
                             <span>Added: {formatAddedTime(entry.addedAt)}</span>
@@ -892,6 +982,33 @@ export default function NameListDrawer() {
         </div>
       </div>
     </div>
+      {conflictPrompt ? createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setConflictPrompt(null); }}
+        >
+          <div className="w-full max-w-sm bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-5 flex flex-col gap-4 text-slate-100" role="dialog" aria-modal="true">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 flex-shrink-0">⚠</div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100">Inconsistent translation</h3>
+                <p className="text-[11px] text-slate-400">A name and its part disagree.</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              <span className="font-mono text-slate-100">"{conflictPrompt.longerOriginal}"</span> is{' '}
+              <span className="font-mono text-emerald-300">"{conflictPrompt.longerTranslation}"</span>, but its part{' '}
+              <span className="font-mono text-slate-100">"{conflictPrompt.shorterOriginal}"</span> is{' '}
+              <span className="font-mono text-emerald-300">"{conflictPrompt.shorterTranslation}"</span>.
+            </p>
+            <div className="flex items-center justify-end gap-2.5">
+              <button type="button" onClick={dismissConflict} className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Keep as-is</button>
+              <button type="button" onClick={editConflict} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition cursor-pointer">Edit entry</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
       {renamePrompt ? createPortal(
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm"

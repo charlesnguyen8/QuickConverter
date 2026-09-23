@@ -1,112 +1,59 @@
 # current_plan.md
 
-## Plan: Name List scalability & robustness
+## Plan: Name List consistency check
 
-**Goal:** make the novel name list hold up at **thousands of entries** across reader
-highlighting, translation tokenization, storage writes, and the drawer UI — without changing
-observable behavior.
+**Goal:** surface inconsistent glossary entries — the same source sub-name translated two different
+ways (e.g. `Byuk-ho = Bich Ho` but `Jin Byuk-ho = Tran Bich Hao`) — and let the user fix them. **No
+automatic text changes**; it only flags and prompts.
 
-**Background / where we are:** the shared trie matcher already landed
-(`src/services/name-matcher.js`, used by `splitByNames` and `tokenizeSource`; the 500-name cap
-and the `N`-full-text-scan tokenizer are gone). The items below are the remaining scalability
-concerns for the name list.
-
-**Rule of engagement:** one item at a time to completion.
-`npm test` green (test-first where behavior changes) → `npm run build:css` if new utility classes
-→ `npm run build:ext` → owner loads `dist/` for parity → commit per item so each is
-independently revertible. Report any test change and why (owner rules in `AGENTS.md`).
+**Rule of engagement:** `npm test` green (test-first where behavior changes) → `npm run build:css`
+if new utility classes → `npm run build:ext` → owner loads `dist/` → commit.
 
 **Related docs:** `context.md`, `AGENTS.md`, `nice_to_have_plan.md`.
 
 ---
 
-## Status
+## The check
 
-- Prior work (React migration M1–M8, name-list source/rename/tokenize features, trie matcher) is
-  **complete and committed**.
-- All active items are **done**. Nice-to-haves (moved out) live in `nice_to_have_plan.md`: NL-4
-  (Aho–Corasick), NL-6 (case-folding), NL-10 (batch renames).
-- Done: **NL-1** (empty-translation guard), **NL-2** (dedicated name-list record), **NL-3** (drawer
-  virtualization), **NL-5** (astral-plane indexing), **NL-7** (highlight memoization), **NL-8** (match
-  cap), **NL-9** (load-site contract test).
+A **conflict** is a pair of entries where:
+- one `original` is a **whole-word part** of the other (`Byuk-ho` ⊂ `Jin Byuk-ho`), and
+- the shorter's `translation` is **not** contained in the longer's.
 
----
+Containment comparison has a **toggle**:
+- **Strict** — exact (case- and accent-sensitive).
+- **Forgiving** — lowercase + strip diacritics before comparing (`Bích Hào` ≡ `bich hao`).
 
-## 1. Items (one at a time)
+The toggle is remembered in a preference (`quickconverter_namelist_strict_conflicts`); default
+**forgiving**.
 
-### NL-1 — Skip empty-translation names when tokenizing  *(correctness, small)* — **done**
-`tokenizeSource` includes entries whose `translation` is blank; `restoreTokens` only maps
-non-empty translations, so such a token (`@n@`) can never be swapped back and leaks into the
-saved chapter. Filter blank-translation entries out of tokenization (mirror `splitByNames`).
-- Touches: `src/services/storage.js` (`tokenizeSource`).
-- Tests: `tests/name-list.test.js` — a list entry with an empty translation must not be tokenized,
-  and its source name must appear unchanged in the output.
-- Verify: `npm test`, `npm run build:ext`.
+## Performance approach (decided)
 
-### NL-2 — Move `nameList` off the inline novel record  *(storage, bigger)* — **done**
-`novel.nameList` was inline, so every `updateNovel` / `saveNameList` / `markNameSeen` rewrote the
-whole array. Names now live in a **dedicated record in the same `novels` store**, keyed
-`namelist::<novelId>` (`{ id, owner, list }`) — no schema/version bump, and still readable from the
-service worker (unlike a preference, which isn't available in a worker).
-- `getNameList`/`saveNameList` read/write the record; `getNovelById` attaches `nameList` (so
-  `ReaderChapter`/`NovelHero`/tokenization are unchanged); `getManagedNovels` filters the records
-  out; `updateNovel` routes any `nameList` update to `saveNameList` and never stores it inline.
-- Legacy inline lists are migrated lazily on first read (write record, strip the inline field).
-- Backup format is unchanged: `exportAll` re-attaches lists onto exported novels; `importAll`
-  moves any inline `nameList` into the record form.
-- Verify: `npm test` (name-list 20/20, backup/cloud-sync/reader all green), `build:ext`.
+- **No pairwise O(N²).** Build one trie matcher over all `original` names (existing
+  `src/services/name-matcher.js`) and, for each name, run the matcher **inside that name's text** to
+  find the names it contains. Cost ≈ `O(total name characters)`; only real overlaps get compared.
+- **Memoized** on the entries + toggle (recompute only when they change).
+- **Deferred** to the next frame (`requestAnimationFrame`) so opening the drawer never blocks the
+  slide-in.
+- Dedupe pairs; guard against pathological nesting.
 
-### NL-3 — Virtualize the Name List drawer  *(UI, when felt)* — **done**
-`sortAndFilter` copies+sorts every render and every entry rendered a row with handlers; thousands
-of rows would jank. The list now renders only the visible window plus overscan. A pure
-`computeVirtualWindow(total, scrollTop, viewportHeight, rowHeight, overscan)` lives in
-`nameListSource.js`; `NameListDrawer` tracks `scrollTop`/viewport (ResizeObserver + window resize),
-renders `filtered.slice(start, end)` with top/bottom spacers, and uses fixed-height single-line rows
-(truncated) of `ROW_HEIGHT`. Virtualization is skipped while inline-editing a row (its editor is
-taller). Search/sort reset the scroll; "open + scroll to a name" scrolls by index math
-(`index * ROW_HEIGHT` centred) when virtualized, else keeps `scrollIntoView`.
-- Touches: `src/components/react/novel/NameListDrawer.jsx`, `.../nameListSource.js`.
-- Tests: `computeVirtualWindow` unit cases in `components.test.js`.
+## UX
 
-### NL-5 — Astral-plane indexing  *(edge)* — **done**
-The trie is built by code point but `findAll` indexed the text by code unit, so
-surrogate-pair names (rare CJK ext, emoji) never matched. `findAll` now reads a full code point
-at each position (`charAt`) and advances by its length, and the boundary check uses
-`charBefore`/`charAt` so a low surrogate isn't mistaken for a non-word boundary. Offsets/lengths
-are still reported in code units, so slicing/highlighting is unchanged.
-- Touches: `src/services/name-matcher.js`.
-- Tests: `components.test.js` astral-name match (length 2, correct slice) + `splitByNames`.
+- Conflicting (longer) rows get a **rose "⚠ Inconsistent" pill** (distinct from the amber "New").
+- Clicking it opens an in-app dialog: *"‘Jin Byuk-ho’ is ‘Tran Bich Hao’ but ‘Byuk-ho’ is ‘Bich Ho’
+  — make them consistent?"* → **Edit entry** (opens the existing inline editor) / **Keep as-is**
+  (dismiss for this session).
+- The `Strict/Forgiving` toggle sits in the search/sort bar.
+- Still flag-only: saving a changed translation is what (optionally) triggers the existing rename
+  cascade; nothing is rewritten automatically.
 
-### NL-7 — Cache highlight segments per chapter  *(perf)* — **done**
-`ReaderChapter` recomputed highlight segments on every render (so theme/font/typography changes
-re-scanned the whole chapter). `paragraphs` is now memoized on the chapter text and the highlight
-segments are memoized on `[paragraphs, nameMatcher]`, so unrelated re-renders reuse them and a change
-to the text or name list recomputes automatically (no manual cache / invalidation).
-- Touches: `src/components/react/reader/ReaderChapter.jsx`.
+## Files
 
-### NL-8 — Bound matches per paragraph  *(hardening)* — **done**
-Highlighting is capped at 200 matches per paragraph (rest of the paragraph stays plain), so a
-pathological "name dump" paragraph can't create a huge number of DOM nodes. The cap lives in the
-highlight path only (`nameListSource.createNameMatcher`, `maxMatches` option); the matcher itself is
-untouched so tokenization still replaces/restores every name.
-- Touches: `src/components/react/novel/nameListSource.js`.
-- Tests: `components.test.js` cap case (2 of 4 highlighted, text preserved).
+- `src/components/react/novel/nameListSource.js` — pure `findNameConflicts(entries, { strict })`.
+- `src/components/react/novel/NameListDrawer.jsx` — toggle, deferred/memoized compute, flag + dialog.
+- `tests/components.test.js` — `findNameConflicts` cases (strict/forgiving, contained vs not).
 
-### NL-9 — Load-site contract test  *(guard, small)* — **done**
-Assert `name-matcher.js` is present in the downloading views (`novel/popup/reader.html`) and in
-`src/scripts/background.js` `importScripts`, so a missing tag can't silently degrade
-tokenization/highlighting.
-- Touches: a static contract test in `tests/` (allowed for manifest/script-tag checks).
+## Verification
 
----
-
-## 2. Verification per item
-
-- Test-first for behavior; `npm test` (13 suites) must be green.
-- `npm run build:css` if new utility classes appear (commit `src/styles/tailwind.css`).
-- `npm run build:ext`; check every local `src`/`href` in `dist/views/*.html` resolves.
-- Owner: load `dist/`, exercise the change, confirm parity.
-
-## 3. Rollback
-
-One item = one commit; revert it to restore the previous state.
+- `npm test` (13 suites) green; `npm run build:css` if classes change; `npm run build:ext`.
+- Manual: two overlapping entries with mismatched translations → flagged; contained pair → not
+  flagged; toggle changes flagging; Fix opens the editor; Keep dismisses.
