@@ -6,6 +6,7 @@ import ReaderSourceDrawer from './ReaderSourceDrawer.jsx';
 import ReaderNotSaved from './ReaderNotSaved.jsx';
 import ReaderToast from './ReaderToast.jsx';
 import ReaderChapterList from './ReaderChapterList.jsx';
+import { canBulkDownload } from '../shared/ManualChapterAction.jsx';
 import NameListDrawer from '../novel/NameListDrawer.jsx';
 
 const CHAPTERS_OPEN_KEY = 'quickconverter_reader_chapters_open';
@@ -263,6 +264,7 @@ export default function ReaderApp() {
             model={model}
             onDownload={handleDownload}
             deepseekRef={panelRef}
+            manualChapter={catalogItem && (catalogItem.locked || !canBulkDownload(novel)) ? catalogItem : null}
           />
         ) : null}
       </main>

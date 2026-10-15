@@ -18,6 +18,7 @@ const testFiles = [
   'platform.test.js',
   'backup.test.js',
   'cloud-sync.test.js',
+  'nkwwlkj.test.js',
   'components.test.js'
 ];
 

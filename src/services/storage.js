@@ -764,6 +764,12 @@ const StorageService = {
     return moved;
   },
 
+  getCatalogChapterNumber(novel, chapterSlug) {
+    if (!novel || !Array.isArray(novel.chapterList) || chapterSlug === undefined || chapterSlug === null) return null;
+    const match = novel.chapterList.find((c) => String(c.slug) === String(chapterSlug));
+    return match ? Number(match.chapterNumber) : null;
+  },
+
   async syncNovelMetadata(slugOrId) {
     let novel = await this.getNovelById(slugOrId);
     if (!novel) {

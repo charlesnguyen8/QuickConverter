@@ -47,10 +47,19 @@ const ProviderRegistry = (() => {
     return Array.from(domains);
   }
 
+  function canBulkDownload(novel) {
+    if (!novel) return true;
+    const provider = (novel.url && getProviderForUrl(novel.url)) || (novel.domain && getProviderForDomain(novel.domain)) || null;
+    return !provider || provider.supportsBulkDownload !== false;
+  }
+
   // Auto-register default providers available in the current environment
   const globalScope = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : self);
   if (globalScope && globalScope.WetriedtlsProvider) {
     registerProvider(globalScope.WetriedtlsProvider);
+  }
+  if (globalScope && globalScope.NkwwlkjProvider) {
+    registerProvider(globalScope.NkwwlkjProvider);
   }
 
   return {
@@ -59,7 +68,8 @@ const ProviderRegistry = (() => {
     getProviderForDomain,
     getProviderById,
     getAllProviders,
-    getAllSupportedDomains
+    getAllSupportedDomains,
+    canBulkDownload
   };
 })();
 

@@ -1,7 +1,38 @@
 import React from 'react';
 import ReaderDeepseekCard from './ReaderDeepseekCard.jsx';
 
-export default function ReaderNotSaved({ downloading = false, failed = false, translating = false, model = 'deepseek-flash', onDownload, deepseekRef }) {
+export default function ReaderNotSaved({ downloading = false, failed = false, translating = false, model = 'deepseek-flash', onDownload, deepseekRef, manualChapter = null }) {
+  if (manualChapter) {
+    const locked = !!manualChapter.locked;
+    return (
+      <div id="reader-not-saved" className="flex flex-col items-center justify-center py-10 px-4 sm:px-8 text-center gap-6 bg-slate-800/40 border border-slate-700/60 rounded-xl shadow-sm">
+        <div className="w-14 h-14 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-2xl text-indigo-400">
+          {locked ? '🔒' : '📖'}
+        </div>
+        <div className="flex flex-col gap-1 items-center">
+          <h2 className="text-lg font-bold text-slate-100">{locked ? 'Locked Chapter' : 'Chapter Not Saved Yet'}</h2>
+          <p className="text-sm text-slate-400 max-w-md">
+            {locked
+              ? 'This is a paid chapter on the source site, so it cannot be saved.'
+              : "This site can't be downloaded in the background. Open the chapter page and it is saved automatically, then come back here."}
+          </p>
+        </div>
+        {locked ? null : (
+          <a
+            id="reader-open-source-link"
+            href={manualChapter.url || '#'}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 px-6 py-2.5 min-h-10 rounded-lg text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+          >
+            <span>Open chapter page</span>
+            <span aria-hidden="true">↗</span>
+          </a>
+        )}
+      </div>
+    );
+  }
+
   let label = 'Download Chapter';
   if (failed) label = 'Failed. Click to Retry';
   else if (downloading) label = translating ? `Translating (${model})...` : 'Downloading Chapter...';

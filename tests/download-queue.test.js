@@ -995,6 +995,41 @@ async function runTests() {
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
   });
 
+  // 21b. Sites that cannot be downloaded in the background pause instead of backing off
+  await test('open-page-only site error pauses the queue with the reason and no retry backoff', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+
+    const originalDownload = mockStorageService.downloadChapter;
+    mockStorageService.downloadChapter = async () => {
+      throw new Error('独阅读 chapters cannot be downloaded in the background. Open the chapter page in the browser to save it.');
+    };
+
+    await DownloadQueueService.enqueue({ novelId: 'novel-manual', chapterNumber: 7 });
+
+    await new Promise((resolve) => {
+      let unsub;
+      unsub = DownloadQueueService.subscribe((s) => {
+        if (s.isPaused) {
+          if (unsub) unsub(); else setTimeout(() => unsub && unsub(), 0);
+          resolve();
+        }
+      });
+    });
+
+    const state = DownloadQueueService.getState();
+    assert.strictEqual(state.isPaused, true, 'queue pauses');
+    assert.strictEqual(state.cooldown, null, 'no retry backoff is started');
+    assert.strictEqual(state.queue[0].status, 'paused_error', 'chapter is parked as paused_error at the head');
+    assert(!state.queue[0].retryCount, 'retry budget is not consumed');
+    assert(state.pauseError && state.pauseError.includes('cannot be downloaded in the background'), 'pauseError explains why');
+
+    mockStorageService.downloadChapter = originalDownload;
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+  });
+
   // 22. 429 rate limit keeps the old backoff behavior and is flagged as a rate limit
   await test('429 rate-limit error starts the retry backoff flagged rateLimit', async () => {
     downloadedTasks = [];

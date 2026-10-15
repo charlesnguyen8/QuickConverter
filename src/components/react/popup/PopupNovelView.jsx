@@ -1,9 +1,11 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import PopupDeepseekCard from './PopupDeepseekCard.jsx';
+import ManualChapterAction, { canBulkDownload } from '../shared/ManualChapterAction.jsx';
 
 const storage = () => (typeof window !== 'undefined' ? window.StorageService : null);
 const queue = () => (typeof window !== 'undefined' ? window.DownloadQueueService : null);
 const actions = () => (typeof window !== 'undefined' ? window.__popupActions : null);
+const MANUAL_ONLY_TITLE = "This site can't be downloaded in the background. Open each chapter page to save it.";
 
 function structural(state) {
   const at = state && state.activeTask;
@@ -54,7 +56,7 @@ function ActiveButton({ novelId, chNum, onCancel }) {
   );
 }
 
-const ChapterRow = memo(function ChapterRow({ novel, chapter, downloadedChapter, queueStatus, onOpen, onDelete, onDownload }) {
+export const ChapterRow = memo(function ChapterRow({ novel, chapter, downloadedChapter, queueStatus, onOpen, onDelete, onDownload, manualOnly = false }) {
   const chNum = Number(chapter.chapterNumber !== undefined ? chapter.chapterNumber : chapter.number);
   const isDownloaded = !!downloadedChapter;
   const q = queue();
@@ -133,6 +135,8 @@ const ChapterRow = memo(function ChapterRow({ novel, chapter, downloadedChapter,
             <span>⏳#{queueStatus.queuePosition}</span>
             <span className="font-bold">✕</span>
           </button>
+        ) : manualOnly || chapter.locked ? (
+          <ManualChapterAction chapter={chapter} compact />
         ) : (
           <button
             type="button"
@@ -199,6 +203,7 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
   }, [qState, novelId]);
 
   const catalog = (novel && novel.chapterList) || [];
+  const manualOnly = !!novel && !canBulkDownload(novel);
   const downloadedMap = useMemo(
     () => new Map(downloaded.map((c) => [Number(c.chapterNumber), c])),
     [downloaded]
@@ -320,10 +325,10 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
             <button
               id="popup-download-all-btn"
               type="button"
-              disabled={downloadAllBusy || !novel || catalog.length === 0 || unqueuedMissingCount === 0}
+              disabled={downloadAllBusy || !novel || manualOnly || catalog.length === 0 || unqueuedMissingCount === 0}
               onClick={downloadAll}
-              title={catalog.length === 0 || unqueuedMissingCount === 0 ? 'All chapters are already downloaded or queued' : `Download and translate all ${unqueuedMissingCount} missing chapters`}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-500 transition cursor-pointer shadow-sm flex items-center gap-1${!novel || catalog.length === 0 || unqueuedMissingCount === 0 ? ' opacity-50 pointer-events-none' : ''}`}
+              title={manualOnly ? MANUAL_ONLY_TITLE : (catalog.length === 0 || unqueuedMissingCount === 0 ? 'All chapters are already downloaded or queued' : `Download and translate all ${unqueuedMissingCount} missing chapters`)}
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-500 transition cursor-pointer shadow-sm flex items-center gap-1${!novel || manualOnly || catalog.length === 0 || unqueuedMissingCount === 0 ? ' opacity-50 pointer-events-none' : ''}`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -351,6 +356,7 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
                 onOpen={openReader}
                 onDelete={deleteChapter}
                 onDownload={downloadChapter}
+                manualOnly={manualOnly}
               />
             );
           })}

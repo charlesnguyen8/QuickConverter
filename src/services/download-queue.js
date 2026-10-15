@@ -1153,7 +1153,8 @@
               errLower.includes('insufficient account balance') ||
               errLower.includes('top up') ||
               errLower.includes('401') ||
-              errLower.includes('402');
+              errLower.includes('402') ||
+              errLower.includes('cannot be downloaded in the background');
 
             if (isPermanentAuthOrBalance) {
               // Place task back at top of queue, pause queue immediately, and notify

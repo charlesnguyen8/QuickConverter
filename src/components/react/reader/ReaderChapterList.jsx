@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ProgressRing } from '../shared/QueueDock.jsx';
+import ManualChapterAction, { canBulkDownload } from '../shared/ManualChapterAction.jsx';
 import ReaderDeepseekCard from './ReaderDeepseekCard.jsx';
 
 function getParams() {
@@ -21,7 +22,7 @@ function Spinner({ className }) {
   );
 }
 
-export function ReaderChapterRow({ novel, chapter, chNum, downloadedChapter, queueStatus, onDownload, isCurrent = false }) {
+export function ReaderChapterRow({ novel, chapter, chNum, downloadedChapter, queueStatus, onDownload, isCurrent = false, manualOnly = false }) {
   const isDownloaded = !!downloadedChapter;
   const queueService = getQueueService();
 
@@ -87,6 +88,8 @@ export function ReaderChapterRow({ novel, chapter, chNum, downloadedChapter, que
         <span className="hidden group-hover/q:inline">Remove ✕</span>
       </button>
     );
+  } else if (manualOnly || chapter.locked) {
+    action = <ManualChapterAction chapter={chapter} compact />;
   } else {
     action = (
       <button
@@ -280,6 +283,7 @@ export default function ReaderChapterList({ open = false, onClose }) {
                     queueStatus={queueStatus}
                     onDownload={handleDownload}
                     isCurrent={chNum === ch}
+                    manualOnly={!canBulkDownload(novel)}
                   />
                 );
               })

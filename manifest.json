@@ -35,6 +35,8 @@
     "*://wetriedtls.com/*",
     "*://www.wetriedtls.com/*",
     "*://*.wetriedtls.com/*",
+    "*://nkwwlkj.cn/*",
+    "*://*.nkwwlkj.cn/*",
     "https://api.deepseek.com/*",
     "https://www.googleapis.com/*",
     "http://127.0.0.1:*/*",
@@ -48,6 +50,20 @@
       ],
       "js": [
         "providers/wetriedtls.js",
+        "providers/registry.js",
+        "scripts/content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://nkwwlkj.cn/book/book_detail/*",
+        "*://*.nkwwlkj.cn/book/book_detail/*",
+        "*://nkwwlkj.cn/chapter/book_chapter_detail/*",
+        "*://*.nkwwlkj.cn/chapter/book_chapter_detail/*"
+      ],
+      "js": [
+        "providers/nkwwlkj.js",
         "providers/registry.js",
         "scripts/content.js"
       ],

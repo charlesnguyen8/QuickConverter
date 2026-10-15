@@ -1,7 +1,7 @@
 // QuickConverter Background Service Worker
 // Coordinates tab listeners, automated popup triggering via providers, and IndexedDB message bus.
 
-importScripts('../providers/wetriedtls.js', '../providers/registry.js', '../services/custom-api.js', '../services/deepseek.js', '../services/ai-service.js', '../services/name-matcher.js', '../services/storage.js', '../services/download-queue.js');
+importScripts('../providers/wetriedtls.js', '../providers/nkwwlkj.js', '../providers/registry.js', '../services/custom-api.js', '../services/deepseek.js', '../services/ai-service.js', '../services/name-matcher.js', '../services/storage.js', '../services/download-queue.js');
 
 function shouldOpenPopup(urlStr) {
   if (!urlStr) return false;
@@ -35,11 +35,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'CHECK_CHAPTER') {
     (async () => {
       try {
-        const { slug, chapterNumber } = message;
-        const novel = await StorageService.getNovelBySlug(slug);
+        const { slug, chapterSlug } = message;
+        let { chapterNumber } = message;
+        let novel = await StorageService.getNovelBySlug(slug);
 
         if (!novel) {
           return sendResponse({ isManaged: false, isSaved: false });
+        }
+
+        if ((chapterNumber === null || chapterNumber === undefined) && chapterSlug) {
+          chapterNumber = StorageService.getCatalogChapterNumber(novel, chapterSlug);
+          if (chapterNumber === null) {
+            novel = (await StorageService.syncNovelChapters(novel.id)) || novel;
+            chapterNumber = StorageService.getCatalogChapterNumber(novel, chapterSlug);
+          }
+          if (chapterNumber === null) {
+            return sendResponse({ isManaged: true, isSaved: false, novelId: novel.id, chapterNumber: null });
+          }
         }
 
         const isSaved = await StorageService.isChapterSaved(novel.id, chapterNumber);
@@ -48,6 +60,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({
           isManaged: true,
           isSaved,
+          chapterNumber,
           novelId: novel.id,
           novelTitle: novel.title,
           chapterTitle: chapter ? chapter.title : null

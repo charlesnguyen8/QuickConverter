@@ -48,15 +48,18 @@
   }
 
   async function checkAndSaveChapter(provider, urlInfo) {
-    const { slug, chapterNumber } = urlInfo;
-    if (!slug || chapterNumber === null || chapterNumber === undefined) return;
+    const { slug, chapterSlug } = urlInfo;
+    let { chapterNumber } = urlInfo;
+    const hasNumber = chapterNumber !== null && chapterNumber !== undefined;
+    if (!slug || (!hasNumber && !chapterSlug)) return;
 
     // 1. Check with background if this chapter is already saved or if novel is managed
     chrome.runtime.sendMessage(
       {
         action: 'CHECK_CHAPTER',
         slug,
-        chapterNumber
+        chapterNumber: hasNumber ? chapterNumber : undefined,
+        chapterSlug
       },
       async (response) => {
         if (chrome.runtime.lastError) {
@@ -67,6 +70,14 @@
         if (!response || !response.isManaged) {
           console.log(`[QuickConverter] Novel ${slug} is not currently managed. Skipping chapter save.`);
           return;
+        }
+
+        if (!hasNumber) {
+          chapterNumber = response.chapterNumber;
+          if (chapterNumber === null || chapterNumber === undefined) {
+            console.log(`[QuickConverter] Chapter ${chapterSlug} is not in the ${slug} catalog. Skipping chapter save.`);
+            return;
+          }
         }
 
         if (response && response.isSaved) {
@@ -125,8 +136,14 @@
     const provider = getActiveProvider();
     if (!provider) return;
 
-    const urlInfo = provider.parseUrl(window.location.href);
+    let urlInfo = provider.parseUrl(window.location.href);
     if (!urlInfo) return;
+
+    if (urlInfo.type === 'chapter' && !urlInfo.slug && typeof provider.resolveChapterPage === 'function') {
+      const resolved = provider.resolveChapterPage(document);
+      if (!resolved) return;
+      urlInfo = { ...urlInfo, ...resolved };
+    }
 
     if (urlInfo.type === 'chapter') {
       checkAndSaveChapter(provider, urlInfo);

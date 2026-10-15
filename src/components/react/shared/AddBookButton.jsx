@@ -1,7 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-const SUPPORTED_DOMAINS = ['wetriedtls.com'];
+const DEFAULT_SUPPORTED_DOMAINS = ['wetriedtls.com', 'nkwwlkj.cn'];
+
+function supportedDomains() {
+  const registry = typeof window !== 'undefined' ? window.ProviderRegistry : null;
+  if (!registry || typeof registry.getAllProviders !== 'function') return DEFAULT_SUPPORTED_DOMAINS;
+  const domains = registry.getAllProviders()
+    .map((p) => (p.domains || []).map((d) => d.replace(/^www\./, ''))[0])
+    .filter(Boolean);
+  return domains.length > 0 ? Array.from(new Set(domains)) : DEFAULT_SUPPORTED_DOMAINS;
+}
 const FALLBACK_THUMB = 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp';
 
 function providerFor(url) {
@@ -290,7 +299,7 @@ export default function AddBookButton({ compact = false, buttonClass = '' }) {
                   </div>
                   <p className="text-slate-300 text-[11px]">
                     The link belongs to <span className="font-mono text-amber-200">{state.domain || 'an unsupported domain'}</span>. Currently supported platforms:
-                    <strong className="text-white">{SUPPORTED_DOMAINS.join(', ')}</strong>.
+                    <strong className="text-white">{supportedDomains().join(', ')}</strong>.
                   </p>
                 </div>
               ) : null}

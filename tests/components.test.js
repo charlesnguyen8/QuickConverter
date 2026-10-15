@@ -295,6 +295,51 @@ function test(name, fn) {
     assert(!unsaved.includes('Delete'), 'reader row must not offer delete');
   });
 
+  // --- Open-page-only sites (no background download) ---
+  const ManualChapterAction = (await loadComponent('components/react/shared/ManualChapterAction.jsx')).default;
+  const manualChapter = { chapterNumber: 3, title: 'Ch 3', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043460' };
+  const lockedChapter = { chapterNumber: 5, title: 'Ch 5', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100659849', locked: true };
+  test('ManualChapterAction links unlocked chapters to the page and badges locked ones', () => {
+    const open = render(h(ManualChapterAction, { chapter: manualChapter }));
+    assert(open.includes('Open to save'), 'unlocked chapter offers Open to save');
+    assert(open.includes(`href="${manualChapter.url}"`), 'link opens the chapter page');
+    assert(open.includes('target="_blank"'), 'link opens in a new tab');
+    const locked = render(h(ManualChapterAction, { chapter: lockedChapter }));
+    assert(locked.includes('Locked'), 'locked chapter shows a Locked badge');
+    assert(!locked.includes('<a'), 'locked chapter has no link');
+  });
+
+  const { ChapterRow: NovelChapterRow } = await loadComponent('components/react/novel/NovelChapters.jsx');
+  const { ChapterRow: PopupChapterRow } = await loadComponent('components/react/popup/PopupNovelView.jsx');
+  const rowNovel = { id: 'n1', title: 'N' };
+  test('chapter rows swap Download for the open-page action on open-page-only sites', () => {
+    const rows = [
+      ['novel', (props) => render(h(NovelChapterRow, { novel: rowNovel, chNum: props.chapter.chapterNumber, onDelete() {}, ...props }))],
+      ['reader', (props) => render(h(ReaderChapterRow, { novel: rowNovel, chNum: props.chapter.chapterNumber, ...props }))],
+      ['popup', (props) => render(h(PopupChapterRow, { novel: rowNovel, onOpen() {}, onDelete() {}, onDownload() {}, ...props }))]
+    ];
+    for (const [name, renderRow] of rows) {
+      const normal = renderRow({ chapter: manualChapter });
+      assert(normal.includes('title="Download Chapter 3"'), `${name} row keeps Download by default`);
+      const manual = renderRow({ chapter: manualChapter, manualOnly: true });
+      assert(!manual.includes('title="Download Chapter 3"'), `${name} row hides Download on open-page-only sites`);
+      assert(manual.includes('Open to save'), `${name} row offers Open to save`);
+      const locked = renderRow({ chapter: lockedChapter, manualOnly: true });
+      assert(locked.includes('Locked') && !locked.includes('title="Download Chapter 5"'), `${name} row badges locked chapters`);
+      const lockedAnySite = renderRow({ chapter: lockedChapter });
+      assert(!lockedAnySite.includes('title="Download Chapter 5"'), `${name} row never offers Download for a locked chapter`);
+    }
+  });
+
+  test('ReaderNotSaved points to the chapter page instead of downloading on open-page-only sites', () => {
+    const manual = render(h(ReaderNotSaved, { onDownload: () => {}, manualChapter }));
+    assert(!manual.includes('id="reader-download-btn"'), 'no background download button');
+    assert(manual.includes('id="reader-open-source-link"') && manual.includes(`href="${manualChapter.url}"`), 'links to the chapter page');
+    const locked = render(h(ReaderNotSaved, { onDownload: () => {}, manualChapter: lockedChapter }));
+    assert(!locked.includes('id="reader-download-btn"'), 'no download button for a locked chapter');
+    assert(locked.includes('Locked'), 'explains the chapter is locked');
+  });
+
   // --- QueueDock paused banner ---
   const QueueDock = (await loadComponent('components/react/shared/QueueDock.jsx')).default;
   test('QueueDock paused banner surfaces the pause error', () => {
