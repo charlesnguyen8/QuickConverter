@@ -33,6 +33,7 @@ let downloadedTasks = [];
 let startedTasks = [];
 let mockFailChapter = null;
 let mockDelayMs = 20;
+let mockTranslationDelay = 0;
 
 const mockStorageService = {
   async downloadChapter(novelId, chNum, options) {
@@ -69,7 +70,7 @@ const mockStorageService = {
       }
     });
 
-    return { success: true };
+    return { success: true, translationDelay: mockTranslationDelay };
   }
 };
 
@@ -925,6 +926,103 @@ async function runTests() {
     assert.strictEqual(state.queue.length, 0, 'Permanently failed chapter is not re-queued');
 
     mockFailChapter = null;
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+  });
+
+  // 20. Model-requested <<<DELAY>>> overrides the toggle and waits exactly N + 5 seconds
+  await test('translationDelay forces an exact N+5s cooldown even when cooldown is disabled', async () => {
+    downloadedTasks = [];
+    mockFailChapter = null;
+    mockDelayMs = 10;
+    mockTranslationDelay = 7;
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
+
+    await DownloadQueueService.enqueue({ novelId: 'novel-delay', chapterNumber: 1 });
+    await DownloadQueueService.enqueue({ novelId: 'novel-delay', chapterNumber: 2 });
+
+    await new Promise((resolve) => {
+      const unsub = DownloadQueueService.subscribe((s) => {
+        if (s.cooldown && s.cooldown.active) {
+          unsub();
+          resolve();
+        }
+      });
+    });
+
+    assert.strictEqual(DownloadQueueService.cooldown.type, 'normal', 'delay uses a normal (skippable) cooldown');
+    assert.strictEqual(DownloadQueueService.cooldown.totalSeconds, 12, 'waits delay + 5 seconds exactly');
+    assert.strictEqual(DownloadQueueService.cooldown.nextChapterNumber, 2, 'next chapter is queued behind the wait');
+
+    mockTranslationDelay = 0;
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
+  });
+
+  // 21. Timeout / no-response failure pauses the queue, keeps the chapter, and surfaces the error
+  await test('timeout error pauses the queue with the error and no retry backoff', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+
+    const originalDownload = mockStorageService.downloadChapter;
+    mockStorageService.downloadChapter = async () => {
+      throw new Error('Translation timed out: no data received for 60 seconds.');
+    };
+
+    await DownloadQueueService.enqueue({ novelId: 'novel-timeout', chapterNumber: 42 });
+
+    await new Promise((resolve) => {
+      let unsub;
+      unsub = DownloadQueueService.subscribe((s) => {
+        if (s.isPaused) {
+          if (unsub) unsub(); else setTimeout(() => unsub && unsub(), 0);
+          resolve();
+        }
+      });
+    });
+
+    const state = DownloadQueueService.getState();
+    assert.strictEqual(state.isPaused, true, 'queue pauses on timeout');
+    assert.strictEqual(state.cooldown, null, 'timeouts do NOT start the retry backoff');
+    assert.strictEqual(state.queue.length, 1, 'timed-out chapter stays in the queue');
+    assert.strictEqual(state.queue[0].status, 'paused_error', 'chapter is parked as paused_error at the head');
+    assert(state.pauseError && state.pauseError.includes('timed out'), 'pauseError carries the timeout message');
+
+    mockStorageService.downloadChapter = originalDownload;
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+  });
+
+  // 22. 429 rate limit keeps the old backoff behavior and is flagged as a rate limit
+  await test('429 rate-limit error starts the retry backoff flagged rateLimit', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+
+    const originalDownload = mockStorageService.downloadChapter;
+    mockStorageService.downloadChapter = async () => {
+      throw new Error('Rate limit exceeded. Please wait a moment before trying again.');
+    };
+
+    await DownloadQueueService.enqueue({ novelId: 'novel-429', chapterNumber: 43 });
+
+    await new Promise((resolve) => {
+      const unsub = DownloadQueueService.subscribe((s) => {
+        if (s.cooldown && s.cooldown.active) {
+          unsub();
+          resolve();
+        }
+      });
+    });
+
+    assert.strictEqual(DownloadQueueService.cooldown.type, 'retry', 'rate limit uses the retry backoff');
+    assert.strictEqual(DownloadQueueService.cooldown.rateLimit, true, 'backoff is flagged as a rate limit');
+    assert.strictEqual(DownloadQueueService.queue[0].status, 'retry_pending', 'chapter waits at the head for retry');
+    assert.strictEqual(DownloadQueueService.getState().pauseError, null, 'rate limit does not pause the queue');
+
+    mockStorageService.downloadChapter = originalDownload;
     DownloadQueueService.clearAll();
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
   });

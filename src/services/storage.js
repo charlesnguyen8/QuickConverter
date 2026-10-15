@@ -94,30 +94,73 @@ function getAllFromStore(db, storeName) {
   });
 }
 
-// Extracts the optional `<<<NAME_LIST_START>>> ... <<<NAME_LIST_END>>>` block that
-// some translation models append. Returns the chapter text without the block plus the
-// parsed `source=translated` entries.
-function parseNameListBlock(text) {
-  const source = typeof text === 'string' ? text : '';
-  const marker = /<<<\s*NAME_LIST_START\s*>>>([\s\S]*?)<<<\s*NAME_LIST_END\s*>>>/i;
-  const match = source.match(marker);
-  if (!match) return { text: source, names: [] };
-
-  const names = [];
-  match[1].split(/[|\r\n]+/).forEach((segment) => {
+// Parses `name=translation` pairs split on pipes or newlines (the shared body of the
+// NAME_LIST / LOCKED_GLOSSARY / SOFT_GLOSSARY / TRANSLATION annotation blocks).
+function parseNameTranslationPairs(content) {
+  const entries = [];
+  String(content || '').split(/[|\r\n]+/).forEach((segment) => {
     const piece = segment.trim();
     if (!piece) return;
     const eq = piece.indexOf('=');
     if (eq <= 0) return;
     const original = piece.slice(0, eq).trim();
     const translation = piece.slice(eq + 1).trim();
-    if (original && translation) names.push({ original, translation });
+    if (original && translation) entries.push({ original, translation });
   });
+  return entries;
+}
+
+// Extracts and strips an optional `<<<TAG_START>>> ... <<<TAG_END>>>` block that some
+// translation models append, returning the cleaned text plus the parsed `source=translated`
+// entries (split on newlines or pipes).
+function extractGlossaryBlock(text, tag) {
+  const source = typeof text === 'string' ? text : '';
+  const marker = new RegExp(`<<<\\s*${tag}_START\\s*>>>([\\s\\S]*?)<<<\\s*${tag}_END\\s*>>>`, 'i');
+  const match = source.match(marker);
+  if (!match) return { text: source, entries: [] };
 
   const cleaned = (source.slice(0, match.index) + source.slice(match.index + match[0].length))
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  return { text: cleaned, names };
+  return { text: cleaned, entries: parseNameTranslationPairs(match[1]) };
+}
+
+// Parses a user-pasted `<<<TRANSLATION_START>>>name=translation|...<<<TRANSLATION_END>>>`
+// result. Falls back to treating the whole text as the block body when the markers are absent.
+function parseTranslationBlock(text) {
+  const source = typeof text === 'string' ? text : '';
+  const match = source.match(/<<<\s*TRANSLATION_START\s*>>>([\s\S]*?)<<<\s*TRANSLATION_END\s*>>>/i);
+  return parseNameTranslationPairs(match ? match[1] : source);
+}
+
+// Extracts the optional `<<<NAME_LIST_START>>> ... <<<NAME_LIST_END>>>` block.
+// Returns the chapter text without the block plus the parsed entries.
+function parseNameListBlock(text) {
+  const { text: cleaned, entries } = extractGlossaryBlock(text, 'NAME_LIST');
+  return { text: cleaned, names: entries };
+}
+
+// Extracts and strips the optional `<<<DELAY>>>115s<<<DELAY>>>` block some models append,
+// returning the cleaned text plus the delay in whole seconds (0 when absent).
+function extractDelayBlock(text) {
+  const source = typeof text === 'string' ? text : '';
+  const match = source.match(/<<<\s*DELAY\s*>>>\s*(\d+)s\s*<<<\s*DELAY\s*>>>/i);
+  if (!match) return { text: source, delaySeconds: 0 };
+  const cleaned = (source.slice(0, match.index) + source.slice(match.index + match[0].length))
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { text: cleaned, delaySeconds: parseInt(match[1], 10) };
+}
+
+// Extracts and strips the NAME_LIST, LOCKED_GLOSSARY, SOFT_GLOSSARY and DELAY blocks in
+// one pass so the saved chapter text never leaks annotation markers. `delaySeconds` is
+// how long the queue should wait before the next chapter (0 = never requested).
+function parseGlossaryBlocks(text) {
+  const names = extractGlossaryBlock(text, 'NAME_LIST');
+  const locked = extractGlossaryBlock(names.text, 'LOCKED_GLOSSARY');
+  const soft = extractGlossaryBlock(locked.text, 'SOFT_GLOSSARY');
+  const delay = extractDelayBlock(soft.text);
+  return { text: delay.text, names: names.entries, locked: locked.entries, soft: soft.entries, delaySeconds: delay.delaySeconds };
 }
 
 // Rewrites occurrences of the novel's source names in `text` to stable @n@ tokens
@@ -194,6 +237,66 @@ function restoreTokens(text, mapping) {
   });
 }
 
+// A name list / locked / soft glossary is stored in the `novels` object store under
+// `<kind>::<novelId>` with an `owner` and `list`, so it must never be treated as a novel.
+function isListRecord(record) {
+  return !!record && typeof record.id === 'string' && record.id.indexOf('::') !== -1 && !!record.owner && Array.isArray(record.list);
+}
+
+// Replaces whole-word locked glossary terms in the source text with their canonical
+// translation wrapped in `§...§`. Case-insensitive; longest term wins; text already
+// inside `§...§` (and therefore `@n@` placeholders) is left untouched.
+function applyLockedGlossary(text, entries) {
+  const source = typeof text === 'string' ? text : '';
+  if (!source || !Array.isArray(entries) || entries.length === 0) return source;
+
+  const unique = [];
+  const seen = new Set();
+  entries.forEach((entry, i) => {
+    const original = entry && entry.original ? String(entry.original).trim() : '';
+    const translation = entry && entry.translation ? String(entry.translation).trim() : '';
+    if (!original || !translation) return;
+    const key = original.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    unique.push({ id: 'lock_' + i, original, translation });
+  });
+  if (unique.length === 0) return source;
+
+  const api = resolveNameMatcher();
+  if (!api) {
+    console.warn('[StorageService] NameMatcher module not loaded; skipping locked glossary.');
+    return source;
+  }
+
+  const matches = api.createMatcher(unique, { field: 'original', caseSensitive: false }).findAll(source);
+  if (matches.length === 0) return source;
+
+  const lockedSpans = [];
+  const spanRe = /§[^§]*§/g;
+  let span;
+  while ((span = spanRe.exec(source)) !== null) lockedSpans.push([span.index, span.index + span[0].length]);
+  const insideLocked = (index) => lockedSpans.some(([start, end]) => index >= start && index < end);
+
+  let out = '';
+  let last = 0;
+  matches.forEach((match) => {
+    if (insideLocked(match.index)) return;
+    out += source.slice(last, match.index);
+    out += `§${match.translation}§`;
+    last = match.index + match.length;
+  });
+  out += source.slice(last);
+  return out;
+}
+
+// Removes the `§` markers the locked glossary added before translation, leaving the
+// already-translated Vietnamese content in place.
+function stripLockedMarkers(text) {
+  const source = typeof text === 'string' ? text : '';
+  return source.indexOf('§') === -1 ? source : source.replace(/§/g, '');
+}
+
 // Collapses entries that share a source name (trimmed, case-insensitive), keeping
 // the oldest translation so established names win.
 function dedupeNameList(list) {
@@ -248,7 +351,7 @@ const StorageService = {
       const request = store.getAll();
 
       request.onsuccess = async () => {
-        let novels = (request.result || []).filter((n) => n && !String(n.id).startsWith(NAME_LIST_PREFIX));
+        let novels = (request.result || []).filter((n) => !isListRecord(n));
 
         // First-time seed ONLY on clean install/first run, NEVER after user deletes novels
         if (!isInitialized && novels.length === 0) {
@@ -461,15 +564,17 @@ const StorageService = {
    * @param {string} novelId
    * @returns {Promise<Array<{id: string, original: string, translation: string, chapterFirstSeen: number|string, addedAt: number}>>}
    */
-  async getNameList(novelId) {
+  async getNameList(novelId, kind = 'namelist') {
     if (!novelId) return [];
-    const stored = await this._getNameListRecord(novelId);
+    const stored = await this._getNameListRecord(novelId, kind);
     if (stored) return [...stored];
+
+    if (kind !== 'namelist') return [];
 
     const novels = await this.getManagedNovels();
     const novel = novels.find((n) => n.id === novelId) || null;
     const legacy = novel && Array.isArray(novel.nameList) ? novel.nameList : [];
-    await this._putNameListRecord(novelId, legacy);
+    await this._putNameListRecord(novelId, legacy, kind);
     if (novel && Object.prototype.hasOwnProperty.call(novel, 'nameList')) {
       const { nameList, ...rest } = novel;
       try { await this._putNovelRecord(rest); } catch (e) {}
@@ -477,10 +582,10 @@ const StorageService = {
     return [...legacy];
   },
 
-  _getNameListRecord(novelId) {
+  _getNameListRecord(novelId, kind = 'namelist') {
     return openDatabase().then((db) => new Promise((resolve, reject) => {
       const tx = db.transaction('novels', 'readonly');
-      const request = tx.objectStore('novels').get(NAME_LIST_PREFIX + novelId);
+      const request = tx.objectStore('novels').get(`${kind}::${novelId}`);
       request.onsuccess = () => {
         const record = request.result;
         resolve(record && Array.isArray(record.list) ? record.list : null);
@@ -489,10 +594,10 @@ const StorageService = {
     }));
   },
 
-  _putNameListRecord(novelId, list) {
+  _putNameListRecord(novelId, list, kind = 'namelist') {
     return openDatabase().then((db) => new Promise((resolve, reject) => {
       const tx = db.transaction('novels', 'readwrite');
-      tx.objectStore('novels').put({ id: NAME_LIST_PREFIX + novelId, owner: novelId, list });
+      tx.objectStore('novels').put({ id: `${kind}::${novelId}`, owner: novelId, kind, list });
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     }));
@@ -513,10 +618,10 @@ const StorageService = {
    * @param {Array} nameList
    * @returns {Promise<Array>}
    */
-  async saveNameList(novelId, nameList) {
+  async saveNameList(novelId, nameList, kind = 'namelist') {
     if (!novelId) return [];
     const list = dedupeNameList(Array.isArray(nameList) ? nameList : []);
-    await this._putNameListRecord(novelId, list);
+    await this._putNameListRecord(novelId, list, kind);
     return list;
   },
 
@@ -526,9 +631,9 @@ const StorageService = {
    * @param {{ original: string, translation: string, chapterFirstSeen?: number|string }} entry
    * @returns {Promise<{id: string, original: string, translation: string, chapterFirstSeen: number|string, addedAt: number}>}
    */
-  async addNameEntry(novelId, entry) {
+  async addNameEntry(novelId, entry, kind = 'namelist') {
     if (!novelId || !entry) return null;
-    const currentList = await this.getNameList(novelId);
+    const currentList = await this.getNameList(novelId, kind);
     const newEntry = {
       id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       original: (entry.original || '').trim(),
@@ -537,15 +642,23 @@ const StorageService = {
       addedAt: Date.now()
     };
     currentList.unshift(newEntry);
-    await this.saveNameList(novelId, currentList);
+    await this.saveNameList(novelId, currentList, kind);
     return newEntry;
   },
 
   parseNameListBlock,
 
+  parseGlossaryBlocks,
+
+  parseTranslationBlock,
+
   tokenizeSource,
 
   restoreTokens,
+
+  applyLockedGlossary,
+
+  stripLockedMarkers,
 
   /**
    * Adds several name entries at once, skipping any whose source name already exists
@@ -555,9 +668,9 @@ const StorageService = {
    * @param {number|string} [chapterFirstSeen]
    * @returns {Promise<Array>} the entries actually added
    */
-  async addNameEntries(novelId, entries, chapterFirstSeen) {
+  async addNameEntries(novelId, entries, chapterFirstSeen, kind = 'namelist') {
     if (!novelId || !Array.isArray(entries) || entries.length === 0) return [];
-    const currentList = await this.getNameList(novelId);
+    const currentList = await this.getNameList(novelId, kind);
     const seen = new Set(
       currentList.map((e) => (e.original || '').trim().toLowerCase()).filter(Boolean)
     );
@@ -579,8 +692,8 @@ const StorageService = {
       });
     });
     if (added.length === 0) return [];
-    await this.saveNameList(novelId, [...added, ...currentList]);
-    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+    await this.saveNameList(novelId, [...added, ...currentList], kind);
+    if (kind === 'namelist' && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
       window.dispatchEvent(new CustomEvent('novel-name-list-updated', {
         detail: { novelId, count: currentList.length + added.length, added: added.length }
       }));
@@ -595,9 +708,9 @@ const StorageService = {
    * @param {Partial<{ original: string, translation: string, chapterFirstSeen: number|string }>} updates
    * @returns {Promise<Object|null>}
    */
-  async updateNameEntry(novelId, entryId, updates) {
+  async updateNameEntry(novelId, entryId, updates, kind = 'namelist') {
     if (!novelId || !entryId || !updates) return null;
-    const currentList = await this.getNameList(novelId);
+    const currentList = await this.getNameList(novelId, kind);
     const index = currentList.findIndex(e => e.id === entryId);
     if (index === -1) return null;
 
@@ -608,7 +721,7 @@ const StorageService = {
       chapterFirstSeen: updates.chapterFirstSeen !== undefined ? updates.chapterFirstSeen : currentList[index].chapterFirstSeen
     };
 
-    await this.saveNameList(novelId, currentList);
+    await this.saveNameList(novelId, currentList, kind);
     return currentList[index];
   },
 
@@ -618,13 +731,37 @@ const StorageService = {
    * @param {string} entryId
    * @returns {Promise<boolean>}
    */
-  async deleteNameEntry(novelId, entryId) {
+  async deleteNameEntry(novelId, entryId, kind = 'namelist') {
     if (!novelId || !entryId) return false;
-    const currentList = await this.getNameList(novelId);
+    const currentList = await this.getNameList(novelId, kind);
     const filtered = currentList.filter(e => e.id !== entryId);
     if (filtered.length === currentList.length) return false;
-    await this.saveNameList(novelId, filtered);
+    await this.saveNameList(novelId, filtered, kind);
     return true;
+  },
+
+  /**
+   * Moves a term between glossaries (e.g. soft -> locked), skipping an existing
+   * entry with the same source name in the destination so nothing is duplicated.
+   * @returns {Promise<Object|null>} the destination entry, or null if the source entry is missing
+   */
+  async moveNameEntry(novelId, entryId, fromKind = 'soft', toKind = 'locked') {
+    if (!novelId || !entryId) return null;
+    const fromList = await this.getNameList(novelId, fromKind);
+    const entry = fromList.find(e => e.id === entryId);
+    if (!entry) return null;
+
+    const toList = await this.getNameList(novelId, toKind);
+    const key = (entry.original || '').trim().toLowerCase();
+    const existing = toList.find(e => (e.original || '').trim().toLowerCase() === key);
+    let moved = existing;
+    if (!existing) {
+      moved = { ...entry, id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), addedAt: Date.now(), isNew: true };
+      toList.unshift(moved);
+    }
+    await this.saveNameList(novelId, toList, toKind);
+    await this.saveNameList(novelId, fromList.filter(e => e.id !== entryId), fromKind);
+    return moved;
   },
 
   async syncNovelMetadata(slugOrId) {
@@ -756,6 +893,11 @@ const StorageService = {
       if (n.slug && targetSlugs.has(n.slug)) {
         targetIds.add(n.id);
       }
+    });
+
+    // Remove the deleted novel's name list / locked / soft glossary records too
+    allNovels.forEach((n) => {
+      if (isListRecord(n) && targetIds.has(n.owner)) targetIds.add(n.id);
     });
 
     // 2. Delete from both novels and chapters stores
@@ -1074,6 +1216,9 @@ const StorageService = {
     let translationUsage = null;
     let reasoningText = null;
     let capturedNames = [];
+    let capturedLocked = [];
+    let capturedSoft = [];
+    let translationDelay = 0;
 
     // Optional DeepSeek translation pre-download
     if (options && options.translation && options.translation.enabled) {
@@ -1133,7 +1278,17 @@ const StorageService = {
       // Tokenize known source names to @n@ placeholders before translation.
       const nameEntries = Array.isArray(novel.nameList) ? novel.nameList : [];
       const tokenized = nameEntries.length > 0 ? tokenizeSource(content.rawText, nameEntries) : null;
-      const sourceForTranslation = tokenized && tokenized.mapping.length > 0 ? tokenized.text : content.rawText;
+      const namedText = tokenized && tokenized.mapping.length > 0 ? tokenized.text : content.rawText;
+
+      // Pre-translate locked glossary terms, then wrap them in §...§ so the model uses
+      // the canonical value. Runs after name tokenization so @n@ placeholders are kept.
+      let lockedEntries = [];
+      try {
+        lockedEntries = await this.getNameList(novel.id, 'locked');
+      } catch (e) {
+        console.warn('[StorageService] Failed to load locked glossary:', e);
+      }
+      const sourceForTranslation = applyLockedGlossary(namedText, lockedEntries);
       const promptForTranslation = tokenized && tokenized.mapping.length > 0
         ? `${effectivePrompt}\n\nKeep every placeholder token such as @1@ or @a@ exactly as written - do not translate, alter, or remove them.`
         : effectivePrompt;
@@ -1189,9 +1344,12 @@ const StorageService = {
       const restoredText = tokenMapping.length > 0
         ? restoreTokens(result.translatedText, tokenMapping)
         : result.translatedText;
-      const parsedNames = this.parseNameListBlock(restoredText);
-      finalText = parsedNames.text;
-      capturedNames = parsedNames.names;
+      const parsedGlossary = this.parseGlossaryBlocks(stripLockedMarkers(restoredText));
+      finalText = parsedGlossary.text;
+      capturedNames = parsedGlossary.names;
+      capturedLocked = parsedGlossary.locked;
+      capturedSoft = parsedGlossary.soft;
+      translationDelay = parsedGlossary.delaySeconds || 0;
       // Discard deepthink reasoning process - do not save to storage
       reasoningText = null;
       isTranslated = true;
@@ -1229,11 +1387,27 @@ const StorageService = {
       }
     }
 
+    if (capturedLocked.length > 0) {
+      try {
+        await this.addNameEntries(novel.id, capturedLocked, Number(chapterNumber), 'locked');
+      } catch (e) {
+        console.warn('[StorageService] Failed to save auto-detected locked glossary:', e);
+      }
+    }
+
+    if (capturedSoft.length > 0) {
+      try {
+        await this.addNameEntries(novel.id, capturedSoft, Number(chapterNumber), 'soft');
+      } catch (e) {
+        console.warn('[StorageService] Failed to save auto-detected soft glossary:', e);
+      }
+    }
+
     if (options && typeof options.onProgress === 'function') {
       options.onProgress({ phase: 'completed', percent: 100, text: 'Completed' });
     }
 
-    return saved;
+    return { ...saved, translationDelay };
   },
 
   async deleteChapter(novelId, chapterNumber) {
@@ -1286,18 +1460,25 @@ const StorageService = {
     const rawNovels = await getAllFromStore(db, 'novels');
     const chapters = await getAllFromStore(db, 'chapters');
 
-    const listByNovel = new Map();
+    const listsByNovel = new Map();
     rawNovels.forEach((record) => {
-      if (record && String(record.id).startsWith(NAME_LIST_PREFIX)) {
-        listByNovel.set(record.owner, Array.isArray(record.list) ? record.list : []);
-      }
+      if (!record || typeof record.id !== 'string' || !record.owner || !Array.isArray(record.list)) return;
+      const sep = record.id.indexOf('::');
+      if (sep === -1) return;
+      const kind = record.id.slice(0, sep);
+      if (!listsByNovel.has(record.owner)) listsByNovel.set(record.owner, {});
+      listsByNovel.get(record.owner)[kind] = record.list;
     });
     const novels = rawNovels
-      .filter((record) => record && !String(record.id).startsWith(NAME_LIST_PREFIX))
-      .map((novel) => ({
-        ...novel,
-        nameList: listByNovel.has(novel.id) ? listByNovel.get(novel.id) : (Array.isArray(novel.nameList) ? novel.nameList : [])
-      }));
+      .filter((record) => !isListRecord(record))
+      .map((novel) => {
+        const lists = listsByNovel.get(novel.id) || {};
+        return {
+          ...novel,
+          nameList: lists.namelist !== undefined ? lists.namelist : (Array.isArray(novel.nameList) ? novel.nameList : []),
+          glossaries: { locked: lists.locked || [], soft: lists.soft || [] }
+        };
+      });
 
     const preferences = {};
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -1343,13 +1524,24 @@ const StorageService = {
     const nameRecords = [];
     novels.forEach((novel) => {
       if (!novel) return;
-      if (Object.prototype.hasOwnProperty.call(novel, 'nameList')) {
-        const { nameList, ...rest } = novel;
-        nameRecords.push({ id: NAME_LIST_PREFIX + novel.id, owner: novel.id, list: Array.isArray(nameList) ? nameList : [] });
-        novelRecords.push(rest);
-      } else {
+      const hasNameList = Object.prototype.hasOwnProperty.call(novel, 'nameList');
+      const hasGlossaries = novel.glossaries && typeof novel.glossaries === 'object';
+      if (!hasNameList && !hasGlossaries) {
         novelRecords.push(novel);
+        return;
       }
+      const { nameList, glossaries, ...rest } = novel;
+      if (hasNameList) {
+        nameRecords.push({ id: NAME_LIST_PREFIX + novel.id, owner: novel.id, kind: 'namelist', list: Array.isArray(nameList) ? nameList : [] });
+      }
+      if (hasGlossaries) {
+        ['locked', 'soft'].forEach((kind) => {
+          if (Object.prototype.hasOwnProperty.call(glossaries, kind)) {
+            nameRecords.push({ id: `${kind}::${novel.id}`, owner: novel.id, kind, list: Array.isArray(glossaries[kind]) ? glossaries[kind] : [] });
+          }
+        });
+      }
+      novelRecords.push(rest);
     });
 
     const db = await openDatabase();

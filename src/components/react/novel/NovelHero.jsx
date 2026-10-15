@@ -10,7 +10,6 @@ function getNovelId() {
 export default function NovelHero() {
   const [novel, setNovel] = useState(null);
   const [notFound, setNotFound] = useState(false);
-  const [nameListCount, setNameListCount] = useState(0);
   const [stats, setStats] = useState({ downloaded: 0, total: 0 });
 
   useEffect(() => {
@@ -26,7 +25,6 @@ export default function NovelHero() {
         return;
       }
       setNovel(record);
-      setNameListCount(Array.isArray(record.nameList) ? record.nameList.length : 0);
       setStats({ downloaded: 0, total: record.totalChapters || 100 });
       document.title = `${record.title} - QuickConverter`;
     }).catch(() => setNotFound(true));
@@ -37,15 +35,9 @@ export default function NovelHero() {
       const detail = (e && e.detail) || {};
       setStats({ downloaded: detail.downloaded || 0, total: detail.total || 0 });
     };
-    const onNames = (e) => {
-      const detail = (e && e.detail) || {};
-      setNameListCount(detail.count || 0);
-    };
     window.addEventListener('novel-stats-updated', onStats);
-    window.addEventListener('novel-name-list-updated', onNames);
     return () => {
       window.removeEventListener('novel-stats-updated', onStats);
-      window.removeEventListener('novel-name-list-updated', onNames);
     };
   }, []);
 
@@ -79,18 +71,6 @@ export default function NovelHero() {
                 {status}
               </span>
             </div>
-            <button
-              id="open-name-list-btn"
-              type="button"
-              onClick={() => window.dispatchEvent(new Event('novel-open-name-list'))}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 hover:border-slate-600 transition cursor-pointer shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-              title="Open Novel Name List & Glossary"
-            >
-              <span>📖 Name List</span>
-              <span id="name-list-count-badge" className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-indigo-500/25 text-indigo-300 border border-indigo-500/30">
-                {nameListCount}
-              </span>
-            </button>
           </div>
 
           <h1 id="novel-title" className="text-2xl sm:text-3xl font-extrabold text-slate-100 leading-tight">

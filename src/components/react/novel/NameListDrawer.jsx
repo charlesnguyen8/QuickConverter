@@ -124,11 +124,38 @@ function TrashIcon({ size = 13 }) {
   );
 }
 
+function CheckIcon({ size = 13 }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function LockIcon({ size = 13 }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
 const inputCls = 'px-3 py-2.5 sm:py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
 
 const ROW_HEIGHT = 96;
 const VIRTUAL_OVERSCAN = 6;
 const VIRTUALIZE_AT = 80;
+
+const LIST_TABS = [
+  { id: 'namelist', label: 'Name List', title: 'Name List', subtitle: 'Character & place name glossary' },
+  { id: 'locked', label: 'Locked Glossary', title: 'Locked Glossary', subtitle: 'Terms pinned to an exact translation' },
+  { id: 'soft', label: 'Soft Glossary', title: 'Soft Glossary', subtitle: 'Preferred terms kept as suggestions' }
+];
+
+const FORMAT_PROMPT = 'For each source term below, output its translation. Return ONLY one block in this exact format, with no extra text or explanation:\n<<<TRANSLATION_START>>>\nname=translation|name=translation|...\n<<<TRANSLATION_END>>>';
+
+const PROMPT_SELECTABLE_TABS = ['namelist', 'locked'];
 
 function SourceSnippet({ snippet }) {
   return (
@@ -143,6 +170,7 @@ function SourceSnippet({ snippet }) {
 export default function NameListDrawer() {
   const [novelId] = useState(getNovelId);
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('namelist');
   const [entries, setEntriesState] = useState([]);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('time_desc');
@@ -180,6 +208,14 @@ export default function NameListDrawer() {
   const conflictPromptRef = useRef(null);
   conflictPromptRef.current = conflictPrompt;
   const [conflictsOpen, setConflictsOpen] = useState(true);
+  const [promptPanelOpen, setPromptPanelOpen] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [resultText, setResultText] = useState('');
+  const [promptStatus, setPromptStatus] = useState(null);
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+  const [promptLists, setPromptLists] = useState({ namelist: [], locked: [] });
+  const promptPanelRef = useRef(false);
+  promptPanelRef.current = promptPanelOpen;
   const [strictConflicts, setStrictConflicts] = useState(() => {
     const S = typeof window !== 'undefined' ? window.StorageService : null;
     try {
@@ -193,21 +229,24 @@ export default function NameListDrawer() {
 
   const setEntries = useCallback((next) => {
     setEntriesState(next);
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && activeTabRef.current === 'namelist') {
       window.dispatchEvent(new CustomEvent('novel-name-list-updated', { detail: { count: next.length } }));
     }
   }, []);
+
+  const activeTabRef = useRef('namelist');
+  activeTabRef.current = activeTab;
 
   const reload = useCallback(async () => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!storage || !novelId) return;
     try {
-      const list = await storage.getNameList(novelId);
+      const list = await storage.getNameList(novelId, activeTab);
       setEntries(Array.isArray(list) ? list : []);
     } catch (e) {
       console.error('Error loading name list:', e);
     }
-  }, [novelId, setEntries]);
+  }, [novelId, activeTab, setEntries]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -297,6 +336,7 @@ export default function NameListDrawer() {
       if (renamePromptRef.current) { setRenamePrompt(null); return; }
       if (duplicatePromptRef.current) { setDuplicatePrompt(null); return; }
       if (deleteAllPromptRef.current) { setDeleteAllPrompt(false); return; }
+      if (promptPanelRef.current) { setPromptPanelOpen(false); return; }
       setSourceEntry((current) => {
         if (current) return null;
         if (open) setOpen(false);
@@ -319,9 +359,27 @@ export default function NameListDrawer() {
     setDeleteAllPrompt(false);
     setDuplicatePrompt(null);
     setConflictPrompt(null);
+    setPromptPanelOpen(false);
   }, []);
 
+  const selectTab = useCallback((id) => {
+    if (id === activeTab) return;
+    setActiveTab(id);
+    setSearch('');
+    setSort('time_desc');
+    setEditingId(null);
+    setFormOpen(false);
+    setBulkOpen(false);
+    setBulkStatus(null);
+    setSourceEntry(null);
+    setSourceChapter(null);
+    setScanAll(null);
+    setFocusedNameId(null);
+    setDismissedConflicts(new Set());
+  }, [activeTab]);
+
   const openSource = useCallback(async (entry) => {
+    setPromptPanelOpen(false);
     setSourceEntry(entry);
     setScanAll(null);
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -371,9 +429,9 @@ export default function NameListDrawer() {
     const next = entries.map((entry) => (entry.id === id ? { ...entry, isNew: false } : entry));
     setEntries(next);
     if (typeof storage.saveNameList === 'function') {
-      Promise.resolve(storage.saveNameList(novelId, next)).catch((e) => console.error('Failed to mark name seen:', e));
+      Promise.resolve(storage.saveNameList(novelId, next, activeTab)).catch((e) => console.error('Failed to mark name seen:', e));
     }
-  }, [entries, novelId, setEntries]);
+  }, [entries, novelId, activeTab, setEntries]);
 
   const applyTranslationRename = useCallback(async (oldName, newName) => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -382,7 +440,11 @@ export default function NameListDrawer() {
     try {
       const preview = await storage.replaceInChapters(novelId, oldName, newName, { dryRun: true });
       if (!preview.count) return;
-      setRenamePrompt({ oldName, newName, count: preview.count, chaptersChanged: preview.chaptersChanged });
+      setRenamePrompt({
+        changes: [{ oldName, newName, count: preview.count, chaptersChanged: preview.chaptersChanged }],
+        count: preview.count,
+        chaptersChanged: preview.chaptersChanged
+      });
     } catch (e) {
       console.error('Error counting name occurrences:', e);
     }
@@ -394,27 +456,174 @@ export default function NameListDrawer() {
     if (!prompt) return;
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!storage || typeof storage.replaceInChapters !== 'function') return;
+    const changes = Array.isArray(prompt.changes) && prompt.changes.length > 0
+      ? prompt.changes
+      : [{ oldName: prompt.oldName, newName: prompt.newName }];
     try {
-      await storage.replaceInChapters(novelId, prompt.oldName, prompt.newName);
+      for (const change of changes) {
+        if (change.oldName && change.newName) await storage.replaceInChapters(novelId, change.oldName, change.newName);
+      }
       window.dispatchEvent(new Event('reader-chapter-refresh'));
     } catch (e) {
       console.error('Error replacing name across chapters:', e);
     }
   }, [novelId, renamePrompt]);
 
+  const loadPromptLists = useCallback(async () => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novelId || typeof storage.getNameList !== 'function') return;
+    try {
+      const [names, locked] = await Promise.all([
+        storage.getNameList(novelId, 'namelist'),
+        storage.getNameList(novelId, 'locked')
+      ]);
+      setPromptLists({ namelist: Array.isArray(names) ? names : [], locked: Array.isArray(locked) ? locked : [] });
+    } catch (e) {
+      console.error('Error loading prompt lists:', e);
+    }
+  }, [novelId]);
+
+  useEffect(() => {
+    if (!promptPanelOpen) return;
+    loadPromptLists();
+  }, [promptPanelOpen, loadPromptLists, entries]);
+
+  useEffect(() => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!promptPanelOpen || !storage || !novelId || typeof storage.getPreference !== 'function') return;
+    try {
+      setCustomPrompt(storage.getPreference(`quickconverter_glossary_prompt::${novelId}`, '') || '');
+    } catch (e) {}
+  }, [promptPanelOpen, novelId]);
+
+  const updateCustomPrompt = useCallback((value) => {
+    setCustomPrompt(value);
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    try {
+      if (storage && typeof storage.setPreference === 'function') {
+        storage.setPreference(`quickconverter_glossary_prompt::${novelId}`, value);
+      }
+    } catch (e) {}
+  }, [novelId]);
+
+  const toggleSelected = useCallback((kind, id) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      const key = `${kind}::${id}`;
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const clearSelected = useCallback(() => setSelectedKeys(new Set()), []);
+
+  const selectedTerms = useMemo(() => {
+    const terms = [];
+    PROMPT_SELECTABLE_TABS.forEach((kind) => {
+      (promptLists[kind] || []).forEach((entry) => {
+        if (selectedKeys.has(`${kind}::${entry.id}`)) terms.push(entry.original);
+      });
+    });
+    return terms;
+  }, [promptLists, selectedKeys]);
+
+  const finalPrompt = useMemo(() => {
+    const parts = [];
+    const custom = customPrompt.trim();
+    if (custom) parts.push(custom);
+    parts.push(FORMAT_PROMPT);
+    if (selectedTerms.length > 0) parts.push(`Source terms:\n${selectedTerms.join('\n')}`);
+    return parts.join('\n\n');
+  }, [customPrompt, selectedTerms]);
+
+  const openPromptPanel = useCallback(() => {
+    setSourceEntry(null);
+    setSourceChapter(null);
+    setScanAll(null);
+    setPromptStatus(null);
+    setPromptPanelOpen(true);
+  }, []);
+
+  const closePromptPanel = useCallback(() => setPromptPanelOpen(false), []);
+
+  const copyFinalPrompt = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(finalPrompt);
+      setPromptStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 block', msg: 'Copied full prompt to clipboard! ✓' });
+    } catch (e) {
+      setPromptStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 block', msg: 'Select the text above and copy with Ctrl+C.' });
+    }
+  }, [finalPrompt]);
+
+  const processTranslationResult = useCallback(async () => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novelId) return;
+    const pairs = typeof storage.parseTranslationBlock === 'function' ? storage.parseTranslationBlock(resultText) : [];
+    if (pairs.length === 0) {
+      setPromptStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 block', msg: 'No "name=translation" pairs found. Paste the block the model returned.' });
+      return;
+    }
+    try {
+      const names = await storage.getNameList(novelId, 'namelist');
+      const locked = await storage.getNameList(novelId, 'locked');
+      const kindLists = [['namelist', Array.isArray(names) ? names : []], ['locked', Array.isArray(locked) ? locked : []]];
+      let updated = 0;
+      const changed = new Map();
+      for (const pair of pairs) {
+        const key = nameKey(pair.original);
+        for (const [kind, list] of kindLists) {
+          const entry = list.find((e) => nameKey(e.original) === key);
+          if (!entry) continue;
+          const oldTranslation = entry.translation || '';
+          if (oldTranslation === pair.translation) continue;
+          if (typeof storage.updateNameEntry === 'function') {
+            await storage.updateNameEntry(novelId, entry.id, { translation: pair.translation }, kind);
+            updated++;
+            if (oldTranslation) changed.set(`${oldTranslation}\u0000${pair.translation}`, { oldName: oldTranslation, newName: pair.translation });
+          }
+        }
+      }
+      await reload();
+      await loadPromptLists();
+      if (updated === 0) {
+        setPromptStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 block', msg: 'No matching Name List / Locked entries were updated (unknown sources are ignored).' });
+        return;
+      }
+      setPromptStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 block', msg: `Updated ${updated} entr${updated === 1 ? 'y' : 'ies'}. ✓` });
+
+      const previews = [];
+      if (typeof storage.replaceInChapters === 'function') {
+        for (const change of changed.values()) {
+          const preview = await storage.replaceInChapters(novelId, change.oldName, change.newName, { dryRun: true });
+          if (preview && preview.count > 0) previews.push({ ...change, count: preview.count, chaptersChanged: preview.chaptersChanged });
+        }
+      }
+      if (previews.length > 0) {
+        setRenamePrompt({
+          changes: previews,
+          count: previews.reduce((sum, c) => sum + c.count, 0),
+          chaptersChanged: previews.reduce((sum, c) => sum + (c.chaptersChanged || 0), 0)
+        });
+      }
+    } catch (e) {
+      console.error('Error processing translation result:', e);
+      setPromptStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 block', msg: `Processing failed: ${e.message}` });
+    }
+  }, [novelId, resultText, reload, loadPromptLists]);
+
   const confirmDeleteAll = useCallback(async () => {
     setDeleteAllPrompt(false);
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!storage || !novelId) return;
     try {
-      if (typeof storage.saveNameList === 'function') await storage.saveNameList(novelId, []);
+      if (typeof storage.saveNameList === 'function') await storage.saveNameList(novelId, [], activeTab);
       setSourceEntry(null);
       setEditingId(null);
       await reload();
     } catch (e) {
       console.error('Error clearing name list:', e);
     }
-  }, [novelId, reload]);
+  }, [novelId, reload, activeTab]);
 
   const confirmDuplicate = useCallback(async () => {
     const prompt = duplicatePrompt;
@@ -429,10 +638,10 @@ export default function NameListDrawer() {
           original: prompt.original,
           translation: prompt.translation,
           chapterFirstSeen: prompt.chapter || (existing ? existing.chapterFirstSeen : null)
-        });
+        }, activeTab);
       }
       if (prompt.removeId && prompt.removeId !== prompt.existingId && typeof storage.deleteNameEntry === 'function') {
-        await storage.deleteNameEntry(novelId, prompt.removeId);
+        await storage.deleteNameEntry(novelId, prompt.removeId, activeTab);
       }
       if (prompt.existingTranslation && prompt.existingTranslation !== prompt.translation) {
         await applyTranslationRename(prompt.existingTranslation, prompt.translation);
@@ -441,8 +650,9 @@ export default function NameListDrawer() {
     } catch (e) {
       console.error('Error resolving duplicate name:', e);
     }
-  }, [duplicatePrompt, entries, novelId, reload, applyTranslationRename]);
+  }, [duplicatePrompt, entries, novelId, reload, applyTranslationRename, activeTab]);
 
+  const activeMeta = LIST_TABS.find((tab) => tab.id === activeTab) || LIST_TABS[0];
   const filtered = useMemo(() => sortAndFilter(entries, search.trim(), sort), [entries, search, sort]);
   const filteredRef = useRef([]);
   filteredRef.current = filtered;
@@ -551,11 +761,11 @@ export default function NameListDrawer() {
       const existing = entries.find((entry) => entry.id === formId);
       const oldTranslation = existing ? existing.translation : '';
       if (typeof storage.updateNameEntry === 'function') {
-        await storage.updateNameEntry(novelId, formId, { original: orig, translation: trans, chapterFirstSeen: ch || null });
+        await storage.updateNameEntry(novelId, formId, { original: orig, translation: trans, chapterFirstSeen: ch || null }, activeTab);
       }
       if (oldTranslation && oldTranslation !== trans) await applyTranslationRename(oldTranslation, trans);
     } else if (typeof storage.addNameEntry === 'function') {
-      await storage.addNameEntry(novelId, { original: orig, translation: trans, chapterFirstSeen: ch || null });
+      await storage.addNameEntry(novelId, { original: orig, translation: trans, chapterFirstSeen: ch || null }, activeTab);
     }
     setFormOpen(false);
     resetForm();
@@ -593,7 +803,7 @@ export default function NameListDrawer() {
     const existing = entries.find((entry) => entry.id === id);
     const oldTranslation = existing ? existing.translation : '';
     if (typeof storage.updateNameEntry === 'function') {
-      await storage.updateNameEntry(novelId, id, { original: orig, translation: trans, chapterFirstSeen: fields.chapter.trim() || null });
+      await storage.updateNameEntry(novelId, id, { original: orig, translation: trans, chapterFirstSeen: fields.chapter.trim() || null }, activeTab);
     }
     if (oldTranslation && oldTranslation !== trans) await applyTranslationRename(oldTranslation, trans);
     setEditingId(null);
@@ -603,9 +813,23 @@ export default function NameListDrawer() {
   const deleteEntry = async (id) => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!storage || !novelId) return;
-    if (typeof storage.deleteNameEntry === 'function') await storage.deleteNameEntry(novelId, id);
+    if (typeof storage.deleteNameEntry === 'function') await storage.deleteNameEntry(novelId, id, activeTab);
     if (editingId === id) setEditingId(null);
     await reload();
+  };
+
+  const moveToLocked = async (entry) => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novelId || !entry) return;
+    try {
+      if (typeof storage.moveNameEntry === 'function') {
+        await storage.moveNameEntry(novelId, entry.id, 'soft', 'locked');
+      }
+      if (editingId === entry.id) setEditingId(null);
+      await reload();
+    } catch (e) {
+      console.error('Error moving term to locked glossary:', e);
+    }
   };
 
   const toggleBulk = () => {
@@ -660,7 +884,7 @@ export default function NameListDrawer() {
         addedCount++;
       }
     }
-    if (typeof storage.saveNameList === 'function') await storage.saveNameList(novelId, next);
+    if (typeof storage.saveNameList === 'function') await storage.saveNameList(novelId, next, activeTab);
     setEntries(next);
     setBulkStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 block', msg: `Import complete: ${addedCount} added, ${updatedCount} updated! ✓` });
   };
@@ -775,9 +999,105 @@ export default function NameListDrawer() {
             </div>
           </div>
         ) : null}
+        {!sourceEntry && promptPanelOpen ? (
+          <div
+            id="name-list-prompt-panel"
+            className="w-full md:max-w-md h-full bg-slate-950 border-l border-slate-700/80 shadow-2xl flex flex-col text-slate-100"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Generate translation prompt"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-800 bg-slate-950/90 backdrop-blur sticky top-0 z-10 flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <button type="button" onClick={closePromptPanel} className="md:hidden inline-flex items-center justify-center min-h-10 min-w-10 p-2.5 -ml-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer flex-shrink-0" title="Back to lists">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                  </svg>
+                </button>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-bold text-slate-100">Generate Translation Prompt</span>
+                    <span id="name-list-prompt-count" className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">{selectedTerms.length}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">Mark terms, copy the prompt, paste the reply back</p>
+                </div>
+              </div>
+              <button type="button" onClick={closePromptPanel} className="hidden md:inline-flex p-2.5 sm:p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer flex-shrink-0" title="Close prompt panel">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label htmlFor="name-list-custom-prompt" className="text-xs font-bold uppercase tracking-wider text-indigo-300">Your Custom Prompt</label>
+                  <button type="button" onClick={clearSelected} className="text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer">Clear {selectedTerms.length} selected</button>
+                </div>
+                <textarea
+                  id="name-list-custom-prompt"
+                  rows="3"
+                  value={customPrompt}
+                  onChange={(e) => updateCustomPrompt(e.target.value)}
+                  placeholder="Optional: instructions to prepend, e.g. target language, tone, extra context..."
+                  className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-purple-300">Final Prompt</span>
+                  <button
+                    type="button"
+                    id="name-list-copy-prompt-btn"
+                    onClick={copyFinalPrompt}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
+                  >
+                    <span>📋 Copy Prompt</span>
+                  </button>
+                </div>
+                <textarea
+                  id="name-list-final-prompt"
+                  readOnly
+                  value={finalPrompt}
+                  rows="10"
+                  className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-300 font-mono focus:outline-none cursor-default select-all"
+                />
+                <p className="text-[11px] text-slate-500">Read-only. Mark Name List / Locked items to include their source terms.</p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-300">Paste LLM Result</span>
+                <textarea
+                  id="name-list-result-input"
+                  rows="6"
+                  value={resultText}
+                  onChange={(e) => { setResultText(e.target.value); setPromptStatus(null); }}
+                  placeholder={'<<<TRANSLATION_START>>>\nYanguo=Yên quốc|Li Qiye=Lý Thất Dạ\n<<<TRANSLATION_END>>>'}
+                  className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 font-mono focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    id="name-list-process-btn"
+                    onClick={processTranslationResult}
+                    className="px-4 py-2.5 sm:py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
+                  >
+                    Process Result
+                  </button>
+                  <span className="text-[11px] text-slate-500 text-right">Updates Name List &amp; Locked entries that already exist.</span>
+                </div>
+                {promptStatus ? <div id="name-list-prompt-status" className={promptStatus.cls}>{promptStatus.msg}</div> : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div
           id="name-list-drawer-panel"
-          className={`${sourceEntry ? 'hidden md:flex' : 'flex'} w-full max-w-xl bg-slate-900 border-l border-slate-700/80 shadow-2xl flex-col h-full transform transition-transform duration-300 ease-out text-slate-100 ${open ? 'translate-x-0' : 'translate-x-full'}`}
+          className={`${sourceEntry || promptPanelOpen ? 'hidden md:flex' : 'flex'} w-full max-w-xl bg-slate-900 border-l border-slate-700/80 shadow-2xl flex-col h-full transform transition-transform duration-300 ease-out text-slate-100 ${open ? 'translate-x-0' : 'translate-x-full'}`}
           role="dialog"
           aria-modal="true"
           aria-labelledby="name-list-title"
@@ -788,15 +1108,18 @@ export default function NameListDrawer() {
               <span className="text-xl">📖</span>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <h2 id="name-list-title" className="text-base font-bold text-slate-100">Name List &amp; Glossary</h2>
+                  <h2 id="name-list-title" className="text-base font-bold text-slate-100">{activeMeta.title}</h2>
                   <span id="name-list-badge" className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">{entries.length}</span>
                 </div>
-                <p className="text-xs text-slate-400 truncate max-w-xs" id="name-list-novel-title">Character &amp; place name glossary</p>
+                <p className="text-xs text-slate-400 truncate max-w-xs" id="name-list-novel-title">{activeMeta.subtitle}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button type="button" onClick={toggleBulk} className="inline-flex items-center justify-center gap-1 h-10 sm:h-8 whitespace-nowrap text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 sm:px-2.5 rounded-md transition cursor-pointer" title="Bulk Import / Export lines (Original = Translation)">
                 <span>📥 Bulk</span>
+              </button>
+              <button type="button" id="name-list-generate-prompt-btn" onClick={openPromptPanel} className="inline-flex items-center justify-center gap-1 h-10 sm:h-8 whitespace-nowrap text-xs font-semibold text-amber-200 hover:text-white bg-amber-500/15 hover:bg-amber-600 border border-amber-500/40 hover:border-amber-500 px-3 sm:px-2.5 rounded-md transition cursor-pointer" title="Generate a translation prompt from selected terms">
+                <span>✨ Prompt</span>
               </button>
               {entries.length > 0 ? (
                 <button type="button" id="name-list-delete-all-btn" onClick={() => setDeleteAllPrompt(true)} className="inline-flex items-center justify-center gap-1.5 h-10 sm:h-8 min-w-10 sm:min-w-0 whitespace-nowrap text-xs font-semibold text-rose-300 hover:text-white bg-slate-800 hover:bg-rose-600 border border-rose-500/30 hover:border-rose-500 px-3 sm:px-2.5 rounded-md transition cursor-pointer" title="Delete all names from the glossary">
@@ -817,6 +1140,25 @@ export default function NameListDrawer() {
                 </svg>
               </button>
             </div>
+          </div>
+
+          <div id="name-list-tabs" role="tablist" aria-label="Glossary tabs" className="flex items-stretch gap-1 px-2 sm:px-4 border-b border-slate-800 bg-slate-900/60 flex-shrink-0 overflow-x-auto">
+            {LIST_TABS.map((tab) => {
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  id={`name-list-tab-${tab.id}`}
+                  aria-selected={active}
+                  onClick={() => selectTab(tab.id)}
+                  className={`inline-flex items-center justify-center whitespace-nowrap min-h-10 sm:min-h-0 px-3 py-2.5 sm:py-2 text-xs font-semibold border-b-2 transition cursor-pointer focus:outline-none ${active ? 'border-indigo-500 text-indigo-300' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
 
           {formOpen ? (
@@ -964,8 +1306,10 @@ export default function NameListDrawer() {
             ) : (
               <>
                 {virtualize && windowRange.start > 0 ? <div style={{ height: windowRange.start * ROW_HEIGHT }} aria-hidden="true" /> : null}
-                {visibleEntries.map((entry) => (
-                  editingId === entry.id ? (
+                {visibleEntries.map((entry) => {
+                  const isSelectable = PROMPT_SELECTABLE_TABS.includes(activeTab);
+                  const isSelected = isSelectable && selectedKeys.has(`${activeTab}::${entry.id}`);
+                  return editingId === entry.id ? (
                     <div key={entry.id} className="pb-2">
                       <InlineEditRow
                         entry={entry}
@@ -982,7 +1326,7 @@ export default function NameListDrawer() {
                         tabIndex={0}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (entry.isNew) markNameSeen(entry.id); openSource(entry); } }}
                         title={`${entry.original} = ${entry.translation} — click to view in source`}
-                        className={`flex items-center justify-between gap-3 p-3 rounded-lg border transition group cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/50${virtualize ? ' h-full overflow-hidden' : ''} ${entry.isNew ? 'bg-amber-500/10 border-amber-500/40 hover:border-amber-400 hover:bg-amber-500/15' : 'bg-slate-800/70 border-slate-700/60 hover:border-indigo-500/60 hover:bg-slate-800'}${focusedNameId === entry.id ? ' ring-2 ring-indigo-400 border-indigo-400' : ''}`}
+                        className={`flex items-center justify-between gap-3 p-3 rounded-lg border transition group cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/50${virtualize ? ' h-full overflow-hidden' : ''} ${entry.isNew ? 'bg-amber-500/10 border-amber-500/40 hover:border-amber-400 hover:bg-amber-500/15' : 'bg-slate-800/70 border-slate-700/60 hover:border-indigo-500/60 hover:bg-slate-800'}${focusedNameId === entry.id ? ' ring-2 ring-indigo-400 border-indigo-400' : ''}${isSelected ? ' ring-2 ring-amber-500/60 border-amber-500/50' : ''}`}
                       >
                         <div className="flex flex-col gap-1 min-w-0 flex-1">
                           <div className="min-w-0 line-clamp-2 text-sm leading-snug">
@@ -1011,6 +1355,16 @@ export default function NameListDrawer() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition flex-shrink-0">
+                          {isSelectable ? (
+                            <button type="button" onClick={(e) => { e.stopPropagation(); toggleSelected(activeTab, entry.id); }} className={`inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded transition cursor-pointer ${isSelected ? 'text-amber-300 bg-amber-500/20' : 'text-slate-400 hover:text-amber-300 hover:bg-slate-700/60'}`} title={isSelected ? 'Remove from translation prompt' : 'Include in translation prompt'} aria-pressed={isSelected}>
+                              <CheckIcon />
+                            </button>
+                          ) : null}
+                          {activeTab === 'soft' ? (
+                            <button type="button" onClick={(e) => { e.stopPropagation(); moveToLocked(entry); }} className="inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded text-slate-400 hover:text-amber-300 hover:bg-slate-700/60 transition cursor-pointer" title="Move to Locked Glossary">
+                              <LockIcon />
+                            </button>
+                          ) : null}
                           <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(entry); }} className="inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700/60 transition cursor-pointer" title="Edit entry">
                             <EditIcon />
                           </button>
@@ -1020,8 +1374,8 @@ export default function NameListDrawer() {
                         </div>
                       </div>
                     </div>
-                  )
-                ))}
+                  );
+                })}
                 {virtualize && windowRange.end < filtered.length ? <div style={{ height: (filtered.length - windowRange.end) * ROW_HEIGHT }} aria-hidden="true" /> : null}
               </>
             )}
@@ -1070,10 +1424,25 @@ export default function NameListDrawer() {
               </div>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Replace <span className="font-semibold text-amber-200">{renamePrompt.count}</span> occurrence{renamePrompt.count === 1 ? '' : 's'} of{' '}
-              <span className="font-mono text-slate-100">"{renamePrompt.oldName}"</span> with{' '}
-              <span className="font-mono text-emerald-300">"{renamePrompt.newName}"</span>{' '}
-              in {renamePrompt.chaptersChanged} downloaded chapter{renamePrompt.chaptersChanged === 1 ? '' : 's'}?
+              {Array.isArray(renamePrompt.changes) && renamePrompt.changes.length > 1 ? (
+                <>
+                  Replace translations for <span className="font-semibold text-amber-200">{renamePrompt.changes.length}</span> names
+                  {' '}(<span className="font-semibold text-amber-200">{renamePrompt.count}</span> occurrence{renamePrompt.count === 1 ? '' : 's'}) in{' '}
+                  {renamePrompt.chaptersChanged} downloaded chapter{renamePrompt.chaptersChanged === 1 ? '' : 's'}?
+                  <span className="mt-1.5 block max-h-32 overflow-y-auto font-mono text-[11px] text-slate-400">
+                    {renamePrompt.changes.map((c, i) => (
+                      <span key={i} className="block truncate">"{c.oldName}" → "{c.newName}"</span>
+                    ))}
+                  </span>
+                </>
+              ) : (
+                <>
+                  Replace <span className="font-semibold text-amber-200">{renamePrompt.count}</span> occurrence{renamePrompt.count === 1 ? '' : 's'} of{' '}
+                  <span className="font-mono text-slate-100">"{renamePrompt.changes ? renamePrompt.changes[0].oldName : renamePrompt.oldName}"</span> with{' '}
+                  <span className="font-mono text-emerald-300">"{renamePrompt.changes ? renamePrompt.changes[0].newName : renamePrompt.newName}"</span>{' '}
+                  in {renamePrompt.chaptersChanged} downloaded chapter{renamePrompt.chaptersChanged === 1 ? '' : 's'}?
+                </>
+              )}
             </p>
             <div className="flex items-center justify-end gap-2.5">
               <button type="button" onClick={() => setRenamePrompt(null)} className="px-3.5 py-2.5 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">Cancel</button>

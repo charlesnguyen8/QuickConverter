@@ -6,7 +6,6 @@
   const DEFAULT_KEY = 'sk-local';
   const TIMEOUT_MS = 180000; // 180s fallback timeout
   const INACTIVITY_TIMEOUT_MS = 60000; // 60s idle reset on streaming
-  const MAX_REQUEST_TIMEOUT_MS = 300000; // 300s (5m) hard ceiling for giant chapters
   const DEFAULT_MODEL = 'deepseek-chat';
 
   const CustomApiService = {
@@ -14,7 +13,6 @@
     DEFAULT_KEY,
     TIMEOUT_MS,
     INACTIVITY_TIMEOUT_MS,
-    MAX_REQUEST_TIMEOUT_MS,
     DEFAULT_MODEL,
 
     /**
@@ -344,7 +342,6 @@
         signal.addEventListener('abort', () => controller.abort(new Error('UserCancelled')));
       }
       let inactivityTimer = null;
-      let maxTimer = null;
 
       const resetInactivity = () => {
         if (inactivityTimer) clearTimeout(inactivityTimer);
@@ -355,9 +352,6 @@
 
       try {
         resetInactivity();
-        maxTimer = setTimeout(() => {
-          controller.abort(new Error('MaxDurationTimeout'));
-        }, MAX_REQUEST_TIMEOUT_MS);
 
         const payload = {
           model: activeModel,
@@ -382,7 +376,6 @@
 
         if (!res.ok) {
           if (inactivityTimer) clearTimeout(inactivityTimer);
-          if (maxTimer) clearTimeout(maxTimer);
 
           if (res.status === 401) {
             throw new Error('Custom API: Invalid or unauthorized key (401).');
@@ -451,19 +444,15 @@
         if (signal?.aborted || err.message === 'UserCancelled' || controller.signal.reason?.message === 'UserCancelled') {
           throw new Error('Translation cancelled by user.');
         }
-        if (err.name === 'AbortError' || err.message === 'InactivityTimeout' || err.message === 'MaxDurationTimeout') {
+        if (err.name === 'AbortError' || err.message === 'InactivityTimeout') {
           if (controller.signal.reason?.message === 'InactivityTimeout' || err.message === 'InactivityTimeout') {
             throw new Error(`Custom API translation timed out: no data received for ${INACTIVITY_TIMEOUT_MS / 1000} seconds.`);
-          }
-          if (controller.signal.reason?.message === 'MaxDurationTimeout' || err.message === 'MaxDurationTimeout') {
-            throw new Error(`Custom API translation exceeded maximum limit of ${MAX_REQUEST_TIMEOUT_MS / 1000} seconds.`);
           }
           throw new Error(`Custom API translation request timed out after ${TIMEOUT_MS / 1000} seconds.`);
         }
         throw err;
       } finally {
         if (inactivityTimer) clearTimeout(inactivityTimer);
-        if (maxTimer) clearTimeout(maxTimer);
       }
     }
   };

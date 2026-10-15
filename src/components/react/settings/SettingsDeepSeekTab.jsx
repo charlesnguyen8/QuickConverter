@@ -96,7 +96,13 @@ export default function SettingsDeepSeekTab({ onSaved }) {
 
       if (cancelled) return;
       setEnabled(getStored('quickconverter_deepseek_enabled', 'false') === 'true');
-      setModel(getStored('quickconverter_deepseek_model', 'deepseek-flash'));
+      const storedModel = getStored('quickconverter_deepseek_model', 'deepseek-flash');
+      if (!storedModel || storedModel === 'auto') {
+        setModel('deepseek-flash');
+        setStored('quickconverter_deepseek_model', 'deepseek-flash');
+      } else {
+        setModel(storedModel);
+      }
       setPrompt(getStored('quickconverter_deepseek_prompt', (ds && ds.DEFAULT_PROMPT) || ''));
 
       let storedKey = '';

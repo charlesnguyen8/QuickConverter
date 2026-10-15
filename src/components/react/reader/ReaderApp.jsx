@@ -5,7 +5,10 @@ import ReaderNav from './ReaderNav.jsx';
 import ReaderSourceDrawer from './ReaderSourceDrawer.jsx';
 import ReaderNotSaved from './ReaderNotSaved.jsx';
 import ReaderToast from './ReaderToast.jsx';
+import ReaderChapterList from './ReaderChapterList.jsx';
 import NameListDrawer from '../novel/NameListDrawer.jsx';
+
+const CHAPTERS_OPEN_KEY = 'quickconverter_reader_chapters_open';
 
 function getParams() {
   if (typeof window === 'undefined') return { id: null, ch: NaN };
@@ -23,7 +26,29 @@ export default function ReaderApp() {
   const [failed, setFailed] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [model, setModel] = useState('deepseek-flash');
+  const [chaptersOpen, setChaptersOpen] = useState(() => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    try {
+      return storage && typeof storage.getPreference === 'function'
+        ? storage.getPreference(CHAPTERS_OPEN_KEY, 'false') === 'true'
+        : false;
+    } catch (e) {
+      return false;
+    }
+  });
   const panelRef = useRef(null);
+
+  const updateChaptersOpen = useCallback((next) => {
+    setChaptersOpen(next);
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    try {
+      if (storage && typeof storage.setPreference === 'function') {
+        storage.setPreference(CHAPTERS_OPEN_KEY, next ? 'true' : 'false');
+      }
+    } catch (e) {}
+  }, []);
+
+  const toggleChapters = useCallback(() => updateChaptersOpen(!chaptersOpen), [chaptersOpen, updateChaptersOpen]);
 
   const load = useCallback(async () => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -61,6 +86,12 @@ export default function ReaderApp() {
     if (novel) document.title = `${novel.title} - Ch. ${ch}`;
   }, [novel, ch]);
 
+  useEffect(() => {
+    const onToggle = () => toggleChapters();
+    window.addEventListener('reader-toggle-chapters', onToggle);
+    return () => window.removeEventListener('reader-toggle-chapters', onToggle);
+  }, [toggleChapters]);
+
   const goToChapter = useCallback((target) => {
     window.location.href = `reader.html?id=${encodeURIComponent(id)}&ch=${encodeURIComponent(target)}`;
   }, [id]);
@@ -68,9 +99,24 @@ export default function ReaderApp() {
   useEffect(() => {
     const onKey = (e) => {
       const activeEl = document.activeElement;
-      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
+      const isEditable = activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.isContentEditable ||
+        (typeof activeEl.closest === 'function' && activeEl.closest('[contenteditable="true"]'))
+      );
+      if (isEditable) return;
 
-      if (e.key === 't' || e.key === 'T') {
+      // Letter shortcuts use Alt+<letter> so plain typing (and editing) never triggers them.
+      const alt = e.altKey && !e.ctrlKey && !e.metaKey;
+
+      if (alt && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        toggleChapters();
+        return;
+      }
+
+      if (alt && (e.key === 't' || e.key === 'T')) {
         e.preventDefault();
         window.dispatchEvent(new Event('reader-toggle-typography'));
         return;
@@ -83,13 +129,13 @@ export default function ReaderApp() {
         return;
       }
 
-      if ((e.key === 's' || e.key === 'S') && chapter && chapter.originalRawText) {
+      if (alt && (e.key === 's' || e.key === 'S') && chapter && chapter.originalRawText) {
         e.preventDefault();
         window.dispatchEvent(new Event('reader-open-source'));
         return;
       }
 
-      if (e.key === 'n' || e.key === 'N') {
+      if (alt && (e.key === 'n' || e.key === 'N')) {
         e.preventDefault();
         window.dispatchEvent(new Event('novel-open-name-list'));
         return;
@@ -123,7 +169,7 @@ export default function ReaderApp() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [novel, chapter, ch, goToChapter]);
+  }, [novel, chapter, ch, goToChapter, toggleChapters]);
 
   const handleDownload = useCallback(async () => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -173,9 +219,13 @@ export default function ReaderApp() {
         backHref={backHref}
         settingsHref={settingsHref}
         hasSource={hasSource}
+        chaptersOpen={chaptersOpen}
       />
 
-      <main className="max-w-3xl mx-auto w-full px-5 sm:px-8 py-8 sm:py-12 flex-1 flex flex-col gap-8">
+      <div className="flex-1 flex min-h-0">
+        <ReaderChapterList open={chaptersOpen} onClose={() => updateChaptersOpen(false)} />
+
+        <main className="max-w-3xl mx-auto w-full px-5 sm:px-8 py-8 sm:py-12 flex-1 min-w-0 flex flex-col gap-8">
         {status === 'loading' ? (
           <div id="reader-loading" className="flex flex-col items-center justify-center py-24 gap-3 text-center">
             <svg className="animate-spin h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -216,6 +266,7 @@ export default function ReaderApp() {
           />
         ) : null}
       </main>
+      </div>
 
       <ReaderSourceDrawer />
       <ReaderToast />

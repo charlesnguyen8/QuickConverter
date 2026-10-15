@@ -75,6 +75,10 @@ const DEFAULT_MODELS = {
   compact: ['deepseek-flash', 'deepseek-chat']
 };
 
+// Custom / local-bridge endpoints have no fixed model roster: the only built-in option is
+// `auto` until a Test Connection replaces the list with the bridge's real models.
+const CUSTOM_MODELS = ['auto'];
+
 const DEFAULT_PRICING = {
   label: 'Off-Peak (50% Off)',
   badgeClass: 'border-emerald-500/30 bg-emerald-500/15 text-emerald-400',
@@ -203,10 +207,21 @@ const AiConfigPanel = forwardRef(function AiConfigPanel(props, ref) {
       }
       if (cancelled) return;
 
-      setProvider(providerConfig.provider === 'official' ? 'official' : 'custom');
+      const isCustomProvider = providerConfig.provider !== 'official';
+      setProvider(isCustomProvider ? 'custom' : 'official');
       setCustomUrl(providerConfig.customUrl || DEFAULT_CUSTOM_URL);
       setEnabled(getStored('quickconverter_deepseek_enabled', 'false') === 'true');
-      setModel(getStored('quickconverter_deepseek_model', 'deepseek-flash'));
+      const storedModel = getStored('quickconverter_deepseek_model', isCustomProvider ? 'auto' : 'deepseek-flash');
+      if (isCustomProvider) {
+        const useModel = storedModel || 'auto';
+        setModels(useModel === 'auto' ? CUSTOM_MODELS : [useModel, ...CUSTOM_MODELS]);
+        setModel(useModel);
+      } else if (!storedModel || storedModel === 'auto') {
+        setModel('deepseek-flash');
+        setStored('quickconverter_deepseek_model', 'deepseek-flash');
+      } else {
+        setModel(storedModel);
+      }
       setCooldown(readCooldown());
 
       if (caps.prompt) {
@@ -307,9 +322,20 @@ const AiConfigPanel = forwardRef(function AiConfigPanel(props, ref) {
     }
     setProvider(nextProvider);
     if (nextProvider === 'official') {
+      setModels(DEFAULT_MODELS[variant]);
+      if (!model || model === 'auto' || !DEFAULT_MODELS[variant].includes(model)) {
+        setModel('deepseek-flash');
+        setStored('quickconverter_deepseek_model', 'deepseek-flash');
+      }
       syncPricing();
       if (trackerRef.current) trackerRef.current.refresh(true);
     } else {
+      // Custom/bridge: only `auto` is built in until Test Connection lists the bridge models.
+      setModels(CUSTOM_MODELS);
+      if (!model || model === 'auto' || DEFAULT_MODELS[variant].includes(model)) {
+        setModel('auto');
+        setStored('quickconverter_deepseek_model', 'auto');
+      }
       setBalance(null);
       setBalanceUpdating(false);
     }

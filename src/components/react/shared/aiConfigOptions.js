@@ -12,6 +12,10 @@ export function buildDownloadOptions(config, { includeTopLevelCooldown = false }
   const custom = provider !== 'official';
   let key = (apiKey || '').trim();
 
+  const rawModel = typeof model === 'string' ? model.trim() : '';
+  const staleModel = !custom && (!rawModel || rawModel.toLowerCase() === 'auto');
+  const resolvedModel = staleModel ? 'deepseek-flash' : (custom ? model : rawModel);
+
   if (enabled && !key && !custom) return null;
   if (enabled && !key && custom) key = 'sk-local';
 
@@ -22,7 +26,7 @@ export function buildDownloadOptions(config, { includeTopLevelCooldown = false }
       cooldown: cooldownEnabled,
       apiKey: key || (custom ? 'sk-local' : ''),
       prompt,
-      model,
+      model: resolvedModel,
       provider,
       baseUrl: custom ? customUrl : undefined
     }

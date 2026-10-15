@@ -6,38 +6,45 @@ function getNovelId() {
   return new URLSearchParams(window.location.search).get('id');
 }
 
-const PANEL_IDS = {
-  toggle: 'reader-deepseek-toggle',
-  toggleBadge: 'reader-deepseek-toggle-badge',
-  providerBadge: 'reader-provider-badge',
-  providerBtnOfficial: 'reader-provider-btn-official',
-  providerBtnCustom: 'reader-provider-btn-custom',
-  customRow: 'reader-custom-api-row',
-  customUrl: 'reader-custom-base-url',
-  presetBtn: 'reader-bridge-preset-btn',
-  testCustomBtn: 'reader-test-custom-btn',
-  apiKeyLabel: 'reader-api-key-label',
-  apiKey: 'reader-deepseek-api-key',
-  rememberKey: 'reader-remember-deepseek-key',
-  clearKeyBtn: 'reader-clear-deepseek-btn',
-  prompt: 'reader-deepseek-prompt',
-  visibilityBtn: 'reader-toggle-key-visibility',
-  fields: 'reader-deepseek-config-fields',
-  editPromptBtn: 'reader-edit-prompt-btn',
-  modelSelect: 'reader-deepseek-model-select',
-  testBtn: 'reader-test-deepseek-btn',
-  testStatus: 'reader-deepseek-test-status',
-  balanceBadge: 'reader-deepseek-balance-badge',
-  balanceText: 'reader-deepseek-balance-text',
-  refreshBalanceBtn: 'reader-deepseek-refresh-balance-btn',
-  refreshBalanceIcon: 'reader-deepseek-refresh-balance-icon',
-  pricingBadge: 'reader-deepseek-pricing-badge'
+const ID_SUFFIXES = {
+  toggle: 'deepseek-toggle',
+  toggleBadge: 'deepseek-toggle-badge',
+  providerBadge: 'provider-badge',
+  providerBtnOfficial: 'provider-btn-official',
+  providerBtnCustom: 'provider-btn-custom',
+  customRow: 'custom-api-row',
+  customUrl: 'custom-base-url',
+  presetBtn: 'bridge-preset-btn',
+  testCustomBtn: 'test-custom-btn',
+  apiKeyLabel: 'api-key-label',
+  apiKey: 'deepseek-api-key',
+  rememberKey: 'remember-deepseek-key',
+  clearKeyBtn: 'clear-deepseek-btn',
+  prompt: 'deepseek-prompt',
+  visibilityBtn: 'toggle-key-visibility',
+  fields: 'deepseek-config-fields',
+  editPromptBtn: 'edit-prompt-btn',
+  modelSelect: 'deepseek-model-select',
+  testBtn: 'test-deepseek-btn',
+  testStatus: 'deepseek-test-status',
+  balanceBadge: 'deepseek-balance-badge',
+  balanceText: 'deepseek-balance-text',
+  refreshBalanceBtn: 'deepseek-refresh-balance-btn',
+  refreshBalanceIcon: 'deepseek-refresh-balance-icon',
+  pricingBadge: 'deepseek-pricing-badge'
 };
 
-const ReaderDeepseekCard = forwardRef(function ReaderDeepseekCard(_props, ref) {
+function makePanelIds(prefix) {
+  const ids = {};
+  Object.keys(ID_SUFFIXES).forEach((key) => { ids[key] = `${prefix}-${ID_SUFFIXES[key]}`; });
+  return ids;
+}
+
+const ReaderDeepseekCard = forwardRef(function ReaderDeepseekCard({ idPrefix = 'reader', variant = 'full', className }, ref) {
   const [novelId] = useState(getNovelId);
   const [prompt, setPrompt] = useState(null);
   const novelRef = useRef(null);
+  const ids = makePanelIds(idPrefix);
 
   useEffect(() => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -74,13 +81,13 @@ const ReaderDeepseekCard = forwardRef(function ReaderDeepseekCard(_props, ref) {
   return (
     <AiConfigPanel
       ref={ref}
-      variant="full"
+      variant={variant}
       capabilities={{ cooldown: false }}
       options={{ readerPromptStyle: true }}
-      ids={PANEL_IDS}
+      ids={ids}
       hooks={hooks}
       prompt={prompt}
-      className="w-full text-left rounded-xl bg-slate-800/80 border border-slate-700/80 p-5 shadow-sm flex flex-col gap-4"
+      className={className || 'w-full text-left rounded-xl bg-slate-800/80 border border-slate-700/80 p-5 shadow-sm flex flex-col gap-4'}
       copy={{ description: 'When enabled, this chapter will be automatically translated via DeepSeek API before saving.' }}
     />
   );

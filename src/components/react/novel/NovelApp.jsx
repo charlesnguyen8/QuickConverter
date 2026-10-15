@@ -28,15 +28,30 @@ export default function NovelApp() {
   const [syncing, setSyncing] = useState(false);
   const [queuing, setQueuing] = useState(false);
   const [stats, setStats] = useState(null);
+  const [nameListCount, setNameListCount] = useState(0);
   const panelRef = useRef(null);
 
   useEffect(() => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!novelId || !storage) return;
     storage.getNovelById(novelId)
-      .then((record) => { if (record) setNovel(record); })
+      .then((record) => {
+        if (record) {
+          setNovel(record);
+          setNameListCount(Array.isArray(record.nameList) ? record.nameList.length : 0);
+        }
+      })
       .catch((e) => console.error('Error loading novel details:', e));
   }, [novelId]);
+
+  useEffect(() => {
+    const onNames = (e) => {
+      const detail = (e && e.detail) || {};
+      setNameListCount(detail.count || 0);
+    };
+    window.addEventListener('novel-name-list-updated', onNames);
+    return () => window.removeEventListener('novel-name-list-updated', onNames);
+  }, []);
 
   useEffect(() => {
     const onStats = (e) => {
@@ -216,6 +231,20 @@ export default function NovelApp() {
           </a>
 
           <div className="flex items-center gap-3">
+            <button
+              id="open-name-list-btn"
+              type="button"
+              onClick={() => window.dispatchEvent(new Event('novel-open-name-list'))}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-white transition px-2.5 py-1.5 rounded-md hover:bg-slate-800 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+              title="Open Novel Name List & Glossary"
+            >
+              <span aria-hidden="true">📖</span>
+              <span>Name List</span>
+              <span id="name-list-count-badge" className="px-1.5 rounded-full text-[10px] font-bold bg-indigo-500/25 text-indigo-300 border border-indigo-500/30">
+                {nameListCount}
+              </span>
+            </button>
+
             <a
               id="novel-settings-btn"
               href={settingsHref}

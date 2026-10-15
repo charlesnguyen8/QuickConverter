@@ -508,7 +508,204 @@ async function runTests() {
   assert(syncRecord && syncRecord.list.length === 1, 'legacy list flushed to its own record first');
   console.log('✓ updateNovel flushes a legacy inline list instead of re-embedding it');
 
-  console.log('\n🎉 All 21 Novel Name List tests passed!');
+  // 22. Extra glossary kinds (locked / soft) share the list contract but stay isolated
+  await StorageService.addNameEntry('novel-test', { original: 'Sect', translation: 'Tông môn' }, 'locked');
+  await StorageService.addNameEntry('novel-test', { original: 'Elder', translation: 'Trưởng lão' }, 'soft');
+  const locked = await StorageService.getNameList('novel-test', 'locked');
+  const soft = await StorageService.getNameList('novel-test', 'soft');
+  assert.strictEqual(locked.length, 1, 'locked glossary stores its own entry');
+  assert.strictEqual(locked[0].translation, 'Tông môn');
+  assert.strictEqual(soft.length, 1, 'soft glossary stores its own entry');
+  assert.strictEqual(soft[0].translation, 'Trưởng lão');
+  assert(mockDbStore['locked::novel-test'] && mockDbStore['locked::novel-test'].list.length === 1, 'locked list lives in its own record');
+  assert(mockDbStore['soft::novel-test'] && mockDbStore['soft::novel-test'].list.length === 1, 'soft list lives in its own record');
+  assert.strictEqual((await StorageService.getNameList('novel-test')).length, 1, 'name list is independent of glossaries');
+
+  const lockedId = locked[0].id;
+  await StorageService.updateNameEntry('novel-test', lockedId, { translation: 'Tông Môn' }, 'locked');
+  assert.strictEqual((await StorageService.getNameList('novel-test', 'locked'))[0].translation, 'Tông Môn');
+  await StorageService.deleteNameEntry('novel-test', lockedId, 'locked');
+  assert.strictEqual((await StorageService.getNameList('novel-test', 'locked')).length, 0);
+  assert.strictEqual((await StorageService.getNameList('novel-test', 'soft')).length, 1, 'deleting from locked must not touch soft');
+  console.log('✓ locked/soft glossary kinds are isolated per novel and per kind');
+
+  // 23. parseGlossaryBlocks strips/returns NAME_LIST, LOCKED_GLOSSARY and SOFT_GLOSSARY
+  const annotated = [
+    'The chapter body.',
+    '<<<NAME_LIST_START>>>Yanguo=Yên quốc<<<NAME_LIST_END>>>',
+    '<<<LOCKED_GLOSSARY_START>>>Qi=Prana|Dao=Đạo<<<LOCKED_GLOSSARY_END>>>',
+    '<<<SOFT_GLOSSARY_START>>>Elder=Trưởng lão<<<SOFT_GLOSSARY_END>>>'
+  ].join('\n');
+  const blocks = StorageService.parseGlossaryBlocks(annotated);
+  assert.strictEqual(blocks.names.length, 1, 'name list block parsed');
+  assert.strictEqual(blocks.names[0].original, 'Yanguo');
+  assert.strictEqual(blocks.locked.length, 2, 'locked glossary block parsed');
+  assert.strictEqual(blocks.locked[1].translation, 'Đạo');
+  assert.strictEqual(blocks.soft.length, 1, 'soft glossary block parsed');
+  assert.strictEqual(blocks.soft[0].translation, 'Trưởng lão');
+  assert(!/GLOSSARY|NAME_LIST/.test(blocks.text), 'all annotation markers stripped from chapter text');
+  assert(blocks.text.includes('The chapter body.'), 'chapter body preserved');
+
+  const noBlocks = StorageService.parseGlossaryBlocks('Just text.');
+  assert.strictEqual(noBlocks.locked.length, 0);
+  assert.strictEqual(noBlocks.soft.length, 0);
+  assert.strictEqual(noBlocks.text, 'Just text.');
+  console.log('✓ parseGlossaryBlocks strips NAME_LIST, LOCKED_GLOSSARY and SOFT_GLOSSARY blocks');
+
+  // 24. addNameEntries routes auto-detected glossary entries to the requested kind
+  const addedLocked = await StorageService.addNameEntries('novel-test', [{ original: 'Dao', translation: 'Đạo' }], 3, 'locked');
+  assert.strictEqual(addedLocked.length, 1);
+  assert(addedLocked[0].isNew === true, 'auto-captured glossary entries are flagged new');
+  const autoLocked = await StorageService.getNameList('novel-test', 'locked');
+  assert.strictEqual(autoLocked.length, 1, 'auto-detected locked entry persisted');
+  assert.strictEqual(autoLocked[0].chapterFirstSeen, 3, 'auto-detected entry keeps its chapter');
+  console.log('✓ addNameEntries auto-populates the locked/soft glossaries');
+
+  // 25. moveNameEntry promotes a soft term to locked without duplicating an existing entry
+  await StorageService.saveNameList('novel-test', [{ id: 's1', original: 'Elder', translation: 'Trưởng lão', addedAt: 5 }], 'soft');
+  await StorageService.saveNameList('novel-test', [{ id: 'l1', original: 'Elder', translation: 'Old', addedAt: 1 }], 'locked');
+  const movedDup = await StorageService.moveNameEntry('novel-test', 's1', 'soft', 'locked');
+  assert.strictEqual(movedDup.id, 'l1', 'existing locked entry is reused, not duplicated');
+  assert.strictEqual((await StorageService.getNameList('novel-test', 'locked')).length, 1, 'locked keeps a single entry');
+  assert.strictEqual((await StorageService.getNameList('novel-test', 'soft')).length, 0, 'moved term is removed from soft');
+
+  await StorageService.saveNameList('novel-test', [{ id: 's2', original: 'Qi', translation: 'Prana', addedAt: 9 }], 'soft');
+  const movedNew = await StorageService.moveNameEntry('novel-test', 's2', 'soft', 'locked');
+  assert.strictEqual(movedNew.original, 'Qi');
+  assert.strictEqual(movedNew.translation, 'Prana');
+  const lockedAfterMove = await StorageService.getNameList('novel-test', 'locked');
+  assert(lockedAfterMove.some((e) => e.original === 'Qi'), 'new term lands in the locked glossary');
+  assert.strictEqual((await StorageService.getNameList('novel-test', 'soft')).length, 0, 'soft glossary emptied by the move');
+  assert.strictEqual(await StorageService.moveNameEntry('novel-test', 'missing', 'soft', 'locked'), null, 'missing entry returns null');
+  console.log('✓ moveNameEntry promotes soft terms into the locked glossary');
+
+  // 26. applyLockedGlossary: deterministic §...§ preprocessing of the source text
+  const lockedTerms = [
+    { original: 'cultivator', translation: 'tu sĩ' },
+    { original: 'high-level cultivator', translation: 'tu sĩ cấp cao' },
+    { original: 'Qi', translation: 'khí' }
+  ];
+
+  // normal + multi-word + repeated
+  assert.strictEqual(
+    StorageService.applyLockedGlossary('The first-rate cultivator examined his spiritual root.', [
+      { original: 'first-rate', translation: 'nhất lưu' },
+      { original: 'cultivator', translation: 'tu sĩ' },
+      { original: 'spiritual root', translation: 'linh căn' }
+    ]),
+    'The §nhất lưu§ §tu sĩ§ examined his §linh căn§.',
+    'normal and multi-word terms are wrapped'
+  );
+  assert.strictEqual(
+    StorageService.applyLockedGlossary('A cultivator can sense Qi. Every cultivator knows.', lockedTerms),
+    'A §tu sĩ§ can sense §khí§. Every §tu sĩ§ knows.',
+    'every occurrence is replaced'
+  );
+
+  // overlapping terms: longest match wins
+  assert.strictEqual(
+    StorageService.applyLockedGlossary('A high-level cultivator and a cultivator.', lockedTerms),
+    'A §tu sĩ cấp cao§ and a §tu sĩ§.',
+    'longer overlapping term wins'
+  );
+
+  // case-insensitive while preserving the canonical Vietnamese value
+  assert.strictEqual(
+    StorageService.applyLockedGlossary('CULTIVATOR and qi', lockedTerms),
+    '§tu sĩ§ and §khí§',
+    'matching is case-insensitive'
+  );
+
+  // partial-word protection
+  assert.strictEqual(
+    StorageService.applyLockedGlossary('martial art', [{ original: 'art', translation: 'nghệ thuật' }]),
+    'martial §nghệ thuật§',
+    'whole-word term replaced beside a partial-word lookalike'
+  );
+  assert.strictEqual(
+    StorageService.applyLockedGlossary('martial', [{ original: 'art', translation: 'nghệ thuật' }]),
+    'martial',
+    'partial-word lookalike is left untouched'
+  );
+  assert.strictEqual(
+    StorageService.applyLockedGlossary('cultivators', lockedTerms),
+    'cultivators',
+    'whole-word matching does not invent plurals'
+  );
+
+  // existing @n@ placeholders and §...§ spans are never touched or double-wrapped
+  assert.strictEqual(
+    StorageService.applyLockedGlossary('The @1@ cultivator met @a@.', lockedTerms),
+    'The @1@ §tu sĩ§ met @a@.',
+    'name placeholders are preserved'
+  );
+  assert.strictEqual(
+    StorageService.applyLockedGlossary('§tu sĩ§ cultivator', lockedTerms),
+    '§tu sĩ§ §tu sĩ§',
+    'existing §...§ text is not reprocessed'
+  );
+  assert.strictEqual(
+    StorageService.applyLockedGlossary('§cultivator§', lockedTerms),
+    '§cultivator§',
+    'locked terms are never double-wrapped'
+  );
+
+  // no match stays byte-for-byte identical
+  assert.strictEqual(
+    StorageService.applyLockedGlossary('Nothing to see here.', lockedTerms),
+    'Nothing to see here.',
+    'unmatched input is unchanged'
+  );
+
+  // stripLockedMarkers removes the § signal before saving translated text
+  assert.strictEqual(
+    StorageService.stripLockedMarkers('The §nhất lưu§ §tu sĩ§ examined §linh căn§.'),
+    'The nhất lưu tu sĩ examined linh căn.',
+    '§ markers are stripped from the saved chapter'
+  );
+  assert.strictEqual(StorageService.stripLockedMarkers('plain text'), 'plain text');
+  console.log('✓ applyLockedGlossary wraps whole-word locked terms and stripLockedMarkers unwraps them');
+
+  // 27. parseGlossaryBlocks extracts and strips the <<<DELAY>>>Ns<<<DELAY>>> block
+  const withDelay = StorageService.parseGlossaryBlocks('Body text.\n<<<DELAY>>>115s<<<DELAY>>>');
+  assert.strictEqual(withDelay.delaySeconds, 115, 'integer seconds parsed from the DELAY marker');
+  assert.strictEqual(withDelay.text, 'Body text.');
+  assert(!withDelay.text.includes('DELAY'), 'DELAY marker stripped from the chapter text');
+  assert.strictEqual(StorageService.parseGlossaryBlocks('No marker.').delaySeconds, 0, 'absent marker means no forced delay');
+  assert.strictEqual(StorageService.parseGlossaryBlocks('<<<DELAY>>>115<<<DELAY>>>').delaySeconds, 0, 'the trailing "s" is required');
+  assert.strictEqual(StorageService.parseGlossaryBlocks('<<<DELAY>>>115s<<<DELAY>>>').text, '', 'marker-only text cleans to empty');
+
+  const combined = 'Ch.\n<<<NAME_LIST_START>>>A=a<<<NAME_LIST_END>>>\n<<<DELAY>>>10s<<<DELAY>>>';
+  const parsedCombined = StorageService.parseGlossaryBlocks(combined);
+  assert.strictEqual(parsedCombined.names.length, 1, 'glossary blocks still parse');
+  assert.strictEqual(parsedCombined.delaySeconds, 10, 'delay coexists with glossary blocks');
+  assert.strictEqual(parsedCombined.text, 'Ch.');
+  console.log('✓ parseGlossaryBlocks extracts and strips the DELAY marker');
+
+  // 28. Glossary list records must never surface as managed novels in the library
+  await StorageService.saveNameList('novel-test', [{ id: 'n1', original: 'A', translation: 'B', addedAt: 1 }], 'namelist');
+  await StorageService.saveNameList('novel-test', [{ id: 'l1', original: 'C', translation: 'D', addedAt: 1 }], 'locked');
+  await StorageService.saveNameList('novel-test', [{ id: 's1', original: 'E', translation: 'F', addedAt: 1 }], 'soft');
+  const managedNovels = await StorageService.getManagedNovels();
+  assert(
+    !managedNovels.some((n) => String(n.id).startsWith('namelist::') || String(n.id).startsWith('locked::') || String(n.id).startsWith('soft::')),
+    'list records must not be listed as novels'
+  );
+  assert(managedNovels.some((n) => n.id === 'novel-test'), 'the real novel is still listed');
+  console.log('✓ glossary records are hidden from the managed novel list');
+
+  // 29. parseTranslationBlock reads the manual-prompt result block
+  const tr = StorageService.parseTranslationBlock('<<<TRANSLATION_START>>>Yanguo=Yên quốc|Li Qiye=Lý Thất Dạ<<<TRANSLATION_END>>>');
+  assert.strictEqual(tr.length, 2, 'both pairs in the TRANSLATION block parsed');
+  assert.strictEqual(tr[0].original, 'Yanguo');
+  assert.strictEqual(tr[0].translation, 'Yên quốc');
+  assert.strictEqual(tr[1].translation, 'Lý Thất Dạ');
+  const bare = StorageService.parseTranslationBlock('A=1\nB=2');
+  assert.strictEqual(bare.length, 2, 'falls back to the raw body when markers are absent');
+  assert.strictEqual(StorageService.parseTranslationBlock('no pairs here').length, 0, 'garbage yields no pairs');
+  console.log('✓ parseTranslationBlock reads the pasted TRANSLATION result');
+
+  console.log('\n🎉 All 29 Novel Name List tests passed!');
 }
 
 runTests().catch((err) => {

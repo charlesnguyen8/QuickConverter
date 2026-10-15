@@ -120,7 +120,7 @@ export default function ReaderChapter() {
   const fallbackTitle = (chapter && chapter.title) || (catalogItem && catalogItem.title) || `Chapter ${params.ch}`;
   const novelTitle = (novel && novel.title) || 'Novel';
   const nameList = novel && Array.isArray(novel.nameList) ? novel.nameList : [];
-  const nameMatcher = useMemo(() => createNameMatcher(nameList), [nameList]);
+  const nameMatcher = useMemo(() => createNameMatcher(nameList, { caseSensitive: true }), [nameList]);
   const highlightedParagraphs = useMemo(
     () => paragraphs.map((paragraph) => nameMatcher.split(paragraph)),
     [paragraphs, nameMatcher]

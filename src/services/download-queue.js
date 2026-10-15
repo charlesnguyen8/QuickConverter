@@ -57,6 +57,7 @@
       this.subscribers = new Set();
       this._initialized = false;
       this.cooldown = null;
+      this.pauseError = null;
       this._cooldownTickInterval = null;
       this.cooldownEnabled = true;
       this.minCooldownSec = 180; // 3.0 minutes
@@ -81,6 +82,7 @@
             this.queue = msg.state.queue || [];
             this.isPaused = !!msg.state.isPaused;
             this.isProcessing = !!msg.state.isProcessing;
+            this.pauseError = msg.state.pauseError || null;
             this._notifySubscribers();
           } else if (msg && msg.action === 'QUEUE_PROGRESS' && this.activeTask) {
             // Lightweight in-place progress update without storage disk serialization overhead
@@ -110,6 +112,7 @@
             this.queue = saved.queue || [];
             this.isPaused = !!saved.isPaused;
             this.isProcessing = !!saved.activeTask;
+            this.pauseError = saved.pauseError || null;
             this._notifySubscribers();
           }
         });
@@ -179,6 +182,7 @@
 
         this.isPaused = !!saved.isPaused;
         this.isProcessing = false;
+        this.pauseError = saved.pauseError || null;
 
         // Restore cooldown state if active
         if (saved.cooldown && saved.cooldown.active) {
@@ -207,6 +211,7 @@
         this.queue = savedQueue;
         this.isPaused = !!saved.isPaused;
         this.isProcessing = !!this.activeTask;
+        this.pauseError = saved.pauseError || null;
         if (saved.cooldown && saved.cooldown.active) {
           const retryAt = saved.cooldown.retryAt;
           const remSec = retryAt ? Math.max(0, Math.round((retryAt - Date.now()) / 1000)) : (saved.cooldown.secondsRemaining || 0);
@@ -249,7 +254,8 @@
         isPaused: this.isPaused,
         isProcessing: this.isProcessing,
         totalCount: (this.activeTask ? 1 : 0) + this.queue.length,
-        cooldown: this.cooldown ? { ...this.cooldown } : null
+        cooldown: this.cooldown ? { ...this.cooldown } : null,
+        pauseError: this.pauseError || null
       };
     }
 
@@ -265,7 +271,8 @@
                 activeTask: state.activeTask,
                 queue: state.queue,
                 isPaused: state.isPaused,
-                cooldown: state.cooldown
+                cooldown: state.cooldown,
+                pauseError: state.pauseError
               }
             });
           } catch (e) {}
@@ -275,7 +282,8 @@
               activeTask: state.activeTask,
               queue: state.queue,
               isPaused: state.isPaused,
-              cooldown: state.cooldown
+              cooldown: state.cooldown,
+              pauseError: state.pauseError
             }));
           } catch (e) {}
         }
@@ -564,6 +572,7 @@
      */
     pause() {
       this.isPaused = true;
+      this.pauseError = null;
       if (this.cooldown) {
         this._clearCooldownTimers();
         this.cooldown = null;
@@ -591,6 +600,7 @@
      */
     resume() {
       this.isPaused = false;
+      this.pauseError = null;
       if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         try {
           chrome.runtime.sendMessage({ action: 'QUEUE_RESUME' }, (resp) => {
@@ -622,6 +632,7 @@
       this._lastCooldownDurationSec = null;
       this.queue = [];
       this.isPaused = false;
+      this.pauseError = null;
       const active = this.activeTask;
       this.activeTask = null;
       this.isProcessing = false;
@@ -729,6 +740,7 @@
 
       this._clearCooldownTimers();
       this.cooldown = null;
+      this.pauseError = null;
       if (this.queue.length > 0) {
         this.queue.shift();
       }
@@ -798,7 +810,7 @@
       }
     }
 
-    _startCooldown() {
+    _startCooldown(forcedDurationSec) {
       this._clearCooldownTimers();
 
       if (this.isPaused || this.queue.length === 0 || this._isClearing) {
@@ -809,12 +821,16 @@
       }
 
       const nextTask = this.queue[0];
+      const forced = Number(forcedDurationSec);
       const min = Math.max(1, Math.min(this.minCooldownSec, this.maxCooldownSec));
       const max = Math.max(min, this.maxCooldownSec);
       const span = max - min;
 
       let durationSec;
-      if (span <= 0) {
+      if (Number.isFinite(forced) && forced > 0) {
+        // Model-requested delay (<<<DELAY>>>Ns<<<DELAY>>> + 5s): exact, ignores the toggle/min/max.
+        durationSec = Math.round(forced);
+      } else if (span <= 0) {
         durationSec = min;
       } else {
         const delta = Math.round(span * 0.25);
@@ -897,7 +913,7 @@
      * Starts the automatic 1h 15m rate-limit and failure backoff timer on chapter failure.
      * Keeps the failed task at the top of the queue and counts down until automatic retry.
      */
-    _startRetryCooldown(task, errorMessage) {
+    _startRetryCooldown(task, errorMessage, isRateLimit = false) {
       this._clearCooldownTimers();
 
       if (this.isPaused || this.queue.length === 0 || this._isClearing) {
@@ -913,6 +929,7 @@
       this.cooldown = {
         active: true,
         type: 'retry',
+        rateLimit: !!isRateLimit,
         totalSeconds: durationSec,
         secondsRemaining: durationSec,
         retryAt,
@@ -1143,6 +1160,7 @@
               task.status = 'paused_error';
               this.queue.unshift(task);
               this.isPaused = true;
+              this.pauseError = task.error || null;
               this._clearCooldownTimers();
               this.cooldown = null;
               this._sync();
@@ -1151,7 +1169,24 @@
               return;
             }
 
-            // Error / rate-limit backoff handling
+            // No-response / timeout failures pause the queue and surface the error instead of
+            // consuming the rate-limit retry budget. Resume re-attempts the same chapter.
+            const isTimeout = errLower.includes('timed out') || errLower.includes('no data received');
+            if (isTimeout) {
+              task.status = 'paused_error';
+              this.queue.unshift(task);
+              this.isPaused = true;
+              this.pauseError = task.error || 'Translation timed out.';
+              this._clearCooldownTimers();
+              this.cooldown = null;
+              this._sync();
+              this._notifySubscribers();
+              updateKeepAlive(false);
+              return;
+            }
+
+            // Rate-limit (429) and other failures: back off ~1h15m and retry the chapter.
+            const isRateLimit = errLower.includes('rate limit') || errLower.includes('429');
             const currentRetries = (task.retryCount || 0) + 1;
             task.retryCount = currentRetries;
 
@@ -1159,6 +1194,7 @@
               // Exceeded max retries: mark permanently failed, do not unshift, pause queue
               task.status = 'failed';
               this.isPaused = true;
+              this.pauseError = task.error || null;
               this._clearCooldownTimers();
               this.cooldown = null;
               this._sync();
@@ -1172,7 +1208,7 @@
             this.queue.unshift(task);
 
             // Start 1 hour 15 minute backoff cooldown
-            this._startRetryCooldown(task, task.error);
+            this._startRetryCooldown(task, task.error, isRateLimit);
             return;
           }
 
@@ -1182,6 +1218,14 @@
             this._sync();
             updateKeepAlive(false);
           } else {
+            // Model-requested wait: <<<DELAY>>>Ns<<<DELAY>>> on a successful translation forces
+            // exactly N + 5 seconds, regardless of the cooldown toggle/min/max.
+            const requestedDelay = Number(task?.result?.translationDelay) || 0;
+            if (requestedDelay > 0) {
+              this._startCooldown(requestedDelay + 5);
+              return;
+            }
+
             // Cooldown applies when enabled AND task was translated (or has cooldown: true).
             // Raw chapter downloads without translation (options.translation.enabled: false) are not rate-limited and skip cooldown.
             const isExplicitNoTranslation = task?.options?.translation && task.options.translation.enabled === false;

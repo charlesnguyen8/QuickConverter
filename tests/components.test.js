@@ -171,7 +171,7 @@ function test(name, fn) {
   const header = render(h(ReaderHeader));
   test('ReaderHeader renders nav, font stepper and typography popover', () => {
     for (const id of ['reading-progress-bar', 'back-to-novel-btn', 'header-novel-title',
-      'header-chapter-title', 'toggle-source-drawer-btn', 'toggle-name-list-btn', 'font-dec-btn', 'font-size-label',
+      'header-chapter-title', 'toggle-source-drawer-btn', 'toggle-name-list-btn', 'toggle-chapter-list-btn', 'font-dec-btn', 'font-size-label',
       'font-inc-btn', 'reader-typography-wrapper', 'reader-typography-popover',
       'toggle-typography-popover-btn', 'reader-settings-btn']) {
       assert(header.includes(`id="${id}"`), `missing #${id}`);
@@ -198,6 +198,13 @@ function test(name, fn) {
     assert(configured.includes('href="novel.html?id=n1"'), 'expected the contextual back link');
     assert(configured.includes('href="settings.html?from=reader&amp;id=n1&amp;ch=7"'), 'expected the contextual settings link');
     assert(!/id="toggle-source-drawer-btn" class="[^"]*hidden/.test(configured), 'source button must show when the chapter has source');
+  });
+
+  test('ReaderHeader exposes the chapter-list toggle reflecting open state', () => {
+    const closed = render(h(ReaderHeader, { chaptersOpen: false }));
+    assert(/id="toggle-chapter-list-btn"[^>]*aria-pressed="false"/.test(closed), 'toggle must be unpressed when collapsed');
+    const opened = render(h(ReaderHeader, { chaptersOpen: true }));
+    assert(/id="toggle-chapter-list-btn"[^>]*aria-pressed="true"/.test(opened), 'toggle must be pressed when expanded');
   });
 
   test('computeScrollProgress clamps the reading progress to 0-100', () => {
@@ -237,10 +244,11 @@ function test(name, fn) {
   const readerApp = render(h(ReaderApp));
 
   test('ReaderApp renders the header, loading state, source drawer, name list and toast', () => {
-    for (const id of ['reading-progress-bar', 'reader-loading', 'source-drawer', 'name-list-drawer-panel', 'save-toast', 'save-toast-msg']) {
+    for (const id of ['reading-progress-bar', 'reader-loading', 'source-drawer', 'name-list-drawer-panel', 'reader-chapters-panel', 'save-toast', 'save-toast-msg']) {
       assert(readerApp.includes(`id="${id}"`), `missing #${id}`);
     }
     assert(readerApp.includes('id="toggle-name-list-btn"'), 'reader header must expose the Name List trigger');
+    assert(/id="reader-chapters-panel"[^>]*aria-hidden="true"/.test(readerApp), 'chapter list must start collapsed');
     assert(!readerApp.includes('id="reader-not-saved"'), 'not-saved panel must not render while loading');
     assert(!readerApp.includes('id="reader-content-view"'), 'content view must not render while loading');
   });
@@ -255,6 +263,54 @@ function test(name, fn) {
     }
     assert(novelApp.includes('Back to Library'), 'expected the back link');
     assert(novelApp.includes('Download All') && novelApp.includes('Sync Catalog'), 'expected the chapter action labels');
+    const novelHeader = novelApp.match(/<header[\s\S]*?<\/header>/);
+    assert(novelHeader && novelHeader[0].includes('id="open-name-list-btn"'), 'novel Name List trigger must live in the top bar next to Settings');
+  });
+
+  test('NameListDrawer exposes the Name List, Locked and Soft glossary tabs', () => {
+    for (const id of ['name-list-tabs', 'name-list-tab-namelist', 'name-list-tab-locked', 'name-list-tab-soft', 'name-list-generate-prompt-btn']) {
+      assert(novelApp.includes(`id="${id}"`), `missing #${id}`);
+    }
+    assert(novelApp.includes('Locked Glossary'), 'expected the Locked Glossary tab label');
+    assert(novelApp.includes('Soft Glossary'), 'expected the Soft Glossary tab label');
+    assert(/id="name-list-tab-namelist"[^>]*aria-selected="true"/.test(novelApp), 'name list tab is selected by default');
+    assert(!novelApp.includes('id="name-list-prompt-panel"'), 'translation prompt panel must not render until opened');
+  });
+
+  // --- ReaderChapterRow (reader sidebar owns its own row) ---
+  const { ReaderChapterRow } = await loadComponent('components/react/reader/ReaderChapterList.jsx');
+  test('ReaderChapterRow shows the full title, no cost and no delete', () => {
+    const novel = { id: 'n1', title: 'N' };
+    const chapter = { chapterNumber: 3, title: 'A very long chapter title that would otherwise be cut off' };
+    const downloaded = { chapterNumber: 3, translationCost: { formattedCost: '$0.01' } };
+
+    const row = render(h(ReaderChapterRow, { novel, chapter, chNum: 3, downloadedChapter: downloaded, isCurrent: true }));
+    assert(!row.includes('$0.01'), 'reader row must not show the translation cost');
+    assert(!row.includes('truncate'), 'reader row must not truncate the title');
+    assert(row.includes('A very long chapter title that would otherwise be cut off'), 'reader row shows the full title');
+    assert(row.includes('ring-indigo-500/50'), 'current chapter is highlighted');
+
+    const unsaved = render(h(ReaderChapterRow, { novel, chapter, chNum: 4 }));
+    assert(unsaved.includes('Download'), 'reader row offers a download action for unsaved chapters');
+    assert(!unsaved.includes('Delete'), 'reader row must not offer delete');
+  });
+
+  // --- QueueDock paused banner ---
+  const QueueDock = (await loadComponent('components/react/shared/QueueDock.jsx')).default;
+  test('QueueDock paused banner surfaces the pause error', () => {
+    const state = {
+      activeTask: null,
+      queue: [{ id: 'n1_ch3', novelId: 'n1', chapterNumber: 3, status: 'paused_error', chapterTitle: 'Ch 3' }],
+      isPaused: true,
+      isProcessing: false,
+      totalCount: 1,
+      cooldown: null,
+      pauseError: 'Translation timed out: no data received for 60 seconds.'
+    };
+    const service = { getState: () => state, subscribe: (cb) => { cb(state); return () => {}; } };
+    const html = render(h(QueueDock, { queueService: service, isPopup: false }));
+    assert(html.includes('Queue paused — request failed'), 'paused banner heading');
+    assert(html.includes('Translation timed out: no data received for 60 seconds.'), 'pause error message is shown');
   });
 
   const NovelDeepseekCard = (await loadComponent('components/react/novel/NovelDeepseekCard.jsx')).default;
@@ -298,6 +354,16 @@ function test(name, fn) {
     const opts = buildDownloadOptions({ enabled: true, provider: 'custom', customUrl: 'http://127.0.0.1:8000/v1', apiKey: '' });
     assert.strictEqual(opts.translation.apiKey, 'sk-local');
     assert.strictEqual(opts.translation.baseUrl, 'http://127.0.0.1:8000/v1');
+  });
+
+  test('buildDownloadOptions replaces a stale/blank official model with deepseek-flash', () => {
+    const legacy = buildDownloadOptions({ enabled: true, provider: 'official', apiKey: 'sk', model: 'auto' });
+    assert.strictEqual(legacy.translation.model, 'deepseek-flash', 'legacy "auto" must not reach the official API');
+    const blank = buildDownloadOptions({ enabled: true, provider: 'official', apiKey: 'sk', model: '  ' });
+    assert.strictEqual(blank.translation.model, 'deepseek-flash');
+
+    const custom = buildDownloadOptions({ enabled: true, provider: 'custom', customUrl: 'http://127.0.0.1:8000/v1', model: 'auto' });
+    assert.strictEqual(custom.translation.model, 'auto', 'custom bridges keep their own model ids');
   });
 
   test('buildDownloadOptions adds top-level cooldown on request and reflects the toggle', () => {
@@ -352,8 +418,15 @@ function test(name, fn) {
     assert.deepStrictEqual(splitByNames('plain text', []), [{ text: 'plain text' }]);
   });
 
-  test('splitByNames prefers the longest overlapping name', () => {
-    const entries = [
+  test('createNameMatcher highlights case-sensitively when asked (reader view)', () => {
+    const entries = [{ id: 'n1', original: 'Li Qiye', translation: 'Lý Thất Dạ' }];
+    const sensitive = createNameMatcher(entries, { caseSensitive: true });
+    assert.deepStrictEqual(sensitive.split('Lý Thất Dạ met lý thất dạ.').filter((s) => s.nameId).map((s) => s.text), ['Lý Thất Dạ'], 'lowercase spelling must not highlight');
+    const insensitive = createNameMatcher(entries);
+    assert.deepStrictEqual(insensitive.split('Lý Thất Dạ met lý thất dạ.').filter((s) => s.nameId).length, 2, 'default stays case-insensitive');
+  });
+
+  test('splitByNames prefers the longest overlapping name', () => {    const entries = [
       { id: 'short', original: 'a', translation: 'Vương' },
       { id: 'long', original: 'b', translation: 'Vương Lâm' }
     ];
@@ -453,9 +526,7 @@ function test(name, fn) {
       { id: 's', original: 'Seokyung', translation: 'Seokyung' },
       { id: 'sc', original: 'Seokyung city', translation: 'Tây Kinh thành' }
     ]);
-    assert.strictEqual(prefix.length, 1, 'a prefix part is flagged');
-    assert.strictEqual(prefix[0].longerId, 'sc');
-    assert.strictEqual(prefix[0].shorterId, 's');
+    assert.strictEqual(prefix.length, 0, 'a prefix-only part is not flagged');
   });
 
   test('computeVirtualWindow slices the visible range with overscan', () => {

@@ -50,10 +50,11 @@ const MAX_HIGHLIGHTS_PER_PARAGRAPH = 200;
 export function createNameMatcher(entries, options = {}) {
   const api = typeof globalThis !== 'undefined' ? globalThis.NameMatcher : null;
   const maxMatches = Number.isFinite(options.maxMatches) ? options.maxMatches : MAX_HIGHLIGHTS_PER_PARAGRAPH;
+  const caseSensitive = !!options.caseSensitive;
   const list = (Array.isArray(entries) ? entries : [])
     .filter((entry) => entry && typeof entry.translation === 'string' && entry.translation.trim())
     .map((entry) => ({ id: entry.id, original: entry.original || '', translation: entry.translation.trim() }));
-  const matcher = api && list.length > 0 ? api.createMatcher(list, { field: 'translation', caseSensitive: false }) : null;
+  const matcher = api && list.length > 0 ? api.createMatcher(list, { field: 'translation', caseSensitive }) : null;
 
   return {
     split(text) {
@@ -104,9 +105,8 @@ export function findNameConflicts(entries, options = {}) {
     matcher.findAll(longer.original, { all: true }).forEach((match) => {
       if (!match.id || match.id === longer.id) return;
       if (match.length >= longer.original.length) return;
-      const atPrefix = match.index === 0;
       const atSuffix = match.index + match.length === longer.original.length;
-      if (!atPrefix && !atSuffix) return;
+      if (!atSuffix) return;
       const shorter = byId.get(match.id);
       if (!shorter) return;
       if (foldForCompare(longer.translation, strict).includes(foldForCompare(shorter.translation, strict))) return;

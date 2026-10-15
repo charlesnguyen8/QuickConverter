@@ -10,7 +10,8 @@ export default function ReaderHeader({
   chapterTitle = 'Loading chapter...',
   backHref = 'library.html',
   settingsHref = 'settings.html?from=reader',
-  hasSource = false
+  hasSource = false,
+  chaptersOpen = false
 }) {
   const barRef = useRef(null);
   const percentRef = useRef(null);
@@ -36,6 +37,10 @@ export default function ReaderHeader({
 
   const openNameList = () => {
     window.dispatchEvent(new Event('novel-open-name-list'));
+  };
+
+  const toggleChapters = () => {
+    window.dispatchEvent(new Event('reader-toggle-chapters'));
   };
 
   return (
@@ -88,13 +93,21 @@ export default function ReaderHeader({
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               type="button"
-              id="toggle-name-list-btn"
-              onClick={openNameList}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
-              title="Open Name List & Glossary (N)"
+              id="toggle-chapter-list-btn"
+              onClick={toggleChapters}
+              aria-pressed={chaptersOpen}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold border transition focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer ${chaptersOpen ? 'text-white bg-indigo-600 border-indigo-500' : 'text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border-slate-700'}`}
+              title="Toggle Chapter List (Alt+C)"
             >
-              <span aria-hidden="true">📖</span>
-              <span className="hidden sm:inline">Names</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="8" y1="6" x2="21" y2="6" />
+                <line x1="8" y1="12" x2="21" y2="12" />
+                <line x1="8" y1="18" x2="21" y2="18" />
+                <line x1="3" y1="6" x2="3.01" y2="6" />
+                <line x1="3" y1="12" x2="3.01" y2="12" />
+                <line x1="3" y1="18" x2="3.01" y2="18" />
+              </svg>
+              <span className="hidden sm:inline">Chapters</span>
             </button>
 
             <button
@@ -102,7 +115,7 @@ export default function ReaderHeader({
               id="toggle-source-drawer-btn"
               onClick={openSource}
               className={`${hasSource ? '' : 'hidden '}inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer`}
-              title="View Original Raw Source text (S)"
+              title="View Original Raw Source text (Alt+S)"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
@@ -112,6 +125,17 @@ export default function ReaderHeader({
             </button>
 
             <ReaderPrefsPopover />
+
+            <button
+              type="button"
+              id="toggle-name-list-btn"
+              onClick={openNameList}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+              title="Open Name List & Glossary (Alt+N)"
+            >
+              <span aria-hidden="true">📖</span>
+              <span className="hidden sm:inline">Names</span>
+            </button>
 
             <a
               id="reader-settings-btn"

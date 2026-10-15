@@ -19,6 +19,7 @@ function makeRequest(result) {
 function fakeStore(name) {
   return {
     getAll: () => makeRequest(Object.values(stores[name])),
+    get: (id) => makeRequest(stores[name][id] || null),
     put: (record) => { stores[name][record.id] = { ...record }; },
     clear: () => { stores[name] = {}; }
   };
@@ -146,6 +147,21 @@ const StorageService = testEnv.StorageService || testEnv.window.StorageService;
   }
   assert.strictEqual(threw, true, 'rejects unknown format');
   console.log('✓ importAll: rejects unsupported backup format');
+
+  await StorageService.saveNameList('novel-1', [{ id: 'g1', original: 'Sect', translation: 'Tông môn', addedAt: 1 }], 'locked');
+  await StorageService.saveNameList('novel-1', [{ id: 'g2', original: 'Elder', translation: 'Trưởng lão', addedAt: 1 }], 'soft');
+  const withGlossaries = await StorageService.exportAll();
+  const exportedNovel = withGlossaries.novels.find((n) => n.id === 'novel-1');
+  assert(exportedNovel && exportedNovel.glossaries, 'export carries the glossary lists');
+  assert.strictEqual(exportedNovel.glossaries.locked[0].translation, 'Tông môn');
+  assert.strictEqual(exportedNovel.glossaries.soft[0].original, 'Elder');
+
+  await StorageService.importAll({ format: 'quickconverter-backup', version: 1, novels: [], chapters: [], preferences: {} }, { replace: true });
+  assert.strictEqual((await StorageService.getNameList('novel-1', 'locked')).length, 0, 'replace clears glossary records');
+  await StorageService.importAll(withGlossaries, { replace: true });
+  assert.strictEqual((await StorageService.getNameList('novel-1', 'locked'))[0].original, 'Sect', 'locked glossary restored');
+  assert.strictEqual((await StorageService.getNameList('novel-1', 'soft'))[0].translation, 'Trưởng lão', 'soft glossary restored');
+  console.log('✓ exportAll/importAll round-trips locked and soft glossaries');
 
   console.log('🎉 Cloud Backup Export / Import Test Suite: ALL TESTS PASSED!');
 })().catch((err) => {

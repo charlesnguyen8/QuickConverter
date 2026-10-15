@@ -219,7 +219,7 @@ export default function QueueDock({ queueService, isPopup }) {
               <span className="text-xl flex-shrink-0 animate-pulse">⚠️</span>
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-xs font-bold text-rose-200">Rate Limit / Failure Backoff</span>
+                  <span className="text-xs font-bold text-rose-200">{cooldown.rateLimit ? 'Rate Limit Backoff' : 'Failure Backoff'}</span>
                   <span className="text-[11px] font-mono font-extrabold text-rose-300 bg-rose-900/80 px-1.5 py-0.5 rounded border border-rose-500/40">{timeStr}</span>
                   <span className="text-[10px] font-mono text-rose-300/80 bg-rose-950 px-1.5 py-0.5 rounded border border-rose-800">
                     Attempt {retryCount}/{maxRetries}
@@ -284,10 +284,19 @@ export default function QueueDock({ queueService, isPopup }) {
       );
     }
   } else if (isPaused) {
+    const pausedMsg = state?.pauseError;
     activeSection = (
-      <div className="p-2.5 sm:p-3 rounded-xl bg-slate-800 border border-amber-500 text-xs text-amber-300 flex items-center gap-2 shadow-md">
-        <span className="text-sm">⏸</span>
-        <span>Queue is paused. Click <strong>Resume</strong> to continue.</span>
+      <div className="p-2.5 sm:p-3 rounded-xl bg-slate-800 border border-amber-500 text-xs text-amber-300 flex items-start gap-2 shadow-md">
+        <span className="text-sm flex-shrink-0">⏸</span>
+        {pausedMsg ? (
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold text-amber-200">Queue paused — request failed</span>
+            <span className="block break-words text-amber-300/90">{pausedMsg}</span>
+            <span className="mt-1 block text-[11px] text-slate-400">Click <strong>Resume</strong> to retry this chapter.</span>
+          </span>
+        ) : (
+          <span>Queue is paused. Click <strong>Resume</strong> to continue.</span>
+        )}
       </div>
     );
   }

@@ -7,7 +7,6 @@
   const DEFAULT_MODEL = 'deepseek-flash';
   const REQUEST_TIMEOUT_MS = 90000; // 90 seconds fallback timeout
   const INACTIVITY_TIMEOUT_MS = 60000; // 60s idle reset on streaming
-  const MAX_REQUEST_TIMEOUT_MS = 300000; // 300s (5m) hard ceiling for giant chapters
 
   // In-memory balance cache for debounce (15 seconds)
   let _balanceCache = null;
@@ -28,7 +27,6 @@
     DEFAULT_MODEL,
     REQUEST_TIMEOUT_MS,
     INACTIVITY_TIMEOUT_MS,
-    MAX_REQUEST_TIMEOUT_MS,
 
     // Backward-compatibility aliases
     PROVIDER_OFFICIAL: 'official',
@@ -447,7 +445,6 @@
         signal.addEventListener('abort', () => controller.abort(new Error('UserCancelled')));
       }
       let inactivityTimer = null;
-      let maxTimer = null;
 
       const resetInactivity = () => {
         if (inactivityTimer) clearTimeout(inactivityTimer);
@@ -458,9 +455,6 @@
 
       try {
         resetInactivity();
-        maxTimer = setTimeout(() => {
-          controller.abort(new Error('MaxDurationTimeout'));
-        }, MAX_REQUEST_TIMEOUT_MS);
 
         const payload = {
           model: activeModel,
@@ -486,7 +480,6 @@
 
         if (!res.ok) {
           if (inactivityTimer) clearTimeout(inactivityTimer);
-          if (maxTimer) clearTimeout(maxTimer);
 
           if (res.status === 401) {
             throw new Error('Invalid API key. Please check your key.');
@@ -540,19 +533,15 @@
         if (signal?.aborted || err.message === 'UserCancelled' || controller.signal.reason?.message === 'UserCancelled') {
           throw new Error('Translation cancelled by user.');
         }
-        if (err.name === 'AbortError' || err.message === 'InactivityTimeout' || err.message === 'MaxDurationTimeout') {
+        if (err.name === 'AbortError' || err.message === 'InactivityTimeout') {
           if (controller.signal.reason?.message === 'InactivityTimeout' || err.message === 'InactivityTimeout') {
             throw new Error(`Translation timed out: no data received for ${INACTIVITY_TIMEOUT_MS / 1000} seconds.`);
-          }
-          if (controller.signal.reason?.message === 'MaxDurationTimeout' || err.message === 'MaxDurationTimeout') {
-            throw new Error(`Translation exceeded maximum limit of ${MAX_REQUEST_TIMEOUT_MS / 1000} seconds.`);
           }
           throw new Error(`Translation request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds.`);
         }
         throw err;
       } finally {
         if (inactivityTimer) clearTimeout(inactivityTimer);
-        if (maxTimer) clearTimeout(maxTimer);
       }
     },
 

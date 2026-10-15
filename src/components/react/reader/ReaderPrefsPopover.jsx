@@ -165,7 +165,7 @@ export default function ReaderPrefsPopover() {
           id="toggle-typography-popover-btn"
           onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
-          title="Typography & Appearance (T)"
+          title="Typography & Appearance (Alt+T)"
           aria-expanded={open}
           aria-haspopup="true"
         >

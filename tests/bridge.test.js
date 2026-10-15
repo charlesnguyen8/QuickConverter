@@ -41,9 +41,12 @@ const readerDeepseekSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components
 const aiConfigSrc = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'shared', 'AiConfigPanel.jsx'), 'utf8');
 
 // Reader View — the wrapper owns the id map; the shared panel renders the switcher markup.
-for (const id of ['reader-provider-btn-official', 'reader-provider-btn-custom', 'reader-custom-base-url',
-  'reader-bridge-preset-btn', 'reader-test-custom-btn', 'reader-api-key-label']) {
-  assert(readerDeepseekSrc.includes(`'${id}'`), `ReaderDeepseekCard.jsx must map #${id}`);
+// IDs are now derived from ID_SUFFIXES + the `reader` prefix, so assert the suffix map owns
+// each id (components.test.js renders the card and checks the full generated ids).
+assert(readerDeepseekSrc.includes("idPrefix = 'reader'"), 'ReaderDeepseekCard default id prefix must be reader');
+for (const suffix of ['provider-btn-official', 'provider-btn-custom', 'custom-base-url',
+  'bridge-preset-btn', 'test-custom-btn', 'api-key-label']) {
+  assert(readerDeepseekSrc.includes(`'${suffix}'`), `ReaderDeepseekCard.jsx must map #reader-${suffix}`);
 }
 assert(readerSourceSrc.includes('id="source-reasoning-container"'), 'ReaderSourceDrawer.jsx must have #source-reasoning-container in source drawer');
 assert(readerSourceSrc.includes('DeepThink Reasoning Process'), 'ReaderSourceDrawer.jsx must have the DeepThink drawer section');
