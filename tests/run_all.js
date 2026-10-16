@@ -20,6 +20,7 @@ const testFiles = [
   'cloud-sync.test.js',
   'nkwwlkj.test.js',
   'ocr-panel.test.js',
+  'longest-matcher.test.js',
   'components.test.js'
 ];
 
