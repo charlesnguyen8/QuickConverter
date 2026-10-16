@@ -251,6 +251,30 @@ function test(name, fn) {
   });
 
   const ReaderPhrasePopover = (await loadComponent('components/react/reader/ReaderPhrasePopover.jsx')).default;
+  test('ReaderPhrasePopover lists possible names for the tapped phrase with add and reject actions', () => {
+    const phrase = { source: '韩', reading: 'hàn', translation: 'hàn', origin: 'hanViet' };
+    const html = render(h(ReaderPhrasePopover, {
+      phrase,
+      suggestions: [
+        { text: '韩当', suggested: 'Hàn Đương', entityType: 'person', occurrences: 3 },
+        { text: '青州郡', suggested: 'Thanh Châu quận', entityType: 'location', occurrences: 1 }
+      ]
+    }));
+    assert(html.includes('id="reader-phrase-suggestions"'), 'suggestions section');
+    assert(html.includes('Possible names'), 'labelled');
+    assert(html.includes('韩当') && html.includes('Hàn Đương'), 'Chinese and suggested reading');
+    assert((html.match(/data-suggestion-add=/g) || []).length === 2, 'an add button per candidate');
+    assert((html.match(/data-suggestion-reject=/g) || []).length === 2, 'a reject button per candidate');
+    assert(/data-suggestion-add="韩当"[^>]*class="[^"]*min-h-10/.test(html) || /class="[^"]*min-h-10[^"]*"[^>]*data-suggestion-add="韩当"/.test(html), 'touch target is at least 40px');
+  });
+
+  test('ReaderPhrasePopover shows a loading line while names are being found, and nothing when there are none', () => {
+    const phrase = { source: '韩', reading: 'hàn', translation: 'hàn', origin: 'hanViet' };
+    assert(render(h(ReaderPhrasePopover, { phrase, suggestionsLoading: true })).includes('Looking for names'));
+    const none = render(h(ReaderPhrasePopover, { phrase, suggestions: [] }));
+    assert(!none.includes('id="reader-phrase-suggestions"'));
+  });
+
   test('ReaderPhrasePopover has left and right buttons that grow the selection by a chunk', () => {
     const both = render(h(ReaderPhrasePopover, {
       phrase: { source: '陈', reading: 'trần', translation: 'trần', origin: 'vietPhrase' },

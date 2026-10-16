@@ -153,3 +153,41 @@ export const PHRASE_KIND_LABELS = {
   locked: 'Locked Glossary',
   soft: 'Soft Glossary'
 };
+
+export function suggestionsForPhrase(candidates, phrase, limit = 4) {
+  const source = phrase && typeof phrase.source === 'string' ? phrase.source : '';
+  if (!source || !Array.isArray(candidates)) return [];
+  return candidates
+    .filter((candidate) => candidate && candidate.text && (candidate.text.includes(source) || source.includes(candidate.text)))
+    .slice(0, limit);
+}
+
+export async function buildNameSuggestions(novel, text, services) {
+  const { storage, hanViet, dictionaries, jieba, finder } = services;
+  const [jiebaInstance, hanVietMap, vietPhrase, qtNames, hoNguoi, hauTu, danhTu, rejected] = await Promise.all([
+    jieba.load(),
+    hanViet.load(),
+    dictionaries.load('vietPhrase'),
+    dictionaries.load('qtNames'),
+    dictionaries.load('hoNguoi'),
+    dictionaries.load('hauTu'),
+    dictionaries.load('danhTu'),
+    storage.getNameList(novel.id, 'rejectedNames')
+  ]);
+  const known = new Map();
+  (Array.isArray(novel.nameList) ? novel.nameList : []).forEach((entry) => {
+    const original = entry && entry.original ? String(entry.original).trim() : '';
+    if (original && !known.has(original)) known.set(original, String(entry.translation || '').trim());
+  });
+  return finder.find(text, {
+    jieba: jiebaInstance,
+    hanViet: hanVietMap,
+    vietPhrase,
+    names: qtNames,
+    hoNguoi,
+    hauTu,
+    danhTu,
+    known,
+    rejected: new Set((rejected || []).map((entry) => String(entry.original || '').trim()).filter(Boolean))
+  }, { includeKnown: false });
+}

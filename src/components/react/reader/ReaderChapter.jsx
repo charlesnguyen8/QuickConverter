@@ -10,7 +10,9 @@ import {
   phraseOptions,
   phraseRange,
   phraseSaveKind,
-  savePhraseEntry
+  savePhraseEntry,
+  suggestionsForPhrase,
+  buildNameSuggestions
 } from './readerText.js';
 import ReaderPhraseText from './ReaderPhraseText.jsx';
 import ReaderPhrasePopover from './ReaderPhrasePopover.jsx';
@@ -189,6 +191,64 @@ export default function ReaderChapter() {
       window.dispatchEvent(new CustomEvent('reader-show-toast', { detail: 'Could not save the phrase' }));
     } finally {
       setSavingPhrase(false);
+    }
+  };
+
+  const [nameCandidates, setNameCandidates] = useState({ key: null, list: null, loading: false });
+  const suggestionKey = novel && chapter ? `${novel.id}:${params.ch}:${(novel.nameList || []).length}` : null;
+
+  const requestedSuggestions = useRef(null);
+  useEffect(() => {
+    if (!selectedPhrase || !conversionMode || !novel || !chapter || !suggestionKey) return;
+    if (requestedSuggestions.current === suggestionKey) return;
+    const services = typeof window !== 'undefined' ? {
+      storage: window.StorageService,
+      hanViet: window.HanViet,
+      dictionaries: window.QtDictionaries,
+      jieba: window.Jieba,
+      finder: window.NameFinder
+    } : {};
+    if (!services.storage || !services.hanViet || !services.dictionaries || !services.jieba || !services.finder) return;
+    requestedSuggestions.current = suggestionKey;
+    setNameCandidates({ key: suggestionKey, list: null, loading: true });
+    buildNameSuggestions(novel, chapterSourceText(chapter), services)
+      .then((list) => { if (requestedSuggestions.current === suggestionKey) setNameCandidates({ key: suggestionKey, list, loading: false }); })
+      .catch((e) => {
+        console.warn('[Reader] Name suggestions unavailable:', e);
+        if (requestedSuggestions.current === suggestionKey) setNameCandidates({ key: suggestionKey, list: [], loading: false });
+      });
+  }, [selectedPhrase, conversionMode, novel, chapter, suggestionKey]);
+
+  const phraseSuggestions = nameCandidates.key === suggestionKey && nameCandidates.list
+    ? suggestionsForPhrase(nameCandidates.list, selectedPhrase)
+    : [];
+  const suggestionsLoading = nameCandidates.key === suggestionKey && nameCandidates.loading;
+
+  const acceptSuggestion = async (candidate) => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novel) return;
+    setSavingPhrase(true);
+    try {
+      await savePhraseEntry(storage, novel.id, 'namelist', { original: candidate.text, translation: candidate.suggested });
+      setSelected(null);
+      window.dispatchEvent(new CustomEvent('reader-show-toast', { detail: `${candidate.text} → ${candidate.suggested} added to the Name List` }));
+      window.dispatchEvent(new Event('reader-chapter-refresh'));
+    } catch (e) {
+      console.error('Error adding a suggested name:', e);
+      window.dispatchEvent(new CustomEvent('reader-show-toast', { detail: 'Could not add the name' }));
+    } finally {
+      setSavingPhrase(false);
+    }
+  };
+
+  const rejectSuggestion = async (candidate) => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novel) return;
+    try {
+      await savePhraseEntry(storage, novel.id, 'rejectedNames', { original: candidate.text, translation: candidate.suggested });
+      setNameCandidates((prev) => ({ ...prev, list: (prev.list || []).filter((c) => c.text !== candidate.text) }));
+    } catch (e) {
+      console.error('Error rejecting a suggested name:', e);
     }
   };
 
@@ -426,6 +486,10 @@ export default function ReaderChapter() {
           onPick={(translation) => savePhrase(phraseSaveKind(selectedPhrase), translation)}
           onSaveName={(translation) => savePhrase('namelist', translation)}
           onOpenName={openPhraseName}
+          suggestions={phraseSuggestions}
+          suggestionsLoading={suggestionsLoading}
+          onAcceptSuggestion={acceptSuggestion}
+          onRejectSuggestion={rejectSuggestion}
           onClose={() => setSelected(null)}
         />
       ) : null}

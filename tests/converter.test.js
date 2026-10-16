@@ -749,6 +749,50 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert.strictEqual(readerText.PHRASE_ORIGIN_LABELS.number, 'Number');
   });
 
+  await test('suggestionsForPhrase keeps candidates that contain or sit inside the tapped text', () => {
+    const candidates = [
+      { text: '韩当', suggested: 'Hàn Đương' },
+      { text: '青州郡', suggested: 'Thanh Châu quận' },
+      { text: '当铺', suggested: 'Đương Phô' },
+      { text: '韩', suggested: 'Hàn' }
+    ];
+    const pick = (source, limit) => readerText.suggestionsForPhrase(candidates, { source }, limit).map((c) => c.text);
+    assert.deepStrictEqual(pick('当'), ['韩当', '当铺']);
+    assert.deepStrictEqual(pick('韩当说'), ['韩当', '韩']);
+    assert.deepStrictEqual(pick('当', 1), ['韩当']);
+    assert.deepStrictEqual(readerText.suggestionsForPhrase(null, { source: '当' }), []);
+    assert.deepStrictEqual(readerText.suggestionsForPhrase(candidates, null), []);
+  });
+
+  await test('buildNameSuggestions runs the name finder with your names as known and your rejections', async () => {
+    const seen = {};
+    const services = {
+      storage: { getNameList: async (id, kind) => (kind === 'rejectedNames' ? [{ original: '张三', translation: 'x' }] : []) },
+      hanViet: { load: async () => new Map([['韩', 'hàn']]) },
+      dictionaries: { load: async (name) => new Map([[name, name]]) },
+      jieba: { load: async () => ({ cut: () => [], hasWord: () => false }) },
+      finder: { find: (text, deps, options) => { Object.assign(seen, { text, deps, options }); return [{ text: '韩当' }]; } }
+    };
+    const novel = { id: 'n1', nameList: [{ original: '陈舒', translation: 'Trần Thư' }] };
+    const found = await readerText.buildNameSuggestions(novel, '陈舒见到韩当。', services);
+    assert.deepStrictEqual(found, [{ text: '韩当' }]);
+    assert.strictEqual(seen.text, '陈舒见到韩当。');
+    assert.strictEqual(seen.deps.known.get('陈舒'), 'Trần Thư');
+    assert(seen.deps.rejected.has('张三'));
+    assert(seen.deps.names.has('qtNames'), 'QT Names are treated as already-known names');
+    assert(seen.deps.hoNguoi && seen.deps.hauTu && seen.deps.danhTu && seen.deps.vietPhrase && seen.deps.jieba);
+    assert.strictEqual(seen.options.includeKnown, false);
+  });
+
+  await test('the reader loads Jieba and the name finder', () => {
+    const reader = read('src', 'views', 'reader.html');
+    const entry = reader.indexOf('reader-entry.jsx');
+    for (const service of ['services/jieba.js', 'services/name-finder.js']) {
+      const at = reader.indexOf(service);
+      assert(at >= 0 && at < entry, `reader loads ${service}`);
+    }
+  });
+
   console.log(`--- Dictionary Converter Test Suite: ${passed}/${passed + failed} passed ---`);
   if (failed > 0) process.exit(1);
   console.log('Dictionary Converter Test Suite: ALL TESTS PASSED!');

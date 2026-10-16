@@ -3,7 +3,7 @@ import { PHRASE_KIND_LABELS, PHRASE_ORIGIN_LABELS, phraseSaveKind } from './read
 
 const BTN = 'min-h-10 inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm font-semibold transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-40 disabled:pointer-events-none';
 
-export default function ReaderPhrasePopover({ phrase, options = [], saving = false, canExtendLeft = false, canExtendRight = false, onExtendLeft, onExtendRight, onPick, onSaveName, onOpenName, onClose }) {
+export default function ReaderPhrasePopover({ phrase, options = [], saving = false, canExtendLeft = false, canExtendRight = false, onExtendLeft, onExtendRight, onPick, onSaveName, onOpenName, onClose, suggestions = [], suggestionsLoading = false, onAcceptSuggestion, onRejectSuggestion }) {
   const [custom, setCustom] = useState(phrase ? phrase.translation : '');
 
   useEffect(() => { setCustom(phrase ? phrase.translation : ''); }, [phrase]);
@@ -62,6 +62,41 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
           Shown as <span className="font-semibold text-slate-200">{phrase.translation}</span>
           <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px] text-slate-300">{origin}</span>
         </div>
+
+        {suggestionsLoading ? (
+          <div className="text-xs text-slate-400">Looking for names in this chapter…</div>
+        ) : null}
+        {!suggestionsLoading && suggestions.length > 0 ? (
+          <div id="reader-phrase-suggestions" className="flex flex-col gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
+            <span className="text-[11px] uppercase tracking-wide text-emerald-300">Possible names</span>
+            {suggestions.map((candidate) => (
+              <div key={candidate.text} className="flex flex-wrap items-center gap-2">
+                <span lang="zh" className="text-base font-semibold">{candidate.text}</span>
+                <span className="text-sm text-slate-300 flex-1 min-w-0">{candidate.suggested}</span>
+                <button
+                  type="button"
+                  data-suggestion-add={candidate.text}
+                  disabled={saving}
+                  onClick={() => onAcceptSuggestion && onAcceptSuggestion(candidate)}
+                  className={`${BTN} text-white bg-emerald-600 hover:bg-emerald-500`}
+                  title={`Add ${candidate.text} = ${candidate.suggested} to the Name List`}
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  data-suggestion-reject={candidate.text}
+                  disabled={saving}
+                  onClick={() => onRejectSuggestion && onRejectSuggestion(candidate)}
+                  className={`${BTN} text-slate-300 bg-slate-800 border border-slate-700 hover:bg-slate-700`}
+                  title="Not a name: stop suggesting it for this novel"
+                >
+                  Not a name
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         <div className="flex flex-col gap-1.5">
           <span className="text-[11px] uppercase tracking-wide text-slate-500">Meanings · saved to {saveTo}</span>
