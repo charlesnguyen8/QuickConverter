@@ -465,6 +465,130 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     }
   });
 
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+
+  await test('QtDictionaries keeps every meaning of a phrase while lookups still return the first', () => {
+    const map = env.QtDictionaries.parseDictionary('工作人员=nhân viên công tác/nhân viên làm việc|công nhân viên/ nhân viên công tác\n他=hắn\n');
+    assert.strictEqual(map.get('工作人员'), 'nhân viên công tác');
+    assert.deepStrictEqual(plain(map.meanings('工作人员')), ['nhân viên công tác', 'nhân viên làm việc', 'công nhân viên']);
+    assert.deepStrictEqual(plain(map.meanings('他')), ['hắn']);
+    assert.deepStrictEqual(plain(map.meanings('missing')), []);
+  });
+
+  const detailLists = () => ({
+    hanViet: new Map([...HAN_VIET, ['看', 'khán'], ['向', 'hướng'], ['勉', 'miễn'], ['强', 'cường']]),
+    names: [{ id: 'n1', original: '林动', translation: 'Lâm Động' }],
+    locked: [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương trấn' }],
+    soft: [{ id: 's1', original: '笑笑', translation: 'cười cười' }],
+    dictionaries: { vietPhrase: new Map([['看向', 'nhìn về phía'], ['勉强', 'miễn cưỡng']]) }
+  });
+  const DETAIL_TEXT = '林动看向青阳镇，勉强笑笑。他走了！\n\n“林动，走。”\n大龘来';
+
+  await test('convertDetailed gives the same text as convert, line by line', () => {
+    const converter = T.createConverter(detailLists());
+    const lines = converter.convertDetailed(DETAIL_TEXT);
+    assert.strictEqual(lines.map((l) => l.text).join('\n'), converter.convert(DETAIL_TEXT));
+    assert.strictEqual(lines.length, 4);
+    assert.deepStrictEqual(plain(lines[1]), { text: '', segments: [] });
+  });
+
+  await test('convertDetailed marks each phrase with its Chinese, Hán Việt reading and where the meaning came from', () => {
+    const converter = T.createConverter(detailLists());
+    const [first] = converter.convertDetailed(DETAIL_TEXT);
+    const seen = plain(first.segments.map((s) => ({
+      shown: first.text.slice(s.start, s.end),
+      source: s.source,
+      reading: s.reading,
+      translation: s.translation,
+      origin: s.origin
+    })));
+    assert.deepStrictEqual(seen, [
+      { shown: 'Lâm Động', source: '林动', reading: 'lâm động', translation: 'Lâm Động', origin: 'name' },
+      { shown: 'nhìn về phía', source: '看向', reading: 'khán hướng', translation: 'nhìn về phía', origin: 'vietPhrase' },
+      { shown: 'Thanh Dương trấn', source: '青阳镇', reading: 'thanh dương trấn', translation: 'Thanh Dương trấn', origin: 'locked' },
+      { shown: 'miễn cưỡng', source: '勉强', reading: 'miễn cường', translation: 'miễn cưỡng', origin: 'vietPhrase' },
+      { shown: 'cười cười', source: '笑笑', reading: 'tiếu tiếu', translation: 'cười cười', origin: 'soft' },
+      { shown: 'Tha', source: '他', reading: 'tha', translation: 'tha', origin: 'hanViet' },
+      { shown: 'tẩu', source: '走', reading: 'tẩu', translation: 'tẩu', origin: 'hanViet' },
+      { shown: 'liễu', source: '了', reading: 'liễu', translation: 'liễu', origin: 'hanViet' }
+    ]);
+    assert.strictEqual(first.segments[0].entryId, 'n1', 'name segments point at their Name List entry');
+  });
+
+  await test('convertDetailed segments stay aligned after quotes, capitals and unknown characters', () => {
+    const converter = T.createConverter(detailLists());
+    const lines = converter.convertDetailed(DETAIL_TEXT);
+    const quoted = lines[2];
+    assert.deepStrictEqual(plain(quoted.segments.map((s) => quoted.text.slice(s.start, s.end))), ['Lâm Động', 'tẩu']);
+    const last = lines[3];
+    assert.deepStrictEqual(plain(last.segments.map((s) => [last.text.slice(s.start, s.end), s.source])), [['Đại', '大'], ['lai', '来']]);
+    assert(last.text.includes('龘'), 'characters with no reading stay as plain text');
+  });
+
+  await test('reader groups converted lines into the same paragraphs as the plain text', () => {
+    const converter = T.createConverter(detailLists());
+    const lines = converter.convertDetailed(DETAIL_TEXT);
+    const paragraphs = readerText.paragraphsFromLines(lines);
+    const expected = converter.convert(DETAIL_TEXT).split('\n\n').map((p) => p.trim()).filter(Boolean);
+    assert.deepStrictEqual(paragraphs.map((p) => p.text), expected);
+    const firstPara = paragraphs[1];
+    assert.deepStrictEqual(firstPara.segments.map((s) => firstPara.text.slice(s.start, s.end)), ['Lâm Động', 'tẩu', 'Đại', 'lai']);
+  });
+
+  await test('phrase options list the shown meaning, every dictionary meaning and the Hán Việt reading once each', () => {
+    const segment = { source: '工作人员', reading: 'công tác nhân viên', translation: 'nhân viên công tác', origin: 'vietPhrase' };
+    const meaningsOf = (key) => (key === '工作人员' ? ['nhân viên công tác', 'nhân viên làm việc', 'Công tác nhân viên'] : []);
+    assert.deepStrictEqual(readerText.phraseOptions(segment, meaningsOf), [
+      'nhân viên công tác', 'nhân viên làm việc', 'Công tác nhân viên', 'công tác nhân viên'
+    ]);
+    assert.deepStrictEqual(readerText.phraseOptions({ source: '龘', reading: '', translation: 'x', origin: 'soft' }, null), ['x']);
+  });
+
+  await test('a picked meaning is saved to the list the shown meaning came from, else the soft glossary', () => {
+    assert.strictEqual(readerText.phraseSaveKind({ origin: 'name' }), 'namelist');
+    assert.strictEqual(readerText.phraseSaveKind({ origin: 'locked' }), 'locked');
+    assert.strictEqual(readerText.phraseSaveKind({ origin: 'soft' }), 'soft');
+    for (const origin of ['vietPhrase', 'qtNames', 'hanViet']) {
+      assert.strictEqual(readerText.phraseSaveKind({ origin }), 'soft', `${origin} picks go to the soft glossary`);
+    }
+  });
+
+  await test('savePhraseEntry updates an existing entry for the same Chinese, or adds a new one', async () => {
+    const calls = [];
+    const lists = { soft: [{ id: 'e1', original: '笑笑', translation: 'old' }], namelist: [] };
+    const storage = {
+      getNameList: async (id, kind) => lists[kind] || [],
+      updateNameEntry: async (...args) => { calls.push(['update', ...args]); return {}; },
+      addNameEntry: async (...args) => { calls.push(['add', ...args]); return {}; }
+    };
+    await readerText.savePhraseEntry(storage, 'n1', 'soft', { original: '笑笑', translation: 'cười cười' });
+    await readerText.savePhraseEntry(storage, 'n1', 'namelist', { original: '林动', translation: 'Lâm Động' });
+    assert.deepStrictEqual(calls, [
+      ['update', 'n1', 'e1', { translation: 'cười cười' }, 'soft'],
+      ['add', 'n1', { original: '林动', translation: 'Lâm Động' }, 'namelist']
+    ]);
+  });
+
+  await test('buildReaderConverter can list every dictionary meaning of a phrase', async () => {
+    const vietPhrase = env.QtDictionaries.parseDictionary('工作=công tác/làm việc\n');
+    const services = {
+      storage: { getNameList: async () => [] },
+      hanViet: { load: async () => new Map() },
+      dictionaries: {
+        load: async (name) => ({
+          vietPhrase,
+          qtNames: new Map([['工作', 'Công Tác']]),
+          pronouns: new Map(),
+          ignoredPhrases: []
+        })[name]
+      },
+      processors: { createConverter: (lists) => ({ lists }) }
+    };
+    const converter = await readerText.buildReaderConverter({ id: 'n1', nameList: [] }, services);
+    assert.deepStrictEqual(converter.meaningsOf('工作'), ['công tác', 'làm việc', 'Công Tác']);
+    assert.deepStrictEqual(converter.meaningsOf('无'), []);
+  });
+
   console.log(`--- Dictionary Converter Test Suite: ${passed}/${passed + failed} passed ---`);
   if (failed > 0) process.exit(1);
   console.log('Dictionary Converter Test Suite: ALL TESTS PASSED!');

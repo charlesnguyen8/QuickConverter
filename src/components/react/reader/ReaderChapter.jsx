@@ -1,6 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createNameMatcher } from '../novel/nameListSource.js';
-import { buildReaderConverter, chapterDisplayText } from './readerText.js';
+import {
+  PHRASE_KIND_LABELS,
+  buildReaderConverter,
+  chapterDisplayText,
+  chapterSourceText,
+  paragraphsFromLines,
+  phraseOptions,
+  phraseSaveKind,
+  savePhraseEntry
+} from './readerText.js';
+import ReaderPhraseText from './ReaderPhraseText.jsx';
+import ReaderPhrasePopover from './ReaderPhrasePopover.jsx';
 import { useReaderSearch } from './readerLocation.js';
 
 function getParams(search) {
@@ -132,7 +143,46 @@ export default function ReaderChapter() {
   }, [conversionMode, novel]);
 
   const convert = converter ? converter.convert : null;
-  const text = useMemo(() => chapterDisplayText(chapter, { conversionMode, convert }), [chapter, conversionMode, convert]);
+  const detailed = useMemo(() => (
+    conversionMode && converter && typeof converter.convertDetailed === 'function' && chapter
+      ? paragraphsFromLines(converter.convertDetailed(chapterSourceText(chapter)))
+      : null
+  ), [conversionMode, converter, chapter]);
+  const text = useMemo(() => (
+    detailed ? detailed.map((p) => p.text).join('\n\n') : chapterDisplayText(chapter, { conversionMode, convert })
+  ), [detailed, chapter, conversionMode, convert]);
+  const [selected, setSelected] = useState(null);
+  const [savingPhrase, setSavingPhrase] = useState(false);
+
+  useEffect(() => { setSelected(null); }, [detailed]);
+
+  const selectedPhrase = selected && detailed && detailed[selected.p] ? detailed[selected.p].segments[selected.s] || null : null;
+  const selectedOptions = useMemo(
+    () => phraseOptions(selectedPhrase, converter && converter.meaningsOf),
+    [selectedPhrase, converter]
+  );
+
+  const savePhrase = async (kind, translation) => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novel || !selectedPhrase) return;
+    setSavingPhrase(true);
+    try {
+      await savePhraseEntry(storage, novel.id, kind, { original: selectedPhrase.source, translation });
+      setSelected(null);
+      window.dispatchEvent(new CustomEvent('reader-show-toast', { detail: `${selectedPhrase.source} → ${translation} saved to ${PHRASE_KIND_LABELS[kind]}` }));
+      window.dispatchEvent(new Event('reader-chapter-refresh'));
+    } catch (e) {
+      console.error('Error saving phrase:', e);
+      window.dispatchEvent(new CustomEvent('reader-show-toast', { detail: 'Could not save the phrase' }));
+    } finally {
+      setSavingPhrase(false);
+    }
+  };
+
+  const openPhraseName = (nameId) => {
+    setSelected(null);
+    window.dispatchEvent(new CustomEvent('novel-open-name-list', { detail: { nameId } }));
+  };
   const paragraphs = useMemo(() => text
     .split('\n\n')
     .map((p) => p.trim())
@@ -311,7 +361,13 @@ export default function ReaderChapter() {
               title="Double-click to edit this paragraph"
               onDoubleClick={() => editParagraph(idx)}
             >
-              {highlightedParagraphs[idx].map((seg, i) => (seg.nameId ? (
+              {detailed && detailed[idx] ? (
+                <ReaderPhraseText
+                  paragraph={detailed[idx]}
+                  activeIndex={selected && selected.p === idx ? selected.s : -1}
+                  onSelect={(_seg, s) => setSelected({ p: idx, s })}
+                />
+              ) : highlightedParagraphs[idx].map((seg, i) => (seg.nameId ? (
                 <span
                   key={i}
                   role="button"
@@ -343,6 +399,18 @@ export default function ReaderChapter() {
           </div>
         ))}
       </div>
+
+      {selectedPhrase ? (
+        <ReaderPhrasePopover
+          phrase={selectedPhrase}
+          options={selectedOptions}
+          saving={savingPhrase}
+          onPick={(translation) => savePhrase(phraseSaveKind(selectedPhrase), translation)}
+          onSaveName={(translation) => savePhrase('namelist', translation)}
+          onOpenName={openPhraseName}
+          onClose={() => setSelected(null)}
+        />
+      ) : null}
     </>
   );
 }

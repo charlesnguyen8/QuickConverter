@@ -215,6 +215,82 @@ function test(name, fn) {
     assert.strictEqual(computeScrollProgress(10, 0), 0);
   });
 
+  // --- Dictionary conversion: tappable phrases ---
+  const ReaderPhraseText = (await loadComponent('components/react/reader/ReaderPhraseText.jsx')).default;
+  const phrasePara = {
+    text: 'Lâm Động nhìn về phía tha.',
+    segments: [
+      { start: 0, end: 8, source: '林动', reading: 'lâm động', translation: 'Lâm Động', origin: 'name', entryId: 'n1' },
+      { start: 9, end: 21, source: '看向', reading: 'khán hướng', translation: 'nhìn về phía', origin: 'vietPhrase' },
+      { start: 22, end: 25, source: '他', reading: 'tha', translation: 'tha', origin: 'hanViet' }
+    ]
+  };
+  test('ReaderPhraseText makes every converted phrase a tappable word carrying its Chinese', () => {
+    const html = render(h(ReaderPhraseText, { paragraph: phrasePara, onSelect: () => {} }));
+    const words = html.match(/<span[^>]*data-phrase="[^"]*"[^>]*>[^<]*<\/span>/g) || [];
+    assert.strictEqual(words.length, 3, 'one tappable word per phrase');
+    assert(/data-phrase="1"[^>]*>nhìn về phía<\/span>/.test(html), 'the phrase shows its converted text');
+    assert(/lang="zh"|data-source="看向"/.test(words[1]), 'each word carries its Chinese source');
+    assert(words.every((w) => /role="button"/.test(w) && /tabindex="0"/.test(w)), 'words are keyboard and screen-reader reachable');
+    assert(html.replace(/<[^>]+>/g, '') === phrasePara.text, 'text between phrases (spaces, punctuation) is kept as is');
+    assert(/data-phrase="0"[^>]*class="[^"]*border-indigo-400/.test(html) || /class="[^"]*border-indigo-400[^"]*"[^>]*data-phrase="0"/.test(html), 'names keep the name highlight');
+  });
+
+  test('ReaderPhraseText highlights the phrase whose popup is open', () => {
+    const html = render(h(ReaderPhraseText, { paragraph: phrasePara, activeIndex: 1, onSelect: () => {} }));
+    const active = (html.match(/<span[^>]*data-phrase="1"[^>]*>/) || [''])[0];
+    assert(/aria-pressed="true"/.test(active), 'open phrase is marked pressed');
+    const other = (html.match(/<span[^>]*data-phrase="2"[^>]*>/) || [''])[0];
+    assert(/aria-pressed="false"/.test(other));
+  });
+
+  const ReaderPhrasePopover = (await loadComponent('components/react/reader/ReaderPhrasePopover.jsx')).default;
+  const popPhrase = { source: '工作人员', reading: 'công tác nhân viên', translation: 'nhân viên công tác', origin: 'vietPhrase' };
+  const phrasePopover = render(h(ReaderPhrasePopover, {
+    phrase: popPhrase,
+    options: ['nhân viên công tác', 'nhân viên làm việc', 'công tác nhân viên'],
+    onPick: () => {}, onSaveName: () => {}, onClose: () => {}
+  }));
+  test('ReaderPhrasePopover shows the Chinese, Hán Việt, current meaning and where it came from', () => {
+    assert(phrasePopover.includes('id="reader-phrase-popover"'));
+    assert(/lang="zh"[^>]*>工作人员</.test(phrasePopover), 'Chinese source shown');
+    assert(phrasePopover.includes('công tác nhân viên'), 'Hán Việt reading shown');
+    assert(phrasePopover.includes('VietPhrase'), 'origin of the shown meaning is labelled');
+  });
+
+  test('ReaderPhrasePopover offers every meaning, a custom meaning and Save as name', () => {
+    const options = phrasePopover.match(/data-phrase-option="[^"]*"/g) || [];
+    assert.deepStrictEqual(options, [
+      'data-phrase-option="nhân viên công tác"',
+      'data-phrase-option="nhân viên làm việc"',
+      'data-phrase-option="công tác nhân viên"'
+    ]);
+    assert(/data-phrase-option="nhân viên công tác"[^>]*aria-current="true"/.test(phrasePopover), 'the shown meaning is marked current');
+    assert(/id="reader-phrase-custom"[^>]*value="nhân viên công tác"/.test(phrasePopover), 'custom field starts with the shown meaning');
+    assert(phrasePopover.includes('id="reader-phrase-use-btn"'), 'custom meaning can be applied');
+    assert(phrasePopover.includes('id="reader-phrase-name-btn"'), 'phrase can be saved as a name');
+    assert(phrasePopover.includes('Soft Glossary'), 'says which list a picked meaning is saved to');
+    assert(!phrasePopover.includes('id="reader-phrase-open-name"'), 'no Name List link for dictionary phrases');
+  });
+
+  test('ReaderPhrasePopover is a full-width bottom sheet on phones with 40px touch targets', () => {
+    assert(/id="reader-phrase-popover"[^>]*class="[^"]*fixed[^"]*inset-x-0[^"]*bottom-0/.test(phrasePopover), 'bottom sheet on phones');
+    const buttons = phrasePopover.match(/<button[^>]*>/g) || [];
+    assert(buttons.length >= 5);
+    assert(buttons.every((b) => /min-h-10|h-10|w-10/.test(b)), 'every button is at least 40px tall');
+  });
+
+  test('ReaderPhrasePopover links name phrases to their Name List entry and saves edits there', () => {
+    const named = render(h(ReaderPhrasePopover, {
+      phrase: { source: '林动', reading: 'lâm động', translation: 'Lâm Động', origin: 'name', entryId: 'n1' },
+      options: ['Lâm Động', 'lâm động'],
+      onPick: () => {}, onSaveName: () => {}, onClose: () => {}
+    }));
+    assert(named.includes('id="reader-phrase-open-name"'), 'name phrases link to the Name List');
+    assert(named.includes('Name List'));
+    assert(!named.includes('Soft Glossary'), 'picks for a name update the Name List, not the soft glossary');
+  });
+
   // --- ReaderNotSaved ---
   const ReaderNotSaved = (await loadComponent('components/react/reader/ReaderNotSaved.jsx')).default;
 

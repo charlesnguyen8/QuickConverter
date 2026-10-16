@@ -167,13 +167,20 @@
       .map((chars) => new RegExp(chars.map(escapeRegExp).join('\\s*'), 'g'));
   }
 
-  function convertLine(line, matcher, hanViet, ignored) {
+  function originOf(id) {
+    const text = String(id || '');
+    const cut = text.indexOf(':');
+    return cut === -1 ? text : text.slice(0, cut);
+  }
+
+  function convertLine(line, matcher, hanViet, ignored, segments) {
     let source = standardizeLine(line);
     if (ignored.length > 0) {
       ignored.forEach((pattern) => { source = source.replace(pattern, ''); });
       source = source.replace(/ {2,}/g, ' ').trim();
     }
     if (!source) return '';
+    const record = Array.isArray(segments) ? segments : null;
     const matchAt = new Map();
     if (matcher) matcher.findAll(source).forEach((match) => matchAt.set(match.index, match));
 
@@ -185,13 +192,16 @@
     let result = '';
     let last = '\n';
 
-    const appendWord = (text) => {
-      if (SENTENCE_ENDERS.some((ender) => last.endsWith(ender))) last = capitalize(text);
-      else if (last.endsWith(' ') || last.endsWith('(')) last = text;
-      else last = ' ' + text;
+    const appendWord = (text, detail) => {
+      let word;
+      if (SENTENCE_ENDERS.some((ender) => last.endsWith(ender))) last = word = capitalize(text);
+      else if (last.endsWith(' ') || last.endsWith('(')) last = word = text;
+      else { word = text; last = ' ' + text; }
       if ((!text || /^[,.?!]/.test(text)) && result.endsWith(' ')) result = result.slice(0, -1);
       result += last;
+      if (record && detail && word) record.push({ start: result.length - word.length, end: result.length, ...detail });
     };
+    const readingOf = (text) => Array.from(text).map((ch) => (hanViet.has(ch) ? hanViet.get(ch) : ch)).join(' ');
     const appendChar = (ch) => {
       result += ch;
       last += ch;
@@ -201,7 +211,15 @@
     while (i < source.length) {
       const match = matchAt.get(i);
       if (match) {
-        appendWord(match.translation);
+        const matched = source.slice(i, i + match.length);
+        const origin = originOf(match.id);
+        appendWord(match.translation, record ? {
+          source: matched,
+          reading: readingOf(matched),
+          translation: match.translation,
+          origin,
+          ...(origin === 'name' ? { entryId: String(match.id).slice(5) } : {})
+        } : null);
         i += match.length;
         if (isChinese(charAt(i))) appendChar(' ');
         continue;
@@ -209,7 +227,7 @@
       const ch = charAt(i);
       const next = charAt(i + ch.length);
       if (isChinese(ch)) {
-        appendWord(hanViet.get(ch));
+        appendWord(hanViet.get(ch), record ? { source: ch, reading: hanViet.get(ch), translation: hanViet.get(ch), origin: 'hanViet' } : null);
         if (isChinese(next)) appendChar(' ');
       } else if ((ch === '"' || ch === "'") && !/[ .?!\t]$/.test(last) && next && next !== ' ' && next !== ',') {
         appendChar(' ');
@@ -222,7 +240,15 @@
       }
       i += ch.length;
     }
-    return result.trim();
+    const trimmed = result.trim();
+    if (record) {
+      const lead = result.length - result.trimStart().length;
+      record.forEach((seg) => {
+        seg.start = Math.max(0, seg.start - lead);
+        seg.end = Math.min(trimmed.length, seg.end - lead);
+      });
+    }
+    return trimmed;
   }
 
   function createConverter(lists) {
@@ -258,6 +284,13 @@
     return {
       convert(text) {
         return String(text || '').split('\n').map((line) => convertLine(line, matcher, hanViet, ignored)).join('\n');
+      },
+      convertDetailed(text) {
+        return String(text || '').split('\n').map((line) => {
+          const segments = [];
+          const converted = convertLine(line, matcher, hanViet, ignored, segments);
+          return { text: converted, segments: segments.filter((seg) => seg.end > seg.start) };
+        });
       }
     };
   }

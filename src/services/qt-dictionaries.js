@@ -14,15 +14,35 @@
     return String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
   }
 
+  function splitMeanings(raw) {
+    const out = [];
+    String(raw || '').split(/[/|]/).forEach((part) => {
+      const meaning = part.trim();
+      if (meaning && !out.includes(meaning)) out.push(meaning);
+    });
+    return out;
+  }
+
+  class MeaningMap extends Map {
+    get(key) {
+      const raw = super.get(key);
+      return raw === undefined ? undefined : String(raw).split(/[/|]/)[0].trim();
+    }
+
+    meanings(key) {
+      return this.has(key) ? splitMeanings(super.get(key)) : [];
+    }
+  }
+
   function parseDictionary(text) {
-    const map = new Map();
+    const map = new MeaningMap();
     lines(text).forEach((line) => {
       const parts = line.split('=');
       if (parts.length !== 2) return;
       const key = parts[0];
       const meaning = parts[1].split(/[/|]/)[0].trim();
       if (!key || !meaning || map.has(key)) return;
-      map.set(key, meaning);
+      map.set(key, parts[1]);
     });
     return map;
   }
