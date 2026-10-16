@@ -24,6 +24,7 @@ const testFiles = [
   'text-processors.test.js',
   'converter.test.js',
   'luat-nhan.test.js',
+  'jieba.test.js',
   'components.test.js'
 ];
 
