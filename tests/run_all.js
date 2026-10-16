@@ -25,6 +25,7 @@ const testFiles = [
   'converter.test.js',
   'luat-nhan.test.js',
   'jieba.test.js',
+  'name-finder.test.js',
   'components.test.js'
 ];
 
