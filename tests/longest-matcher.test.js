@@ -181,6 +181,34 @@ test('a duplicate key keeps the higher-tier entry', () => {
   assert.strictEqual(hit.tier, T.namelist);
 });
 
+test('a higher-tier entry at the same start beats a longer lower-tier entry', () => {
+  const T = LongestMatcher.TIERS;
+  const matcher = LongestMatcher.createMatcher(
+    [{ id: 'sect', original: 'Lin Dong Sect', tier: T.locked }, { id: 'name', original: 'Lin Dong', tier: T.namelist }],
+    opts
+  );
+  assert.deepStrictEqual(ids(matcher.findAll('Lin Dong Sect rose.')), ['name']);
+});
+
+test('entries can override case sensitivity individually', () => {
+  const matcher = LongestMatcher.createMatcher(
+    [{ id: 'name', original: 'Wang Lin', caseSensitive: true }, { id: 'term', original: 'Qi', caseSensitive: false }],
+    { field: 'original', caseSensitive: true }
+  );
+  assert.deepStrictEqual(ids(matcher.findAll('Wang Lin felt QI. wang lin felt qi.')), ['name', 'term', 'term']);
+  const hits = matcher.findAll('QI');
+  assert.strictEqual(hits[0].value, 'Qi', 'reports the entry value, not the source casing');
+});
+
+test('a case-sensitive and a case-insensitive entry can share the same letters', () => {
+  const T = LongestMatcher.TIERS;
+  const matcher = LongestMatcher.createMatcher(
+    [{ id: 'name', original: 'Lin', caseSensitive: true, tier: T.namelist }, { id: 'term', original: 'lin', caseSensitive: false, tier: T.locked }],
+    opts
+  );
+  assert.deepStrictEqual(ids(matcher.findAll('Lin and lin and LIN.')), ['name', 'term', 'term']);
+});
+
 test('strict overlap mode rejects a match when a longer entry starts inside it', () => {
   const entries = [{ id: 'qy', original: '青阳' }, { id: 'yzz', original: '阳镇长' }];
   assert.deepStrictEqual(ids(LongestMatcher.createMatcher(entries, opts).findAll('青阳镇长')), ['qy'], 'greedy by default');

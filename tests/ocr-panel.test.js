@@ -91,6 +91,7 @@ function makeStorageEnv() {
   env.globalThis = env;
   vm.createContext(env);
   vm.runInContext(read('src', 'services', 'name-matcher.js'), env);
+  vm.runInContext(read('src', 'services', 'longest-matcher.js'), env);
   vm.runInContext(read('src', 'services', 'text-processors.js'), env);
   vm.runInContext(read('src', 'services', 'storage.js'), env);
   const S = env.StorageService || env.window.StorageService;

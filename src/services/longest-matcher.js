@@ -50,40 +50,54 @@
     const strictOverlap = opts.overlap === 'strict';
     const list = Array.isArray(entries) ? entries : [];
 
-    const root = { children: new Map(), terminal: null };
+    const root = { children: new Map(), terminals: null };
+    const entryCase = (entry) => (typeof entry.caseSensitive === 'boolean' ? entry.caseSensitive : caseSensitive);
+    const foldKeys = list.some((entry) => entry && !entryCase(entry));
+    const fold = (ch) => (foldKeys ? ch.toLowerCase() : ch);
     let tiersVary = false;
     let firstTier = null;
 
     list.forEach((entry, i) => {
       if (!entry) return;
       const value = entry[field];
-      if (typeof value !== 'string') return;
-      const key = caseSensitive ? value : value.toLowerCase();
-      if (!key) return;
+      if (typeof value !== 'string' || !value) return;
       const tier = typeof entry.tier === 'number' ? entry.tier : TIERS.namelist;
+      const sensitive = entryCase(entry);
       if (firstTier === null) firstTier = tier;
       else if (tier !== firstTier) tiersVary = true;
 
       let node = root;
-      for (const ch of key) {
-        let next = node.children.get(ch);
+      for (const ch of value) {
+        const key = fold(ch);
+        let next = node.children.get(key);
         if (!next) {
-          next = { children: new Map(), terminal: null };
-          node.children.set(ch, next);
+          next = { children: new Map(), terminals: null };
+          node.children.set(key, next);
         }
         node = next;
       }
-      if (node.terminal && node.terminal.tier >= tier) return;
-      node.terminal = {
+      const meta = {
         id: entry.id !== undefined ? entry.id : 'idx_' + i,
         value,
         original: entry.original || '',
         translation: entry.translation || '',
-        tier
+        tier,
+        sensitive
       };
+      if (!node.terminals) node.terminals = [];
+      const same = node.terminals.findIndex((t) => t.sensitive === sensitive && (!sensitive || t.value === value));
+      if (same === -1) node.terminals.push(meta);
+      else if (node.terminals[same].tier < tier) node.terminals[same] = meta;
     });
 
-    const fold = (ch) => (caseSensitive ? ch : ch.toLowerCase());
+    function bestTerminal(terminals, source, start, end) {
+      let best = null;
+      for (const meta of terminals) {
+        if (meta.sensitive && foldKeys && source.slice(start, end) !== meta.value) continue;
+        if (!best || meta.tier > best.tier) best = meta;
+      }
+      return best;
+    }
 
     function terminalsAt(source, start) {
       const found = [];
@@ -95,7 +109,10 @@
         if (!next) break;
         node = next;
         j += ch.length;
-        if (node.terminal) found.push({ end: j, meta: node.terminal, bounded: hasBoundaries(source, start, j) });
+        if (node.terminals) {
+          const meta = bestTerminal(node.terminals, source, start, j);
+          if (meta) found.push({ end: j, meta, bounded: hasBoundaries(source, start, j) });
+        }
       }
       return found;
     }
@@ -118,8 +135,9 @@
       };
     }
 
-    function blockedInside(source, start, candidate) {
+    function blockedInside(source, start, candidate, sameStart) {
       if (!tiersVary && !strictOverlap) return false;
+      if (tiersVary && sameStart.some((other) => other.meta.tier > candidate.meta.tier)) return true;
       const length = candidate.end - start;
       let k = start + (charAt(source, start).length || 1);
       while (k < candidate.end) {
@@ -152,7 +170,7 @@
 
         let chosen = null;
         for (let c = candidates.length - 1; c >= 0; c--) {
-          if (!blockedInside(source, i, candidates[c])) {
+          if (!blockedInside(source, i, candidates[c], candidates)) {
             chosen = candidates[c];
             break;
           }

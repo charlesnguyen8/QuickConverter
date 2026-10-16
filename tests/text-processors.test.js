@@ -36,6 +36,7 @@ function loadEnv({ withStorage = false } = {}) {
   env.globalThis = env;
   vm.createContext(env);
   vm.runInContext(read('src', 'services', 'name-matcher.js'), env);
+  vm.runInContext(read('src', 'services', 'longest-matcher.js'), env);
   vm.runInContext(read('src', 'services', 'text-processors.js'), env);
   if (withStorage) vm.runInContext(read('src', 'services', 'storage.js'), env);
   return env;
@@ -77,6 +78,59 @@ test('the individual steps stay available and match the composite', () => {
   assert.strictEqual(T.restoreTokens('@1@', tokenized.mapping), 'Lâm Động');
 });
 
+test('prepareForAi works on Chinese text without word boundaries', () => {
+  const T = loadEnv().TextProcessors;
+  const prepared = T.prepareForAi('林动走进青阳镇。林动笑了。', {
+    names: [{ id: 'n1', original: '林动', translation: 'Lâm Động' }],
+    locked: [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương trấn' }]
+  });
+  assert.strictEqual(prepared.text, '@1@走进§Thanh Dương trấn§。@1@笑了。');
+  assert.strictEqual(T.restoreFromAi('@1@ đi vào §Thanh Dương trấn§.', prepared.mapping), 'Lâm Động đi vào Thanh Dương trấn.');
+});
+
+test('prepareForAi: a name starting inside a locked term wins', () => {
+  const T = loadEnv().TextProcessors;
+  const prepared = T.prepareForAi('大萧炎来了', {
+    names: [{ id: 'n1', original: '萧炎', translation: 'Tiêu Viêm' }],
+    locked: [{ id: 'g1', original: '大萧', translation: 'Đại Tiêu' }]
+  });
+  assert.strictEqual(prepared.text, '大@1@来了');
+});
+
+test('prepareForAi: a name at the start of a longer locked term still wins (as before)', () => {
+  const T = loadEnv().TextProcessors;
+  const prepared = T.prepareForAi('Lin Dong Sect rose.', {
+    names: [{ id: 'n1', original: 'Lin Dong', translation: 'Lâm Động' }],
+    locked: [{ id: 'g1', original: 'Lin Dong Sect', translation: 'Lâm Động tông' }]
+  });
+  assert.strictEqual(prepared.text, '@1@ Sect rose.');
+});
+
+test('prepareForAi keeps names case-sensitive and locked terms case-insensitive in one pass', () => {
+  const T = loadEnv().TextProcessors;
+  const prepared = T.prepareForAi('Wang Lin and wang lin met a CULTIVATOR.', {
+    names: [{ id: 'n1', original: 'Wang Lin', translation: 'Vương Lâm' }],
+    locked: [{ id: 'g1', original: 'cultivator', translation: 'tu sĩ' }]
+  });
+  assert.strictEqual(prepared.text, '@1@ and wang lin met a §tu sĩ§.');
+});
+
+test('prepareForAi numbers tokens by first appearance and leaves existing §...§ spans alone', () => {
+  const T = loadEnv().TextProcessors;
+  const prepared = T.prepareForAi('§Qi§ Qi, Wang Lin then Lin Dong, then Wang Lin.', {
+    names: [{ id: 'a', original: 'Lin Dong', translation: 'Lâm Động' }, { id: 'b', original: 'Wang Lin', translation: 'Vương Lâm' }],
+    locked: [{ id: 'g', original: 'Qi', translation: 'khí' }]
+  });
+  assert.strictEqual(prepared.text, '§Qi§ §khí§, @1@ then @2@, then @1@.');
+  assert.deepStrictEqual(plain(prepared.mapping).map((m) => [m.token, m.original]), [['@1@', 'Wang Lin'], ['@2@', 'Lin Dong']]);
+});
+
+test('tokenizeSource and applyLockedGlossary also match Chinese text', () => {
+  const T = loadEnv().TextProcessors;
+  assert.strictEqual(T.tokenizeSource('林动走进', [{ original: '林动', translation: 'Lâm Động' }]).text, '@1@走进');
+  assert.strictEqual(T.applyLockedGlossary('走进青阳镇', [{ original: '青阳镇', translation: 'Thanh Dương trấn' }]), '走进§Thanh Dương trấn§');
+});
+
 test('StorageService keeps delegating to the processors (same results)', () => {
   const env = loadEnv({ withStorage: true });
   const S = env.StorageService || env.window.StorageService;
@@ -102,10 +156,13 @@ test('every page and the worker that load storage.js load text-processors.js bef
     if (storage < 0) continue;
     const processors = html.indexOf('services/text-processors.js');
     assert(processors >= 0 && processors < storage, `${view} must load services/text-processors.js before storage.js`);
+    const matcher = html.indexOf('services/longest-matcher.js');
+    assert(matcher >= 0 && matcher < processors, `${view} must load services/longest-matcher.js before text-processors.js`);
   }
   const bg = read('src', 'scripts', 'background.js').match(/importScripts\(([^)]*)\)/)[1];
   assert(bg.includes('services/text-processors.js'), 'background.js must import text-processors.js');
   assert(bg.indexOf('services/text-processors.js') < bg.indexOf('services/storage.js'), 'worker imports text-processors.js before storage.js');
+  assert(bg.includes('services/longest-matcher.js') && bg.indexOf('services/longest-matcher.js') < bg.indexOf('services/text-processors.js'), 'worker imports longest-matcher.js before text-processors.js');
 });
 
 console.log(`--- Text Processors Test Suite: ${passed}/${passed + failed} passed ---`);
