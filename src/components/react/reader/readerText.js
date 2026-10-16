@@ -16,14 +16,15 @@ export async function buildReaderConverter(novel, services, { onError } = {}) {
     return undefined;
   };
   const safe = (promise) => Promise.resolve(promise).catch(report);
-  const [hanVietMap, locked, soft, vietPhrase, qtNames, pronouns, ignoredPhrases] = await Promise.all([
+  const [hanVietMap, locked, soft, vietPhrase, qtNames, pronouns, ignoredPhrases, luatNhan] = await Promise.all([
     safe(hanViet.load()),
     safe(storage.getNameList(novel.id, 'locked')),
     safe(storage.getNameList(novel.id, 'soft')),
     safe(dictionaries.load('vietPhrase')),
     safe(dictionaries.load('qtNames')),
     safe(dictionaries.load('pronouns')),
-    safe(dictionaries.load('ignoredPhrases'))
+    safe(dictionaries.load('ignoredPhrases')),
+    safe(dictionaries.load('luatNhan'))
   ]);
   const loaded = {};
   if (vietPhrase) loaded.vietPhrase = vietPhrase;
@@ -35,7 +36,8 @@ export async function buildReaderConverter(novel, services, { onError } = {}) {
     locked: locked || [],
     soft: soft || [],
     dictionaries: loaded,
-    ignoredPhrases: ignoredPhrases || []
+    ignoredPhrases: ignoredPhrases || [],
+    luatNhan: Array.isArray(luatNhan) ? luatNhan : []
   });
   const meaningsOf = (key) => {
     const out = [];

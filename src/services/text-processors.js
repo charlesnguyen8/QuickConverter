@@ -173,7 +173,15 @@
     return cut === -1 ? text : text.slice(0, cut);
   }
 
-  function convertLine(line, matcher, hanViet, ignored, segments) {
+  function resolveGlobal(name) {
+    const scope = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : self);
+    return scope && scope[name] ? scope[name] : null;
+  }
+
+  const RULE_WINDOW = 30;
+
+  function convertLine(line, context, segments) {
+    const { matcher, hanViet, ignored, rules, numbers, vietPhraseHas, minUserTier, nameTier } = context;
     let source = standardizeLine(line);
     if (ignored.length > 0) {
       ignored.forEach((pattern) => { source = source.replace(pattern, ''); });
@@ -181,8 +189,28 @@
     }
     if (!source) return '';
     const record = Array.isArray(segments) ? segments : null;
-    const matchAt = new Map();
-    if (matcher) matcher.findAll(source).forEach((match) => matchAt.set(match.index, match));
+    const numberAt = numbers ? numbers.prescanNumbers(source, vietPhraseHas) : new Map();
+    if (numbers) source = numbers.numberModifier(source);
+    let pendingRule = null;
+    let ruleScannedUntil = -1;
+
+    const ruleAt = (i) => {
+      if (!rules) return null;
+      if (pendingRule && pendingRule.index < i) pendingRule = null;
+      if (!pendingRule && i > ruleScannedUntil) {
+        const window = source.slice(i, i + RULE_WINDOW);
+        const found = window.length > 2 ? rules.contains(window) : null;
+        if (found) pendingRule = { ...found, index: i + found.index };
+        else ruleScannedUntil = i + window.length - 1;
+      }
+      if (!pendingRule || pendingRule.index !== i) return null;
+      const rule = pendingRule;
+      pendingRule = null;
+      if (!rule.key.includes('{n}') && matcher && matcher.hasTierInside(source, i, i + rule.length, nameTier)) return null;
+      const chinese = source.slice(i, i + rule.length);
+      const translation = rules.translate(chinese, rule.key, rule.valueN);
+      return translation ? { length: rule.length, chinese, translation: translation.trim() } : null;
+    };
 
     const isChinese = (ch) => !!ch && hanViet.has(ch);
     const charAt = (index) => {
@@ -207,9 +235,31 @@
       last += ch;
     };
 
+    const appendPhrase = (i, length, translation, origin) => {
+      const matched = source.slice(i, i + length);
+      appendWord(translation, record ? { source: matched, reading: readingOf(matched), translation, origin } : null);
+      if (isChinese(charAt(i + length))) appendChar(' ');
+      return i + length;
+    };
+
     let i = 0;
     while (i < source.length) {
-      const match = matchAt.get(i);
+      const number = numberAt.get(i);
+      let match = matcher ? matcher.matchAt(source, i) : null;
+      if (match && number && match.length < number.length) match = null;
+      const userMatch = match && match.tier >= minUserTier;
+      const rule = userMatch ? null : ruleAt(i);
+      if (rule) {
+        i = appendPhrase(i, rule.length, rule.translation, 'luatNhan');
+        continue;
+      }
+      if (!match && number) {
+        const translated = numbers.translateNumber(number.text);
+        if (translated) {
+          i = appendPhrase(i, number.length, translated, 'number');
+          continue;
+        }
+      }
       if (match) {
         const matched = source.slice(i, i + match.length);
         const origin = originOf(match.id);
@@ -283,14 +333,33 @@
       ? api.createMatcher(entries, { field: 'original', sources })
       : null;
     const ignored = ignoredPatterns(options.ignoredPhrases);
+    const numbers = resolveGlobal('QtNumbers');
+    const ruleEngine = resolveGlobal('LuatNhan');
+    const vietPhraseHas = (key) => isMap(dicts.vietPhrase) && dicts.vietPhrase.has(key);
+    let rules = null;
+    if (ruleEngine && Array.isArray(options.luatNhan) && options.luatNhan.length > 0) {
+      const pronouns = isMap(dicts.pronouns) ? dicts.pronouns : new Map();
+      const userNames = new Map(nameEntries(options.names, tiers.namelist).map((entry) => [entry.original, entry.translation]));
+      const qtNames = isMap(dicts.qtNames) ? dicts.qtNames : new Map();
+      const dictionaryN = {
+        get: (key) => {
+          if (pronouns.has(key)) return pronouns.get(key);
+          if (userNames.has(key)) return userNames.get(key);
+          if (qtNames.has(key)) return qtNames.get(key);
+          return undefined;
+        }
+      };
+      rules = ruleEngine.createRules(options.luatNhan, { dictionaryN, vietPhraseHas });
+    }
+    const context = { matcher, hanViet, ignored, rules, numbers, vietPhraseHas, minUserTier: tiers.soft, nameTier: tiers.qtNames };
     return {
       convert(text) {
-        return String(text || '').split('\n').map((line) => convertLine(line, matcher, hanViet, ignored)).join('\n');
+        return String(text || '').split('\n').map((line) => convertLine(line, context)).join('\n');
       },
       convertDetailed(text) {
         return String(text || '').split('\n').map((line) => {
           const segments = [];
-          const converted = convertLine(line, matcher, hanViet, ignored, segments);
+          const converted = convertLine(line, context, segments);
           return { text: converted, segments: segments.filter((seg) => seg.end > seg.start) };
         });
       }

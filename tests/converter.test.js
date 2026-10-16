@@ -29,6 +29,8 @@ function loadEnv(extra = {}) {
   env.globalThis = env;
   vm.createContext(env);
   vm.runInContext(read('src', 'services', 'longest-matcher.js'), env);
+  vm.runInContext(read('src', 'services', 'qt-numbers.js'), env);
+  vm.runInContext(read('src', 'services', 'luat-nhan.js'), env);
   vm.runInContext(read('src', 'services', 'text-processors.js'), env);
   vm.runInContext(read('src', 'services', 'han-viet.js'), env);
   vm.runInContext(read('src', 'services', 'qt-dictionaries.js'), env);
@@ -60,7 +62,8 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
   });
 
   await test('full-width ASCII is narrowed', () => {
-    assert.strictEqual(convert('他１２３'), 'Tha123');
+    assert.strictEqual(convert('他ＡＢ'), 'ThaAB');
+    assert.strictEqual(convert('他１２３'), 'Tha 123', 'narrowed digits form a number, which QT appends as a word');
   });
 
   await test('a name starting inside a soft or locked term wins', () => {
@@ -147,6 +150,62 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert(loader >= 0 && loader < reader.indexOf('reader-entry.jsx'), 'reader loads qt-dictionaries.js');
   });
 
+  const RULE_HV = new Map([...HAN_VIET, ['三', 'tam'], ['百', 'bách'], ['步', 'bộ'], ['月', 'nguyệt'], ['五', 'ngũ'], ['号', 'hào'], ['年', 'niên'], ['轻', 'khinh'], ['人', 'nhân'], ['一', 'nhất'], ['二', 'nhị']]);
+  const RULES = [['{s}月{s}号', 'ngày {2} tháng {1}'], ['{s}年', 'năm {s}']];
+
+  await test('LuatNhan rules convert dates in running text', () => {
+    const converter = T.createConverter({ hanViet: RULE_HV, luatNhan: RULES });
+    assert.strictEqual(converter.convert('三月五号他走了'), 'Mùng 5 tháng 3 tha tẩu liễu');
+  });
+
+  await test('numbers no rule covers are converted on their own', () => {
+    const converter = T.createConverter({ hanViet: RULE_HV, luatNhan: RULES });
+    assert.strictEqual(converter.convert('他走了三百步'), 'Tha tẩu liễu 300 bộ');
+  });
+
+  await test('a dictionary phrase cannot cut a number in half', () => {
+    const converter = T.createConverter({ hanViet: RULE_HV, dictionaries: { vietPhrase: new Map([['一二', 'x']]) } });
+    assert.strictEqual(converter.convert('一二三'), '123');
+  });
+
+  await test('a rule without {n} gives way to a name starting inside it', () => {
+    const converter = T.createConverter({
+      hanViet: RULE_HV,
+      luatNhan: RULES,
+      names: [{ id: 'n', original: '年轻人', translation: 'Young Man' }]
+    });
+    assert.strictEqual(converter.convert('三年轻人'), '3 Young Man');
+  });
+
+  await test('converted segments include rule and number matches', () => {
+    const converter = T.createConverter({ hanViet: RULE_HV, luatNhan: RULES });
+    const [line] = converter.convertDetailed('三月五号他走了三百步');
+    const origins = JSON.parse(JSON.stringify(line.segments.map((seg) => [seg.source, seg.origin])));
+    assert.deepStrictEqual(origins.filter(([, origin]) => origin === 'luatNhan' || origin === 'number'), [['三月五号', 'luatNhan'], ['三百', 'number']]);
+  });
+
+  await test('QtDictionaries loads LuatNhan.txt as rules', async () => {
+    const fetchEnv = loadEnv({ fetch: async (url) => ({ ok: true, text: async () => (url.endsWith('LuatNhan.txt') ? '# c\n{s}年=năm {s}\n' : '') }) });
+    const rules = await fetchEnv.QtDictionaries.load('luatNhan');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(rules)), [['{s}年', 'năm {s}']]);
+    assert(fs.existsSync(path.join(repoRoot, 'src', 'dict', 'LuatNhan.txt')), 'LuatNhan.txt is bundled');
+  });
+
+  await test('every page that converts loads the number and rule services', () => {
+    for (const view of ['reader.html', 'novel.html', 'popup.html']) {
+      const html = read('src', 'views', view);
+      const processors = html.indexOf('services/text-processors.js');
+      for (const service of ['services/qt-numbers.js', 'services/luat-nhan.js']) {
+        const at = html.indexOf(service);
+        assert(at >= 0 && at < processors, `${view} loads ${service} before text-processors.js`);
+      }
+    }
+    const bg = read('src', 'scripts', 'background.js').match(/importScripts\(([^)]*)\)/)[1];
+    for (const service of ['services/qt-numbers.js', 'services/luat-nhan.js']) {
+      assert(bg.includes(service) && bg.indexOf(service) < bg.indexOf('services/text-processors.js'), `worker imports ${service}`);
+    }
+  });
+
   await test('HanViet.parse reads QT ChinesePhienAmWords format', () => {
     const map = env.HanViet.parse('﻿一=nhất\n丁=đinh\nbad line\na=b=c\n一=khác\n东=đông/đô\n');
     assert.strictEqual(map.get('一'), 'nhất', 'BOM stripped, first entry wins');
@@ -225,6 +284,17 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert.strictEqual(converter.lists.locked[0].original, 'locked');
     assert.strictEqual(converter.lists.soft[0].original, 'soft');
     assert(calls.some((c) => c[0] === 'hanViet'));
+  });
+
+  await test('buildReaderConverter passes the LuatNhan rules to the converter', async () => {
+    const services = {
+      storage: { getNameList: async () => [] },
+      hanViet: { load: async () => new Map() },
+      dictionaries: { load: async (name) => (name === 'luatNhan' ? [['{s}年', 'năm {s}']] : name === 'ignoredPhrases' ? [] : new Map()) },
+      processors: { createConverter: (lists) => ({ lists }) }
+    };
+    const converter = await readerText.buildReaderConverter({ id: 'n1', nameList: [] }, services);
+    assert.deepStrictEqual(converter.lists.luatNhan, [['{s}年', 'năm {s}']]);
   });
 
   await test('buildReaderConverter still converts when a dictionary fails to load', async () => {
