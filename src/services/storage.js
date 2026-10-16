@@ -191,7 +191,69 @@ function dedupeNameList(list) {
   return out;
 }
 
+function hasChineseText(text) {
+  return typeof text === 'string' && /[㐀-鿿豈-﫿]/.test(text);
+}
+
 const StorageService = {
+  async _titleConverter(novel) {
+    if (!novel || !novel.conversionMode) return null;
+    const hanViet = typeof HanViet !== 'undefined' ? HanViet : null;
+    const dictionaries = typeof QtDictionaries !== 'undefined' ? QtDictionaries : null;
+    const processors = typeof TextProcessors !== 'undefined' ? TextProcessors : null;
+    if (!hanViet || !dictionaries || !processors) return null;
+    const safe = (load) => Promise.resolve().then(load).catch((e) => {
+      console.warn('[QuickConverter] Dictionary unavailable for title conversion:', e);
+      return undefined;
+    });
+    const [hanVietMap, locked, soft, vietPhrase, qtNames, pronouns, ignoredPhrases] = await Promise.all([
+      safe(() => hanViet.load()),
+      safe(() => this.getNameList(novel.id, 'locked')),
+      safe(() => this.getNameList(novel.id, 'soft')),
+      safe(() => dictionaries.load('vietPhrase')),
+      safe(() => dictionaries.load('qtNames')),
+      safe(() => dictionaries.load('pronouns')),
+      safe(() => dictionaries.load('ignoredPhrases'))
+    ]);
+    const loaded = {};
+    if (vietPhrase) loaded.vietPhrase = vietPhrase;
+    if (qtNames) loaded.qtNames = qtNames;
+    if (pronouns) loaded.pronouns = pronouns;
+    return processors.createConverter({
+      hanViet: hanVietMap || new Map(),
+      names: Array.isArray(novel.nameList) ? novel.nameList : [],
+      locked: locked || [],
+      soft: soft || [],
+      dictionaries: loaded,
+      ignoredPhrases: ignoredPhrases || []
+    });
+  },
+
+  async _convertCatalogTitles(novel, chapters) {
+    if (!novel || !novel.conversionMode || !chapters.some((c) => c && hasChineseText(c.title))) return chapters;
+    try {
+      const converter = await this._titleConverter(novel);
+      if (!converter) return chapters;
+      return chapters.map((c) => (c && hasChineseText(c.title) ? { ...c, title: converter.convert(c.title) } : c));
+    } catch (e) {
+      console.warn('[QuickConverter] Could not convert chapter titles:', e);
+      return chapters;
+    }
+  },
+
+  async _convertChapterTitle(novelId, title) {
+    if (!hasChineseText(title)) return title;
+    try {
+      const novel = await this.getNovelById(novelId);
+      if (!novel || !novel.conversionMode) return title;
+      const converter = await this._titleConverter(novel);
+      return converter ? converter.convert(title) : title;
+    } catch (e) {
+      console.warn('[QuickConverter] Could not convert chapter title:', e);
+      return title;
+    }
+  },
+
   async _isDbInitialized() {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       return new Promise((resolve) => {
@@ -753,7 +815,7 @@ const StorageService = {
         const chapters = await provider.fetchChapterList(novel.slug, novel.url);
         if (Array.isArray(chapters) && chapters.length > 0) {
           const updates = {
-            chapterList: chapters
+            chapterList: await this._convertCatalogTitles(novel, chapters)
           };
           if (!novel.totalChapters || chapters.length > novel.totalChapters) {
             updates.totalChapters = chapters.length;
@@ -865,12 +927,13 @@ const StorageService = {
     }
 
     const chapterId = `${novelId}_ch${chapterNumber}`;
+    const savedTitle = await this._convertChapterTitle(novelId, title);
     const chapterRecord = {
       ...rest,
       id: chapterId,
       novelId,
       chapterNumber: Number(chapterNumber),
-      title: title || `Chapter ${chapterNumber}`,
+      title: savedTitle || `Chapter ${chapterNumber}`,
       url: url || '',
       rawText: rawText || '',
       convertedText: convertedText || '',

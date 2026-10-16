@@ -314,6 +314,157 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     }
   });
 
+  const DICT_FILES = {
+    'ChinesePhienAmWords.txt': '第=đệ\n章=chương\n来=lai',
+    'VietPhrase.txt': '第=thứ\n来了=tới',
+    'Names.txt': '',
+    'Pronouns.txt': '',
+    'IgnoredChinesePhrases.txt': ''
+  };
+  const hasCjk = (s) => /[㐀-鿿]/.test(s);
+  const loadStorageEnv = ({ failing = [] } = {}) => {
+    const fetched = [];
+    const saved = [];
+    const env = loadEnv({
+      fetch: async (url) => {
+        const file = String(url).split('/').pop();
+        fetched.push(file);
+        if (failing.includes(file)) return { ok: false, status: 500, text: async () => '' };
+        return { ok: true, status: 200, text: async () => DICT_FILES[file] || '' };
+      },
+      indexedDB: {
+        open: () => {
+          const req = {};
+          setTimeout(() => {
+            req.result = {
+              transaction: () => {
+                const tx = {
+                  objectStore: () => ({
+                    put: (record) => { saved.push(record); setTimeout(() => tx.oncomplete && tx.oncomplete(), 0); }
+                  })
+                };
+                return tx;
+              }
+            };
+            req.onsuccess && req.onsuccess();
+          }, 0);
+          return req;
+        }
+      }
+    });
+    vm.runInContext(read('src', 'services', 'storage.js'), env);
+    const S = env.StorageService;
+    return { env, S, fetched, saved };
+  };
+  const conversionNovel = (overrides = {}) => ({
+    id: 'n1',
+    slug: 'n1',
+    url: 'https://example.test/n1',
+    title: 'Novel',
+    conversionMode: true,
+    nameList: [{ id: 'a', original: '林动', translation: 'Lâm Động' }],
+    chapterList: [],
+    ...overrides
+  });
+  const stubNovel = (S, env, novel, chapters) => {
+    const updates = [];
+    S.getNovelById = async () => novel;
+    S.getNovelBySlug = async () => novel;
+    S.getNameList = async () => [];
+    S.updateNovel = async (id, patch) => { updates.push(patch); return { ...novel, ...patch }; };
+    const provider = {
+      fetchChapterList: async () => chapters.map((c) => ({ ...c })),
+      fetchChapterContent: async () => ({ title: '第2章 林动来了', rawText: '林动来了' })
+    };
+    env.ProviderRegistry = { getProviderForUrl: () => provider, getProviderForDomain: () => provider };
+    return updates;
+  };
+  const readerConvert = async (env, novel) => (await readerText.buildReaderConverter(novel, {
+    storage: { getNameList: async () => [] },
+    hanViet: env.HanViet,
+    dictionaries: env.QtDictionaries,
+    processors: env.TextProcessors
+  })).convert;
+
+  await test('Sync Catalog saves chapter titles converted the same way the reader converts them', async () => {
+    const { env, S } = loadStorageEnv();
+    const novel = conversionNovel();
+    const updates = stubNovel(S, env, novel, [
+      { chapterNumber: 1, title: '第1章 林动来了', url: 'u1', slug: 's1', locked: true },
+      { chapterNumber: 2, title: 'Chapter 2 already English', url: 'u2' }
+    ]);
+    await S.syncNovelChapters('n1');
+    const list = updates[0].chapterList;
+    const convert = await readerConvert(env, novel);
+    assert.strictEqual(list[0].title, convert('第1章 林动来了'));
+    assert(list[0].title.includes('Lâm Động') && !hasCjk(list[0].title), `expected a converted title, got ${list[0].title}`);
+    assert.deepStrictEqual({ ...list[0], title: undefined }, { chapterNumber: 1, title: undefined, url: 'u1', slug: 's1', locked: true }, 'other catalog fields are kept');
+    assert.strictEqual(list[1].title, 'Chapter 2 already English');
+  });
+
+  await test('Sync Catalog keeps the source titles and loads no dictionary when conversion is off', async () => {
+    const { env, S, fetched } = loadStorageEnv();
+    const updates = stubNovel(S, env, conversionNovel({ conversionMode: false }), [{ chapterNumber: 1, title: '第1章 林动' }]);
+    await S.syncNovelChapters('n1');
+    assert.strictEqual(updates[0].chapterList[0].title, '第1章 林动');
+    assert.deepStrictEqual(fetched, []);
+  });
+
+  await test('Sync Catalog loads no dictionary when every title is already converted', async () => {
+    const { env, S, fetched } = loadStorageEnv();
+    const updates = stubNovel(S, env, conversionNovel(), [{ chapterNumber: 1, title: 'Thứ 1 chương' }]);
+    await S.syncNovelChapters('n1');
+    assert.strictEqual(updates[0].chapterList[0].title, 'Thứ 1 chương');
+    assert.deepStrictEqual(fetched, []);
+  });
+
+  await test('Sync Catalog still saves the catalog when a dictionary fails to load', async () => {
+    const { env, S } = loadStorageEnv({ failing: ['VietPhrase.txt'] });
+    const updates = stubNovel(S, env, conversionNovel(), [{ chapterNumber: 1, title: '林动' }]);
+    await S.syncNovelChapters('n1');
+    assert.strictEqual(updates[0].chapterList[0].title, 'Lâm Động');
+  });
+
+  await test('downloading a chapter in conversion mode saves its title converted and its text untouched', async () => {
+    const { env, S, saved } = loadStorageEnv();
+    const novel = conversionNovel({ chapterList: [{ chapterNumber: 2, title: '第2章 林动来了' }] });
+    stubNovel(S, env, novel, []);
+    await S.downloadChapter('n1', 2, {});
+    const chapter = saved.find((r) => r.id === 'n1_ch2');
+    assert(chapter, 'chapter was saved');
+    assert.strictEqual(chapter.title, (await readerConvert(env, novel))('第2章 林动来了'));
+    assert(!hasCjk(chapter.title), `expected a converted title, got ${chapter.title}`);
+    assert.strictEqual(chapter.rawText, '林动来了');
+    assert.strictEqual(chapter.originalRawText, '林动来了');
+  });
+
+  await test('chapters saved from an open page get converted titles in conversion mode only', async () => {
+    const on = loadStorageEnv();
+    stubNovel(on.S, on.env, conversionNovel(), []);
+    await on.S.saveChapter({ novelId: 'n1', chapterNumber: 3, title: '林动', rawText: '林动' });
+    assert.strictEqual(on.saved[0].title, 'Lâm Động');
+    assert.strictEqual(on.saved[0].rawText, '林动');
+
+    const off = loadStorageEnv();
+    stubNovel(off.S, off.env, conversionNovel({ conversionMode: false }), []);
+    await off.S.saveChapter({ novelId: 'n1', chapterNumber: 3, title: '林动', rawText: '林动' });
+    assert.strictEqual(off.saved[0].title, '林动');
+    assert.deepStrictEqual(off.fetched, []);
+  });
+
+  await test('the background worker and conversion-capable views load the dictionary services', () => {
+    const bg = read('src', 'scripts', 'background.js');
+    for (const file of ['han-viet.js', 'qt-dictionaries.js']) {
+      assert(bg.includes(`'../services/${file}'`), `background.js must import ${file}`);
+    }
+    for (const view of ['novel.html', 'popup.html', 'reader.html']) {
+      const html = read('src', 'views', view);
+      for (const file of ['han-viet.js', 'qt-dictionaries.js']) {
+        assert(html.includes(`services/${file}`), `${view} must load ${file}`);
+      }
+    }
+  });
+
   console.log(`--- Dictionary Converter Test Suite: ${passed}/${passed + failed} passed ---`);
   if (failed > 0) process.exit(1);
   console.log('Dictionary Converter Test Suite: ALL TESTS PASSED!');
