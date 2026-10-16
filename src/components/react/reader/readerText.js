@@ -139,6 +139,8 @@ export const PHRASE_ORIGIN_LABELS = {
   qtNames: 'QT Names',
   vietPhrase: 'VietPhrase',
   hanViet: 'Hán Việt',
+  luatNhan: 'LuatNhan rule',
+  number: 'Number',
   selection: 'Selection'
 };
 

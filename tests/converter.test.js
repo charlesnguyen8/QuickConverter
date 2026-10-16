@@ -707,6 +707,18 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert.deepStrictEqual(converter.meaningsOf('无'), []);
   });
 
+  await test('rule and number chunks can be joined with the chunks around them', () => {
+    const converter = T.createConverter({ hanViet: RULE_HV, luatNhan: RULES });
+    const [para] = readerText.paragraphsFromLines(converter.convertDetailed('三月五号他走了三百步'));
+    const rule = para.segments.findIndex((s) => s.origin === 'luatNhan');
+    const number = para.segments.findIndex((s) => s.origin === 'number');
+    assert.strictEqual(readerText.canExtendPhrase(para, rule, rule, 'right'), true, 'a rule chunk extends right');
+    assert.strictEqual(readerText.canExtendPhrase(para, number, number, 'left'), true, 'a number chunk extends left');
+    assert.strictEqual(readerText.phraseRange(para, number, number + 1).source, '三百步');
+    assert.strictEqual(readerText.PHRASE_ORIGIN_LABELS.luatNhan, 'LuatNhan rule');
+    assert.strictEqual(readerText.PHRASE_ORIGIN_LABELS.number, 'Number');
+  });
+
   console.log(`--- Dictionary Converter Test Suite: ${passed}/${passed + failed} passed ---`);
   if (failed > 0) process.exit(1);
   console.log('Dictionary Converter Test Suite: ALL TESTS PASSED!');

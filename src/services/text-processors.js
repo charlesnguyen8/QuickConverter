@@ -237,7 +237,7 @@
 
     const appendPhrase = (i, length, translation, origin) => {
       const matched = source.slice(i, i + length);
-      appendWord(translation, record ? { source: matched, reading: readingOf(matched), translation, origin } : null);
+      appendWord(translation, record ? { source: matched, sourceStart: i, sourceEnd: i + length, reading: readingOf(matched), translation, origin } : null);
       if (isChinese(charAt(i + length))) appendChar(' ');
       return i + length;
     };
