@@ -19,6 +19,7 @@ const testFiles = [
   'backup.test.js',
   'cloud-sync.test.js',
   'nkwwlkj.test.js',
+  'ocr-panel.test.js',
   'components.test.js'
 ];
 

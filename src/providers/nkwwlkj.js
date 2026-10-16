@@ -105,7 +105,8 @@ const NkwwlkjProvider = (() => {
     const breadBook = src.match(/<a[^>]*href=["'][^"']*book\/book_detail\/(\d+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
 
     const titleMatch = src.match(/class=["']article-title["'][^>]*>([\s\S]*?)<\/div>/i);
-    const locked = /id=["']J_ImgRead["']/i.test(src) && !/id=["']J_BookRead["']/i.test(src);
+    const imageOnly = /id=["']J_ImgRead["']/i.test(src) && !/id=["']J_BookRead["']/i.test(src);
+    const locked = imageOnly;
 
     let rawText = null;
     if (!locked) {
@@ -126,6 +127,7 @@ const NkwwlkjProvider = (() => {
       title: titleMatch ? cleanText(titleMatch[1]) : '',
       novelTitle: breadBook ? cleanText(breadBook[2]) : '',
       locked,
+      imageOnly,
       rawText
     };
   }
@@ -192,6 +194,31 @@ const NkwwlkjProvider = (() => {
 
     extractSeriesMetadata(doc) {
       return parseSeriesHtml(docHtml(doc));
+    },
+
+    async captureChapterImage(doc, win) {
+      const holder = doc && typeof doc.getElementById === 'function' ? doc.getElementById('J_BookImage') : null;
+      if (!holder || !win || typeof win.getComputedStyle !== 'function') return null;
+      const match = (win.getComputedStyle(holder).backgroundImage || '').match(/url\(["']?(.*?)["']?\)/);
+      if (!match) return null;
+
+      const img = new win.Image();
+      img.src = match[1];
+      await img.decode();
+      const canvas = doc.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) return null;
+      return { bytes: await blob.arrayBuffer(), mimeType: 'image/png', width: canvas.width, height: canvas.height };
+    },
+
+    isImageChapter(doc) {
+      return parseChapterPageHtml(docHtml(doc)).imageOnly;
     },
 
     resolveChapterPage(doc) {

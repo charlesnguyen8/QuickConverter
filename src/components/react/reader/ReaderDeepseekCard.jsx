@@ -40,7 +40,7 @@ function makePanelIds(prefix) {
   return ids;
 }
 
-const ReaderDeepseekCard = forwardRef(function ReaderDeepseekCard({ idPrefix = 'reader', variant = 'full', className }, ref) {
+const ReaderDeepseekCard = forwardRef(function ReaderDeepseekCard({ idPrefix = 'reader', variant = 'full', className, description }, ref) {
   const [novelId] = useState(getNovelId);
   const [prompt, setPrompt] = useState(null);
   const novelRef = useRef(null);
@@ -88,7 +88,7 @@ const ReaderDeepseekCard = forwardRef(function ReaderDeepseekCard({ idPrefix = '
       hooks={hooks}
       prompt={prompt}
       className={className || 'w-full text-left rounded-xl bg-slate-800/80 border border-slate-700/80 p-5 shadow-sm flex flex-col gap-4'}
-      copy={{ description: 'When enabled, this chapter will be automatically translated via DeepSeek API before saving.' }}
+      copy={{ description: description || 'When enabled, this chapter will be automatically translated via DeepSeek API before saving.' }}
     />
   );
 });

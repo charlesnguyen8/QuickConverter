@@ -1188,6 +1188,151 @@ const StorageService = {
     };
   },
 
+  async _translateRaw(novel, rawText, translation, options = {}) {
+    if (options && options.signal && options.signal.aborted) {
+      throw new Error('UserCancelled');
+    }
+    let { apiKey, prompt, model, provider, baseUrl } = translation;
+    let cleanKey = (apiKey || '').trim();
+
+    if (options && typeof options.onProgress === 'function') {
+      options.onProgress({ phase: 'connecting', percent: 10, text: 'Connecting to AI...' });
+    }
+
+    const ai = (typeof window !== 'undefined' && window.AIService) ||
+      (typeof self !== 'undefined' && self.AIService) ||
+      (typeof AIService !== 'undefined' && AIService);
+
+    const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
+      (typeof self !== 'undefined' && self.DeepSeekService) ||
+      (typeof DeepSeekService !== 'undefined' && DeepSeekService);
+
+    const client = ai || deepseek;
+
+    const provConfig = (client && typeof client.getProviderConfig === 'function')
+      ? await client.getProviderConfig()
+      : { provider: 'official', baseUrl: 'https://api.deepseek.com', isLocalBridge: false };
+
+    const activeProvider = provider || provConfig.provider;
+    const effectiveBaseUrl = baseUrl || provConfig.baseUrl;
+
+    if (!cleanKey && deepseek && typeof deepseek.getApiKey === 'function') {
+      try {
+        const stored = await deepseek.getApiKey();
+        if (stored && stored.apiKey) {
+          cleanKey = stored.apiKey.trim();
+        }
+      } catch (e) {
+        console.warn('[StorageService] Error loading stored DeepSeek key:', e);
+      }
+    }
+
+    if (!cleanKey) {
+      if (activeProvider === 'custom' || activeProvider === 'local_bridge' || (effectiveBaseUrl && (effectiveBaseUrl.includes('127.0.0.1') || effectiveBaseUrl.includes('localhost')))) {
+        cleanKey = 'sk-local';
+      } else {
+        throw new Error('DeepSeek API Key is required when translation is enabled.');
+      }
+    }
+
+    if (!client || typeof client.translateChapter !== 'function') {
+      throw new Error('AI translation service is not loaded.');
+    }
+
+    const effectivePrompt = prompt || (novel && novel.translationPrompt) ||
+      'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
+
+    // Tokenize known source names to @n@ placeholders before translation.
+    const nameEntries = novel && Array.isArray(novel.nameList) ? novel.nameList : [];
+    const tokenized = nameEntries.length > 0 ? tokenizeSource(rawText, nameEntries) : null;
+    const namedText = tokenized && tokenized.mapping.length > 0 ? tokenized.text : rawText;
+
+    // Pre-translate locked glossary terms, then wrap them in §...§ so the model uses
+    // the canonical value. Runs after name tokenization so @n@ placeholders are kept.
+    let lockedEntries = [];
+    try {
+      lockedEntries = novel ? await this.getNameList(novel.id, 'locked') : [];
+    } catch (e) {
+      console.warn('[StorageService] Failed to load locked glossary:', e);
+    }
+    const sourceForTranslation = applyLockedGlossary(namedText, lockedEntries);
+    let promptForTranslation = tokenized && tokenized.mapping.length > 0
+      ? `${effectivePrompt}\n\nKeep every placeholder token such as @1@ or @a@ exactly as written - do not translate, alter, or remove them.`
+      : effectivePrompt;
+    if (options && options.ocrSource) {
+      promptForTranslation = `${promptForTranslation}\n\nThe source text was produced by OCR from an image, so a few characters may be misread or missing. Use the surrounding context to infer the intended words.`;
+    }
+
+    // Estimate expected translated character count (CJK: ~2.8x, Latin: ~1.1x)
+    const rawLen = rawText ? rawText.length : 1000;
+    const isCJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\uac00-\ud7af]/.test(rawText || '');
+    const expansionRatio = isCJK ? 2.8 : 1.1;
+    const expectedChars = Math.max(100, Math.round(rawLen * expansionRatio));
+
+    const result = await client.translateChapter({
+      apiKey: cleanKey,
+      prompt: promptForTranslation,
+      rawText: sourceForTranslation,
+      model: model || (activeProvider === 'local_bridge' ? 'deepseek-chat' : 'deepseek-flash'),
+      provider: activeProvider,
+      baseUrl: effectiveBaseUrl,
+      signal: options.signal,
+      onChunk: (chunk) => {
+        if (options && typeof options.onChunk === 'function') {
+          options.onChunk(chunk);
+        }
+        if (options && typeof options.onProgress === 'function' && chunk) {
+          if (chunk.type === 'reasoning') {
+            options.onProgress({
+              phase: 'reasoning',
+              percent: 12,
+              text: 'DeepThinking...'
+            });
+          } else if (chunk.type === 'content') {
+            const currentChars = (chunk.fullText || '').length;
+            const ratio = currentChars / expectedChars;
+            let pct;
+            if (ratio <= 1.0) {
+              pct = Math.round(10 + ratio * 82); // 10% to 92%
+            } else {
+              const overflow = (currentChars - expectedChars) / (expectedChars * 0.5);
+              pct = Math.min(98, Math.round(92 + (1 - Math.exp(-overflow)) * 6)); // 92% to 98%
+            }
+            options.onProgress({
+              phase: 'translating',
+              percent: Math.max(12, Math.min(98, pct)),
+              text: `Translating (${pct}%)...`,
+              currentChars,
+              expectedChars
+            });
+          }
+        }
+      }
+    });
+
+
+    const tokenMapping = tokenized ? tokenized.mapping : [];
+    const restoredText = tokenMapping.length > 0
+      ? restoreTokens(result.translatedText, tokenMapping)
+      : result.translatedText;
+    const parsedGlossary = this.parseGlossaryBlocks(stripLockedMarkers(restoredText));
+    return {
+      text: parsedGlossary.text,
+      names: parsedGlossary.names,
+      locked: parsedGlossary.locked,
+      soft: parsedGlossary.soft,
+      delaySeconds: parsedGlossary.delaySeconds || 0,
+      modelUsed: result.modelUsed,
+      costInfo: result.costInfo || null,
+      usage: result.usage || null
+    };
+  },
+
+  async translateText(novelId, rawText, translation, options = {}) {
+    const novel = novelId ? await this.getNovelById(novelId) : null;
+    return this._translateRaw(novel, rawText, { ...(translation || {}), enabled: true }, options);
+  },
+
   async downloadChapter(novelId, chapterNumber, options = {}) {
     if (!novelId || chapterNumber === undefined) {
       throw new Error('novelId and chapterNumber are required to download a chapter');
@@ -1249,137 +1394,18 @@ const StorageService = {
       if (options && options.signal && options.signal.aborted) {
         throw new Error('UserCancelled');
       }
-      let { apiKey, prompt, model, provider, baseUrl } = options.translation;
-      let cleanKey = (apiKey || '').trim();
-
-      if (options && typeof options.onProgress === 'function') {
-        options.onProgress({ phase: 'connecting', percent: 10, text: 'Connecting to AI...' });
-      }
-
-      const ai = (typeof window !== 'undefined' && window.AIService) ||
-        (typeof self !== 'undefined' && self.AIService) ||
-        (typeof AIService !== 'undefined' && AIService);
-
-      const deepseek = (typeof window !== 'undefined' && window.DeepSeekService) ||
-        (typeof self !== 'undefined' && self.DeepSeekService) ||
-        (typeof DeepSeekService !== 'undefined' && DeepSeekService);
-
-      const client = ai || deepseek;
-
-      const provConfig = (client && typeof client.getProviderConfig === 'function')
-        ? await client.getProviderConfig()
-        : { provider: 'official', baseUrl: 'https://api.deepseek.com', isLocalBridge: false };
-
-      const activeProvider = provider || provConfig.provider;
-      const effectiveBaseUrl = baseUrl || provConfig.baseUrl;
-
-      if (!cleanKey && deepseek && typeof deepseek.getApiKey === 'function') {
-        try {
-          const stored = await deepseek.getApiKey();
-          if (stored && stored.apiKey) {
-            cleanKey = stored.apiKey.trim();
-          }
-        } catch (e) {
-          console.warn('[StorageService] Error loading stored DeepSeek key:', e);
-        }
-      }
-
-      if (!cleanKey) {
-        if (activeProvider === 'custom' || activeProvider === 'local_bridge' || (effectiveBaseUrl && (effectiveBaseUrl.includes('127.0.0.1') || effectiveBaseUrl.includes('localhost')))) {
-          cleanKey = 'sk-local';
-        } else {
-          throw new Error('DeepSeek API Key is required when translation is enabled.');
-        }
-      }
-
-      if (!client || typeof client.translateChapter !== 'function') {
-        throw new Error('AI translation service is not loaded.');
-      }
-
-      const effectivePrompt = prompt || novel.translationPrompt ||
-        'Translate the novel chapter text to high-quality, fluent English. Maintain consistent character names, martial arts/cultivation terms, and literary tone.';
-
-      // Tokenize known source names to @n@ placeholders before translation.
-      const nameEntries = Array.isArray(novel.nameList) ? novel.nameList : [];
-      const tokenized = nameEntries.length > 0 ? tokenizeSource(content.rawText, nameEntries) : null;
-      const namedText = tokenized && tokenized.mapping.length > 0 ? tokenized.text : content.rawText;
-
-      // Pre-translate locked glossary terms, then wrap them in §...§ so the model uses
-      // the canonical value. Runs after name tokenization so @n@ placeholders are kept.
-      let lockedEntries = [];
-      try {
-        lockedEntries = await this.getNameList(novel.id, 'locked');
-      } catch (e) {
-        console.warn('[StorageService] Failed to load locked glossary:', e);
-      }
-      const sourceForTranslation = applyLockedGlossary(namedText, lockedEntries);
-      const promptForTranslation = tokenized && tokenized.mapping.length > 0
-        ? `${effectivePrompt}\n\nKeep every placeholder token such as @1@ or @a@ exactly as written - do not translate, alter, or remove them.`
-        : effectivePrompt;
-
-      // Estimate expected translated character count (CJK: ~2.8x, Latin: ~1.1x)
-      const rawLen = content.rawText ? content.rawText.length : 1000;
-      const isCJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\uac00-\ud7af]/.test(content.rawText || '');
-      const expansionRatio = isCJK ? 2.8 : 1.1;
-      const expectedChars = Math.max(100, Math.round(rawLen * expansionRatio));
-
-      const result = await client.translateChapter({
-        apiKey: cleanKey,
-        prompt: promptForTranslation,
-        rawText: sourceForTranslation,
-        model: model || (activeProvider === 'local_bridge' ? 'deepseek-chat' : 'deepseek-flash'),
-        provider: activeProvider,
-        baseUrl: effectiveBaseUrl,
-        signal: options.signal,
-        onChunk: (chunk) => {
-          if (options && typeof options.onChunk === 'function') {
-            options.onChunk(chunk);
-          }
-          if (options && typeof options.onProgress === 'function' && chunk) {
-            if (chunk.type === 'reasoning') {
-              options.onProgress({
-                phase: 'reasoning',
-                percent: 12,
-                text: 'DeepThinking...'
-              });
-            } else if (chunk.type === 'content') {
-              const currentChars = (chunk.fullText || '').length;
-              const ratio = currentChars / expectedChars;
-              let pct;
-              if (ratio <= 1.0) {
-                pct = Math.round(10 + ratio * 82); // 10% to 92%
-              } else {
-                const overflow = (currentChars - expectedChars) / (expectedChars * 0.5);
-                pct = Math.min(98, Math.round(92 + (1 - Math.exp(-overflow)) * 6)); // 92% to 98%
-              }
-              options.onProgress({
-                phase: 'translating',
-                percent: Math.max(12, Math.min(98, pct)),
-                text: `Translating (${pct}%)...`,
-                currentChars,
-                expectedChars
-              });
-            }
-          }
-        }
-      });
-
-      const tokenMapping = tokenized ? tokenized.mapping : [];
-      const restoredText = tokenMapping.length > 0
-        ? restoreTokens(result.translatedText, tokenMapping)
-        : result.translatedText;
-      const parsedGlossary = this.parseGlossaryBlocks(stripLockedMarkers(restoredText));
-      finalText = parsedGlossary.text;
-      capturedNames = parsedGlossary.names;
-      capturedLocked = parsedGlossary.locked;
-      capturedSoft = parsedGlossary.soft;
-      translationDelay = parsedGlossary.delaySeconds || 0;
+      const translated = await this._translateRaw(novel, content.rawText, options.translation, options);
+      finalText = translated.text;
+      capturedNames = translated.names;
+      capturedLocked = translated.locked;
+      capturedSoft = translated.soft;
+      translationDelay = translated.delaySeconds;
       // Discard deepthink reasoning process - do not save to storage
       reasoningText = null;
       isTranslated = true;
-      modelUsed = result.modelUsed;
-      translationCost = result.costInfo || null;
-      translationUsage = result.usage || null;
+      modelUsed = translated.modelUsed;
+      translationCost = translated.costInfo;
+      translationUsage = translated.usage;
     } else if (options && typeof options.onProgress === 'function') {
       options.onProgress({ phase: 'saving', percent: 80, text: 'Saving raw chapter...' });
     }

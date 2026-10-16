@@ -132,6 +132,96 @@
     );
   }
 
+  const OCR_PANEL_ID = 'qc-ocr-panel';
+  const OCR_BUTTON_ID = 'qc-ocr-open-btn';
+
+  function lookupNovelId(urlInfo) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { action: 'CHECK_CHAPTER', slug: urlInfo.slug, chapterSlug: urlInfo.chapterSlug },
+        (response) => {
+          void chrome.runtime.lastError;
+          resolve(response && response.novelId ? response.novelId : null);
+        }
+      );
+    });
+  }
+
+  async function sendChapterImage(provider, frame, extOrigin) {
+    try {
+      const image = await provider.captureChapterImage(document, window);
+      if (!image) {
+        frame.contentWindow.postMessage({ type: 'QC_OCR_ERROR', message: 'The chapter image was not found on this page.' }, extOrigin);
+        return;
+      }
+      frame.contentWindow.postMessage(
+        { type: 'QC_OCR_IMAGE', bytes: image.bytes, mimeType: image.mimeType, width: image.width, height: image.height },
+        extOrigin,
+        [image.bytes]
+      );
+    } catch (err) {
+      frame.contentWindow.postMessage({ type: 'QC_OCR_ERROR', message: `Could not read the chapter image (${err.message}).` }, extOrigin);
+    }
+  }
+
+  async function openImageChapterPanel(provider, urlInfo) {
+    if (document.getElementById(OCR_PANEL_ID)) return;
+    const novelId = urlInfo.slug ? await lookupNovelId(urlInfo) : null;
+    const frame = document.createElement('iframe');
+    frame.id = OCR_PANEL_ID;
+    frame.title = 'QuickConverter image chapter reader';
+    frame.src = chrome.runtime.getURL('views/ocr-panel.html') + (novelId ? `?id=${encodeURIComponent(novelId)}` : '');
+    Object.assign(frame.style, {
+      position: 'fixed',
+      top: '0',
+      right: '0',
+      width: 'min(440px, 100vw)',
+      height: '100vh',
+      border: '0',
+      zIndex: '2147483647',
+      background: '#0f172a',
+      boxShadow: '-4px 0 16px rgba(0, 0, 0, 0.35)'
+    });
+    const extOrigin = new URL(frame.src).origin;
+    const onMessage = (event) => {
+      if (event.source !== frame.contentWindow || event.origin !== extOrigin) return;
+      const type = event.data && event.data.type;
+      if (type === 'QC_OCR_READY') {
+        sendChapterImage(provider, frame, extOrigin);
+      } else if (type === 'QC_OCR_CLOSE') {
+        window.removeEventListener('message', onMessage);
+        frame.remove();
+      }
+    };
+    window.addEventListener('message', onMessage);
+    document.body.appendChild(frame);
+  }
+
+  function mountImageChapterButton(provider, urlInfo) {
+    if (document.getElementById(OCR_BUTTON_ID)) return;
+    const button = document.createElement('button');
+    button.id = OCR_BUTTON_ID;
+    button.type = 'button';
+    button.textContent = 'Translate (QuickConverter)';
+    Object.assign(button.style, {
+      position: 'fixed',
+      right: '16px',
+      bottom: '16px',
+      zIndex: '2147483646',
+      minHeight: '44px',
+      padding: '0 18px',
+      borderRadius: '22px',
+      border: '0',
+      background: '#6366f1',
+      color: '#ffffff',
+      font: '600 14px system-ui, sans-serif',
+      boxShadow: '0 4px 14px rgba(0, 0, 0, 0.3)',
+      cursor: 'pointer'
+    });
+    button.addEventListener('click', () => openImageChapterPanel(provider, urlInfo));
+    document.body.appendChild(button);
+  }
+
   function handlePage() {
     const provider = getActiveProvider();
     if (!provider) return;
@@ -145,7 +235,9 @@
       urlInfo = { ...urlInfo, ...resolved };
     }
 
-    if (urlInfo.type === 'chapter') {
+    if (urlInfo.type === 'chapter' && typeof provider.isImageChapter === 'function' && provider.isImageChapter(document)) {
+      mountImageChapterButton(provider, urlInfo);
+    } else if (urlInfo.type === 'chapter') {
       checkAndSaveChapter(provider, urlInfo);
     } else if (urlInfo.type === 'series') {
       checkAndSyncSeriesPage(provider, urlInfo);

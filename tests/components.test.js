@@ -340,6 +340,47 @@ function test(name, fn) {
     assert(locked.includes('Locked'), 'explains the chapter is locked');
   });
 
+  // --- OCR reading panel (image-only chapters, read-only) ---
+  const ocrPanelMod = await loadComponent('components/react/ocr/OcrPanelApp.jsx');
+  const OcrPanelApp = ocrPanelMod.default;
+  const { OcrPanelView } = ocrPanelMod;
+  const NL = String.fromCharCode(10, 10);
+  test('OcrPanelApp starts waiting for the chapter image with translation disabled', () => {
+    const html = render(h(OcrPanelApp));
+    for (const id of ['ocr-panel', 'ocr-status', 'ocr-translate-btn', 'ocr-close-btn', 'ocr-deepseek-toggle']) {
+      assert(html.includes(`id="${id}"`), `missing #${id}`);
+    }
+    assert(html.includes('Waiting for the chapter image'), 'initial status');
+    assert(/id="ocr-translate-btn"[^>]*disabled/.test(html), 'translate is disabled until text is recognized');
+    assert(html.includes('Nothing from this page is saved'), 'states the panel is read-only');
+  });
+
+  test('OcrPanelView shows recognized text and enables translation', () => {
+    const html = render(h(OcrPanelView, { status: 'recognized', sourceText: '第一段。' + NL + '第二段。', showSource: true }));
+    assert(!/id="ocr-translate-btn"[^>]*disabled/.test(html), 'translate is enabled once text is recognized');
+    assert(html.includes('第一段。') && html.includes('第二段。'), 'recognized paragraphs are shown');
+    assert(html.includes('id="ocr-source-text"'), 'source text container');
+  });
+
+  test('OcrPanelView renders the translation as paragraphs and hides the source when toggled off', () => {
+    const html = render(h(OcrPanelView, { status: 'done', sourceText: '源文。', translatedText: 'First paragraph.' + NL + 'Second paragraph.', showSource: false }));
+    assert(html.includes('id="ocr-translated-text"'), 'translation container');
+    assert((html.match(/<p[ >]/g) || []).length >= 2, 'one <p> per translated paragraph');
+    assert(html.includes('First paragraph.') && html.includes('Second paragraph.'));
+    assert(!html.includes('id="ocr-source-text"'), 'source hidden when showSource is false');
+  });
+
+  test('OcrPanelView shows the size of the chapter image it read', () => {
+    const html = render(h(OcrPanelView, { status: 'recognized', sourceText: '正文。', imageSize: { width: 939, height: 4200 } }));
+    assert(html.includes('id="ocr-image-info"') && html.includes('939') && html.includes('4200'), 'image size is shown');
+    assert(!render(h(OcrPanelView, { status: 'waiting' })).includes('id="ocr-image-info"'), 'hidden before an image arrives');
+  });
+
+  test('OcrPanelView surfaces errors', () => {
+    const html = render(h(OcrPanelView, { status: 'error', error: 'Could not read the chapter image.' }));
+    assert(html.includes('id="ocr-error"') && html.includes('Could not read the chapter image.'));
+  });
+
   // --- QueueDock paused banner ---
   const QueueDock = (await loadComponent('components/react/shared/QueueDock.jsx')).default;
   test('QueueDock paused banner surfaces the pause error', () => {
