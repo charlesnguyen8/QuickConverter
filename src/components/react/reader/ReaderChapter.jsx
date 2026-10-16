@@ -177,14 +177,15 @@ export default function ReaderChapter() {
     [selectedPhrase, converter]
   );
 
-  const savePhrase = async (kind, translation) => {
+  const savePhrase = async (kind, translation, source) => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!storage || !novel || !selectedPhrase) return;
     setSavingPhrase(true);
     try {
-      await savePhraseEntry(storage, novel.id, kind, { original: selectedPhrase.source, translation });
+      const original = String(source || selectedPhrase.source).trim();
+      await savePhraseEntry(storage, novel.id, kind, { original, translation });
       setSelected(null);
-      window.dispatchEvent(new CustomEvent('reader-show-toast', { detail: `${selectedPhrase.source} → ${translation} saved to ${PHRASE_KIND_LABELS[kind]}` }));
+      window.dispatchEvent(new CustomEvent('reader-show-toast', { detail: `${original} → ${translation || '(hidden)'} saved to ${PHRASE_KIND_LABELS[kind]}` }));
       window.dispatchEvent(new Event('reader-chapter-refresh'));
     } catch (e) {
       console.error('Error saving phrase:', e);
@@ -483,8 +484,10 @@ export default function ReaderChapter() {
           canExtendRight={canExtendRight}
           onExtendLeft={() => extendSelection('left')}
           onExtendRight={() => extendSelection('right')}
-          onPick={(translation) => savePhrase(phraseSaveKind(selectedPhrase), translation)}
-          onSaveName={(translation) => savePhrase('namelist', translation)}
+          onPick={(translation, source) => savePhrase(phraseSaveKind(selectedPhrase), translation, source)}
+          onSaveName={(translation, source) => savePhrase('namelist', translation, source)}
+          readingOf={converter && converter.readingOf}
+          meaningsOf={converter && converter.meaningsOf}
           onOpenName={openPhraseName}
           suggestions={phraseSuggestions}
           suggestionsLoading={suggestionsLoading}

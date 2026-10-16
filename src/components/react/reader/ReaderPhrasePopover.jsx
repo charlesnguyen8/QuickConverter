@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { PHRASE_KIND_LABELS, PHRASE_ORIGIN_LABELS, phraseSaveKind } from './readerText.js';
+import { PHRASE_KIND_LABELS, PHRASE_ORIGIN_LABELS, editedPhrase, phraseSaveKind } from './readerText.js';
 
 const BTN = 'min-h-10 inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm font-semibold transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-40 disabled:pointer-events-none';
 
-export default function ReaderPhrasePopover({ phrase, options = [], saving = false, canExtendLeft = false, canExtendRight = false, onExtendLeft, onExtendRight, onPick, onSaveName, onOpenName, onClose, suggestions = [], suggestionsLoading = false, onAcceptSuggestion, onRejectSuggestion }) {
+export default function ReaderPhrasePopover({ phrase, options = [], saving = false, canExtendLeft = false, canExtendRight = false, onExtendLeft, onExtendRight, onPick, onSaveName, onOpenName, onClose, suggestions = [], suggestionsLoading = false, onAcceptSuggestion, onRejectSuggestion, readingOf, meaningsOf }) {
   const [custom, setCustom] = useState(phrase ? phrase.translation : '');
+  const [sourceText, setSourceText] = useState(phrase ? phrase.source : '');
 
-  useEffect(() => { setCustom(phrase ? phrase.translation : ''); }, [phrase]);
+  useEffect(() => { setCustom(phrase ? phrase.translation : ''); setSourceText(phrase ? phrase.source : ''); }, [phrase]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && onClose) { e.preventDefault(); onClose(); } };
@@ -18,6 +19,10 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
   const origin = PHRASE_ORIGIN_LABELS[phrase.origin] || phrase.origin;
   const saveTo = PHRASE_KIND_LABELS[phraseSaveKind(phrase)];
   const value = custom.trim();
+  const edited = editedPhrase(phrase, sourceText, { readingOf, meaningsOf });
+  const unedited = edited.source === phrase.source;
+  const shownOptions = unedited && options.length > 0 ? options : edited.options;
+  const canSave = !saving && !!edited.source;
 
   return (
     <>
@@ -41,8 +46,17 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
           <div className="flex-1 min-w-0 flex flex-col gap-0.5 text-center">
-            <span lang="zh" className="text-2xl font-bold break-all">{phrase.source}</span>
-            <span className="text-sm text-slate-400">{phrase.reading}</span>
+            <input
+              id="reader-phrase-source"
+              type="text"
+              lang="zh"
+              value={sourceText}
+              onChange={(e) => setSourceText(e.target.value)}
+              aria-label="Chinese text to save (edit to save only part of it)"
+              title="Edit to save only part of the chunk"
+              className="w-full min-w-0 min-h-10 px-2 rounded-lg bg-slate-950 border border-slate-700 text-center text-2xl font-bold text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+            />
+            <span className="text-sm text-slate-400">{edited.reading}</span>
           </div>
           <button
             id="reader-phrase-extend-right"
@@ -101,8 +115,8 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
         <div className="flex flex-col gap-1.5">
           <span className="text-[11px] uppercase tracking-wide text-slate-500">Meanings · saved to {saveTo}</span>
           <div className="flex flex-wrap gap-1.5">
-            {options.map((option) => {
-              const current = option === phrase.translation;
+            {shownOptions.map((option) => {
+              const current = unedited && option === phrase.translation;
               return (
                 <button
                   key={option}
@@ -110,7 +124,7 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
                   data-phrase-option={option}
                   aria-current={current ? 'true' : undefined}
                   disabled={saving}
-                  onClick={() => { if (!current && onPick) onPick(option); }}
+                  onClick={() => { if (!current && onPick && edited.source) onPick(option, edited.source); }}
                   className={`${BTN} font-medium ${current ? 'bg-indigo-600 text-white border border-indigo-500' : 'bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700'}`}
                 >
                   {option}
@@ -126,17 +140,17 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
             type="text"
             value={custom}
             onChange={(e) => setCustom(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && onPick) { e.preventDefault(); onPick(value); } }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && onPick && edited.source) { e.preventDefault(); onPick(value, edited.source); } }}
             className="flex-1 min-w-0 min-h-10 px-3 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
             placeholder="Your own meaning"
           />
-          <button id="reader-phrase-use-btn" type="button" disabled={saving} onClick={() => onPick && onPick(value)} className={`${BTN} text-white bg-indigo-500 hover:bg-indigo-600`}>
+          <button id="reader-phrase-use-btn" type="button" disabled={!canSave} onClick={() => onPick && onPick(value, edited.source)} className={`${BTN} text-white bg-indigo-500 hover:bg-indigo-600`}>
             Use
           </button>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button id="reader-phrase-name-btn" type="button" disabled={saving} onClick={() => onSaveName && onSaveName(value)} className={`${BTN} text-slate-200 bg-slate-800 border border-slate-700 hover:bg-slate-700`}>
+          <button id="reader-phrase-name-btn" type="button" disabled={!canSave} onClick={() => onSaveName && onSaveName(value, edited.source)} className={`${BTN} text-slate-200 bg-slate-800 border border-slate-700 hover:bg-slate-700`}>
             Save as name
           </button>
           {phrase.entryId ? (

@@ -251,6 +251,21 @@ function test(name, fn) {
   });
 
   const ReaderPhrasePopover = (await loadComponent('components/react/reader/ReaderPhrasePopover.jsx')).default;
+  test('ReaderPhrasePopover shows the source as an editable text box and keeps the chunk arrows', () => {
+    const html = render(h(ReaderPhrasePopover, {
+      phrase: { source: '修养', reading: 'tu dưỡng', translation: 'tu dưỡng', origin: 'vietPhrase' },
+      canExtendLeft: true,
+      canExtendRight: true
+    }));
+    const input = html.match(/<input[^>]*id="reader-phrase-source"[^>]*>/);
+    assert(input, 'source text box');
+    assert(input[0].includes('value="修养"'), 'filled with the tapped chunk');
+    assert(input[0].includes('lang="zh"'), 'marked as Chinese');
+    assert(/min-h-10/.test(input[0]), 'touch-friendly height');
+    assert(html.includes('id="reader-phrase-extend-left"') && html.includes('id="reader-phrase-extend-right"'), 'chunk arrows stay');
+    assert(html.includes('tu dưỡng'), 'reading shown under the box');
+  });
+
   test('ReaderPhrasePopover lets you save an empty meaning to hide a character', () => {
     const html = render(h(ReaderPhrasePopover, { phrase: { source: '的', reading: 'đích', translation: '', origin: 'soft' } }));
     assert(!/id="reader-phrase-use-btn"[^>]*\sdisabled=""/.test(html), 'Use works with an empty meaning');
@@ -315,7 +330,7 @@ function test(name, fn) {
       options: ['trần thư', 'Trần Thư'],
       onPick: () => {}, onSaveName: () => {}, onClose: () => {}
     }));
-    assert(/lang="zh"[^>]*>陈舒</.test(sel));
+    assert(/<input[^>]*id="reader-phrase-source"[^>]*lang="zh"[^>]*value="陈舒"/.test(sel), 'the selection is shown in the Chinese source box');
     assert(sel.includes('Selection'), 'origin label for a multi-chunk selection');
   });
   const popPhrase = { source: '工作人员', reading: 'công tác nhân viên', translation: 'nhân viên công tác', origin: 'vietPhrase' };
@@ -326,7 +341,7 @@ function test(name, fn) {
   }));
   test('ReaderPhrasePopover shows the Chinese, Hán Việt, current meaning and where it came from', () => {
     assert(phrasePopover.includes('id="reader-phrase-popover"'));
-    assert(/lang="zh"[^>]*>工作人员</.test(phrasePopover), 'Chinese source shown');
+    assert(/<input[^>]*id="reader-phrase-source"[^>]*lang="zh"[^>]*value="工作人员"/.test(phrasePopover), 'Chinese source shown');
     assert(phrasePopover.includes('công tác nhân viên'), 'Hán Việt reading shown');
     assert(phrasePopover.includes('VietPhrase'), 'origin of the shown meaning is labelled');
   });

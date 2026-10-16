@@ -52,7 +52,8 @@ export async function buildReaderConverter(novel, services, { onError } = {}) {
     });
     return out;
   };
-  return { ...converter, meaningsOf };
+  const readingOf = (text) => Array.from(String(text || '')).map((ch) => (hanVietMap && hanVietMap.has(ch) ? hanVietMap.get(ch) : ch)).join(' ');
+  return { ...converter, meaningsOf, readingOf };
 }
 
 export function paragraphsFromLines(lines) {
@@ -117,6 +118,14 @@ export function phraseRange(paragraph, from, to) {
     translation: paragraph.text.slice(chunk[0].start, chunk[chunk.length - 1].end),
     origin: 'selection'
   };
+}
+
+export function editedPhrase(phrase, text, { readingOf, meaningsOf } = {}) {
+  const source = String(text || '').trim();
+  if (!source) return { source: '', reading: '', options: [] };
+  if (phrase && source === phrase.source) return { source, reading: phrase.reading, options: phraseOptions(phrase, meaningsOf) };
+  const reading = typeof readingOf === 'function' ? readingOf(source) : '';
+  return { source, reading, options: phraseOptions({ source, reading, translation: '' }, meaningsOf) };
 }
 
 export function phraseSaveKind(segment) {

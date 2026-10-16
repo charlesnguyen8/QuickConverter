@@ -768,6 +768,30 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert.strictEqual(await readerText.savePhraseEntry(storage, 'n1', 'soft', { original: ' ', translation: 'x' }), null);
   });
 
+  await test('editedPhrase follows the text you type in the source box', () => {
+    const phrase = { source: '修养', reading: 'tu dưỡng', translation: 'tu dưỡng', origin: 'vietPhrase' };
+    const readingOf = (text) => Array.from(text).map((ch) => ({ 修: 'tu', 养: 'dưỡng' }[ch] || ch)).join(' ');
+    const meaningsOf = (text) => ({ 修养: ['tu dưỡng', 'trình độ'], 修: ['sửa'] }[text] || []);
+    const same = readerText.editedPhrase(phrase, '修养', { readingOf, meaningsOf });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(same)), { source: '修养', reading: 'tu dưỡng', options: ['tu dưỡng', 'trình độ'] });
+    const part = readerText.editedPhrase(phrase, ' 修 ', { readingOf, meaningsOf });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(part)), { source: '修', reading: 'tu', options: ['sửa', 'tu'] });
+    const empty = readerText.editedPhrase(phrase, '  ', { readingOf, meaningsOf });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(empty)), { source: '', reading: '', options: [] });
+  });
+
+  await test('buildReaderConverter can read any text out in Hán Việt', async () => {
+    const services = {
+      storage: { getNameList: async () => [] },
+      hanViet: { load: async () => new Map([['修', 'tu'], ['养', 'dưỡng']]) },
+      dictionaries: { load: async (name) => (name === 'luatNhan' || name === 'ignoredPhrases' ? [] : new Map()) },
+      processors: { createConverter: () => ({}) }
+    };
+    const converter = await readerText.buildReaderConverter({ id: 'n1', nameList: [] }, services);
+    assert.strictEqual(converter.readingOf('修养'), 'tu dưỡng');
+    assert.strictEqual(converter.readingOf('修X'), 'tu X');
+  });
+
   await test('suggestionsForPhrase keeps candidates that contain or sit inside the tapped text', () => {
     const candidates = [
       { text: '韩当', suggested: 'Hàn Đương' },
