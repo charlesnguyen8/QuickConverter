@@ -244,7 +244,49 @@ function test(name, fn) {
     assert(/aria-pressed="false"/.test(other));
   });
 
+  test('ReaderPhraseText highlights every chunk of a grown selection', () => {
+    const html = render(h(ReaderPhraseText, { paragraph: phrasePara, activeIndex: 0, activeEnd: 1, onSelect: () => {} }));
+    const pressed = (i) => /aria-pressed="true"/.test((html.match(new RegExp(`<span[^>]*data-phrase="${i}"[^>]*>`)) || [''])[0]);
+    assert.deepStrictEqual([pressed(0), pressed(1), pressed(2)], [true, true, false]);
+  });
+
   const ReaderPhrasePopover = (await loadComponent('components/react/reader/ReaderPhrasePopover.jsx')).default;
+  test('ReaderPhrasePopover has left and right buttons that grow the selection by a chunk', () => {
+    const both = render(h(ReaderPhrasePopover, {
+      phrase: { source: '陈', reading: 'trần', translation: 'trần', origin: 'vietPhrase' },
+      options: ['trần'],
+      canExtendLeft: true,
+      canExtendRight: true,
+      onExtendLeft: () => {}, onExtendRight: () => {},
+      onPick: () => {}, onSaveName: () => {}, onClose: () => {}
+    }));
+    const left = (both.match(/<button[^>]*id="reader-phrase-extend-left"[^>]*>/) || [''])[0];
+    const right = (both.match(/<button[^>]*id="reader-phrase-extend-right"[^>]*>/) || [''])[0];
+    assert(left && right, 'both extend buttons render');
+    assert(/aria-label="[^"]*previous chunk[^"]*"/.test(left) && /aria-label="[^"]*next chunk[^"]*"/.test(right), 'buttons say they extend by a chunk');
+    assert(!/\sdisabled=""/.test(left) && !/\sdisabled=""/.test(right));
+    assert(/min-h-10/.test(left) && /w-10/.test(left), '40px touch target');
+
+    const edge = render(h(ReaderPhrasePopover, {
+      phrase: { source: '陈', reading: 'trần', translation: 'trần', origin: 'vietPhrase' },
+      options: ['trần'],
+      canExtendLeft: false,
+      canExtendRight: true,
+      onPick: () => {}, onSaveName: () => {}, onClose: () => {}
+    }));
+    assert(/<button[^>]*id="reader-phrase-extend-left"[^>]*\sdisabled=""/.test(edge), 'left is disabled with nothing touching on the left');
+    assert(!/<button[^>]*id="reader-phrase-extend-right"[^>]*\sdisabled=""/.test(edge));
+  });
+
+  test('ReaderPhrasePopover labels a grown selection as your selection', () => {
+    const sel = render(h(ReaderPhrasePopover, {
+      phrase: { source: '陈舒', reading: 'trần thư', translation: 'trần thư', origin: 'selection' },
+      options: ['trần thư', 'Trần Thư'],
+      onPick: () => {}, onSaveName: () => {}, onClose: () => {}
+    }));
+    assert(/lang="zh"[^>]*>陈舒</.test(sel));
+    assert(sel.includes('Selection'), 'origin label for a multi-chunk selection');
+  });
   const popPhrase = { source: '工作人员', reading: 'công tác nhân viên', translation: 'nhân viên công tác', origin: 'vietPhrase' };
   const phrasePopover = render(h(ReaderPhrasePopover, {
     phrase: popPhrase,

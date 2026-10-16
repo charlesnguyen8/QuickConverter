@@ -215,6 +215,8 @@
         const origin = originOf(match.id);
         appendWord(match.translation, record ? {
           source: matched,
+          sourceStart: i,
+          sourceEnd: i + match.length,
           reading: readingOf(matched),
           translation: match.translation,
           origin,
@@ -227,7 +229,7 @@
       const ch = charAt(i);
       const next = charAt(i + ch.length);
       if (isChinese(ch)) {
-        appendWord(hanViet.get(ch), record ? { source: ch, reading: hanViet.get(ch), translation: hanViet.get(ch), origin: 'hanViet' } : null);
+        appendWord(hanViet.get(ch), record ? { source: ch, sourceStart: i, sourceEnd: i + ch.length, reading: hanViet.get(ch), translation: hanViet.get(ch), origin: 'hanViet' } : null);
         if (isChinese(next)) appendChar(' ');
       } else if ((ch === '"' || ch === "'") && !/[ .?!\t]$/.test(last) && next && next !== ' ' && next !== ',') {
         appendChar(' ');

@@ -525,6 +525,54 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert(last.text.includes('龘'), 'characters with no reading stay as plain text');
   });
 
+  await test('convertDetailed records where each phrase sits in the Chinese so touching phrases can be joined', () => {
+    const converter = T.createConverter(detailLists());
+    const [first] = converter.convertDetailed(DETAIL_TEXT);
+    const bySource = (src) => first.segments.find((s) => s.source === src);
+    assert.strictEqual(bySource('林动').sourceEnd, bySource('看向').sourceStart, '林动 touches 看向');
+    assert.strictEqual(bySource('看向').sourceEnd, bySource('青阳镇').sourceStart, '看向 touches 青阳镇');
+    assert.notStrictEqual(bySource('青阳镇').sourceEnd, bySource('勉强').sourceStart, 'the comma separates 青阳镇 and 勉强');
+    assert.strictEqual(bySource('林动').sourceEnd - bySource('林动').sourceStart, 2);
+  });
+
+  await test('a selection can grow chunk by chunk over touching phrases on the same line only', () => {
+    const converter = T.createConverter(detailLists());
+    const [, para2] = readerText.paragraphsFromLines(converter.convertDetailed(DETAIL_TEXT));
+    const [para1] = readerText.paragraphsFromLines(converter.convertDetailed(DETAIL_TEXT));
+    const idx = (para, src) => para.segments.findIndex((s) => s.source === src);
+    const lin = idx(para1, '林动');
+    const kan = idx(para1, '看向');
+    const qing = idx(para1, '青阳镇');
+    assert.strictEqual(readerText.canExtendPhrase(para1, lin, lin, 'left'), false, 'nothing before the first chunk');
+    assert.strictEqual(readerText.canExtendPhrase(para1, lin, lin, 'right'), true);
+    assert.strictEqual(readerText.canExtendPhrase(para1, kan, qing, 'right'), false, 'punctuation stops the selection');
+    const tau = idx(para2, '走');
+    const dai = idx(para2, '大');
+    assert.strictEqual(readerText.canExtendPhrase(para2, tau, tau, 'right'), false, 'a line break stops the selection');
+    assert.strictEqual(readerText.canExtendPhrase(para2, dai, dai, 'left'), false);
+  });
+
+  await test('a grown selection joins the Chinese, readings and shown text of its chunks', () => {
+    const converter = T.createConverter(detailLists());
+    const [para1] = readerText.paragraphsFromLines(converter.convertDetailed(DETAIL_TEXT));
+    const lin = para1.segments.findIndex((s) => s.source === '林动');
+    const phrase = readerText.phraseRange(para1, lin, lin + 1);
+    assert.deepStrictEqual(plain(phrase), {
+      source: '林动看向',
+      reading: 'lâm động khán hướng',
+      translation: 'Lâm Động nhìn về phía',
+      origin: 'selection'
+    });
+    assert.strictEqual(readerText.phraseRange(para1, lin, lin).source, '林动', 'one chunk is just that phrase');
+    assert.strictEqual(readerText.phraseRange(para1, lin, lin).origin, 'name');
+    assert.strictEqual(readerText.phraseSaveKind(phrase), 'soft');
+  });
+
+  await test('a grown selection also offers its Hán Việt reading in name case', () => {
+    const segment = { source: '陈舒', reading: 'trần thư', translation: 'trần thư', origin: 'selection' };
+    assert.deepStrictEqual(readerText.phraseOptions(segment, () => []), ['trần thư', 'Trần Thư']);
+  });
+
   await test('reader groups converted lines into the same paragraphs as the plain text', () => {
     const converter = T.createConverter(detailLists());
     const lines = converter.convertDetailed(DETAIL_TEXT);

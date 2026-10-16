@@ -52,7 +52,7 @@ export async function buildReaderConverter(novel, services, { onError } = {}) {
 export function paragraphsFromLines(lines) {
   const paragraphs = [];
   let current = null;
-  (Array.isArray(lines) ? lines : []).forEach((line) => {
+  (Array.isArray(lines) ? lines : []).forEach((line, lineIndex) => {
     const text = line && line.text ? line.text : '';
     if (!text.trim()) {
       current = null;
@@ -67,7 +67,7 @@ export function paragraphsFromLines(lines) {
     const offset = current.text.length;
     current.text += text;
     (line.segments || []).forEach((seg) => {
-      current.segments.push({ ...seg, start: seg.start + offset, end: seg.end + offset });
+      current.segments.push({ ...seg, start: seg.start + offset, end: seg.end + offset, line: lineIndex });
     });
   });
   return paragraphs.filter((p) => p.text.trim() !== '&nbsp;');
@@ -83,7 +83,34 @@ export function phraseOptions(segment, meaningsOf) {
   add(segment.translation);
   if (typeof meaningsOf === 'function') (meaningsOf(segment.source) || []).forEach(add);
   add(segment.reading);
+  if (segment.origin === 'selection') {
+    add(String(segment.reading || '').split(' ').map((word) => (word ? word.charAt(0).toUpperCase() + word.slice(1) : word)).join(' '));
+  }
   return out;
+}
+
+function touching(a, b) {
+  return !!a && !!b && a.line === b.line && typeof a.sourceEnd === 'number' && a.sourceEnd === b.sourceStart;
+}
+
+export function canExtendPhrase(paragraph, from, to, direction) {
+  const segments = paragraph && Array.isArray(paragraph.segments) ? paragraph.segments : [];
+  if (direction === 'left') return from > 0 && touching(segments[from - 1], segments[from]);
+  return to < segments.length - 1 && touching(segments[to], segments[to + 1]);
+}
+
+export function phraseRange(paragraph, from, to) {
+  const segments = paragraph && Array.isArray(paragraph.segments) ? paragraph.segments : [];
+  if (from < 0 || to >= segments.length || from > to) return null;
+  if (from === to) return segments[from];
+  const chunk = segments.slice(from, to + 1);
+  for (let k = 1; k < chunk.length; k++) if (!touching(chunk[k - 1], chunk[k])) return null;
+  return {
+    source: chunk.map((seg) => seg.source).join(''),
+    reading: chunk.map((seg) => seg.reading).join(' '),
+    translation: paragraph.text.slice(chunk[0].start, chunk[chunk.length - 1].end),
+    origin: 'selection'
+  };
 }
 
 export function phraseSaveKind(segment) {
@@ -109,7 +136,8 @@ export const PHRASE_ORIGIN_LABELS = {
   soft: 'Soft Glossary',
   qtNames: 'QT Names',
   vietPhrase: 'VietPhrase',
-  hanViet: 'Hán Việt'
+  hanViet: 'Hán Việt',
+  selection: 'Selection'
 };
 
 export const PHRASE_KIND_LABELS = {

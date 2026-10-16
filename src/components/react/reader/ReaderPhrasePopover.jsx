@@ -3,7 +3,7 @@ import { PHRASE_KIND_LABELS, PHRASE_ORIGIN_LABELS, phraseSaveKind } from './read
 
 const BTN = 'min-h-10 inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm font-semibold transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-40 disabled:pointer-events-none';
 
-export default function ReaderPhrasePopover({ phrase, options = [], saving = false, onPick, onSaveName, onOpenName, onClose }) {
+export default function ReaderPhrasePopover({ phrase, options = [], saving = false, canExtendLeft = false, canExtendRight = false, onExtendLeft, onExtendRight, onPick, onSaveName, onOpenName, onClose }) {
   const [custom, setCustom] = useState(phrase ? phrase.translation : '');
 
   useEffect(() => { setCustom(phrase ? phrase.translation : ''); }, [phrase]);
@@ -28,11 +28,33 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
         aria-label={`Phrase ${phrase.source}`}
         className="fixed inset-x-0 bottom-0 z-50 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:bottom-6 w-full sm:w-[28rem] max-h-[80vh] overflow-y-auto bg-slate-900 border-t sm:border border-slate-700 sm:rounded-xl rounded-t-xl shadow-2xl p-4 flex flex-col gap-3 text-slate-100"
       >
-        <div className="flex items-start gap-3">
-          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+        <div className="flex items-start gap-2">
+          <button
+            id="reader-phrase-extend-left"
+            type="button"
+            disabled={!canExtendLeft}
+            onClick={onExtendLeft}
+            aria-label="Extend selection to the previous chunk"
+            title="Extend selection to the previous chunk"
+            className={`${BTN} w-10 px-0 text-slate-300 bg-slate-800 border border-slate-700 hover:bg-slate-700`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>
+          </button>
+          <div className="flex-1 min-w-0 flex flex-col gap-0.5 text-center">
             <span lang="zh" className="text-2xl font-bold break-all">{phrase.source}</span>
             <span className="text-sm text-slate-400">{phrase.reading}</span>
           </div>
+          <button
+            id="reader-phrase-extend-right"
+            type="button"
+            disabled={!canExtendRight}
+            onClick={onExtendRight}
+            aria-label="Extend selection to the next chunk"
+            title="Extend selection to the next chunk"
+            className={`${BTN} w-10 px-0 text-slate-300 bg-slate-800 border border-slate-700 hover:bg-slate-700`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6" /></svg>
+          </button>
           <button type="button" onClick={onClose} className={`${BTN} w-10 px-0 text-slate-400 hover:text-white hover:bg-slate-800`} title="Close (Esc)" aria-label="Close">✕</button>
         </div>
 

@@ -6,7 +6,9 @@ import {
   chapterDisplayText,
   chapterSourceText,
   paragraphsFromLines,
+  canExtendPhrase,
   phraseOptions,
+  phraseRange,
   phraseSaveKind,
   savePhraseEntry
 } from './readerText.js';
@@ -154,9 +156,20 @@ export default function ReaderChapter() {
   const [selected, setSelected] = useState(null);
   const [savingPhrase, setSavingPhrase] = useState(false);
 
-  useEffect(() => { setSelected(null); }, [detailed]);
+  useEffect(() => { setSelected(null); }, [params.id, params.ch]);
 
-  const selectedPhrase = selected && detailed && detailed[selected.p] ? detailed[selected.p].segments[selected.s] || null : null;
+  const selectedParagraph = selected && detailed ? detailed[selected.p] || null : null;
+  const selectedPhrase = selectedParagraph ? phraseRange(selectedParagraph, selected.from, selected.to) : null;
+  const canExtendLeft = !!selectedParagraph && canExtendPhrase(selectedParagraph, selected.from, selected.to, 'left');
+  const canExtendRight = !!selectedParagraph && canExtendPhrase(selectedParagraph, selected.from, selected.to, 'right');
+  const extendSelection = (direction) => {
+    if (direction === 'left' ? !canExtendLeft : !canExtendRight) return;
+    setSelected((prev) => (prev ? {
+      ...prev,
+      from: direction === 'left' ? prev.from - 1 : prev.from,
+      to: direction === 'right' ? prev.to + 1 : prev.to
+    } : prev));
+  };
   const selectedOptions = useMemo(
     () => phraseOptions(selectedPhrase, converter && converter.meaningsOf),
     [selectedPhrase, converter]
@@ -364,8 +377,9 @@ export default function ReaderChapter() {
               {detailed && detailed[idx] ? (
                 <ReaderPhraseText
                   paragraph={detailed[idx]}
-                  activeIndex={selected && selected.p === idx ? selected.s : -1}
-                  onSelect={(_seg, s) => setSelected({ p: idx, s })}
+                  activeIndex={selected && selected.p === idx ? selected.from : -1}
+                  activeEnd={selected && selected.p === idx ? selected.to : -1}
+                  onSelect={(_seg, s) => setSelected({ p: idx, from: s, to: s })}
                 />
               ) : highlightedParagraphs[idx].map((seg, i) => (seg.nameId ? (
                 <span
@@ -405,6 +419,10 @@ export default function ReaderChapter() {
           phrase={selectedPhrase}
           options={selectedOptions}
           saving={savingPhrase}
+          canExtendLeft={canExtendLeft}
+          canExtendRight={canExtendRight}
+          onExtendLeft={() => extendSelection('left')}
+          onExtendRight={() => extendSelection('right')}
           onPick={(translation) => savePhrase(phraseSaveKind(selectedPhrase), translation)}
           onSaveName={(translation) => savePhrase('namelist', translation)}
           onOpenName={openPhraseName}

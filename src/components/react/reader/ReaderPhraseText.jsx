@@ -4,7 +4,8 @@ const NAME_CLASS = 'rounded-sm bg-indigo-500/15 px-0.5 -mx-0.5 border-b border-d
 const WORD_CLASS = 'rounded-sm cursor-pointer transition hover:bg-slate-500/20 hover:underline decoration-dotted underline-offset-4';
 const ACTIVE_CLASS = 'bg-amber-400/25 ring-1 ring-amber-400/60';
 
-export default function ReaderPhraseText({ paragraph, activeIndex = -1, onSelect }) {
+export default function ReaderPhraseText({ paragraph, activeIndex = -1, activeEnd, onSelect }) {
+  const lastActive = typeof activeEnd === 'number' ? activeEnd : activeIndex;
   const text = paragraph ? paragraph.text : '';
   const segments = paragraph && Array.isArray(paragraph.segments) ? paragraph.segments : [];
   const parts = [];
@@ -17,7 +18,7 @@ export default function ReaderPhraseText({ paragraph, activeIndex = -1, onSelect
       if (e) { e.preventDefault(); e.stopPropagation(); }
       if (onSelect) onSelect(seg, idx);
     };
-    const active = idx === activeIndex;
+    const active = activeIndex >= 0 && idx >= activeIndex && idx <= lastActive;
     parts.push(
       <span
         key={`p${idx}`}
