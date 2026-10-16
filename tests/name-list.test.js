@@ -118,6 +118,7 @@ const sandbox = {
 
 vm.createContext(sandbox);
 vm.runInContext(nameMatcherCode, sandbox);
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'src', 'services', 'text-processors.js'), 'utf8'), sandbox);
 vm.runInContext(storageCode, sandbox);
 
 const StorageService = sandbox.window.StorageService || sandbox.StorageService;

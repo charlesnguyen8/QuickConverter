@@ -1,7 +1,7 @@
 // QuickConverter Background Service Worker
 // Coordinates tab listeners, automated popup triggering via providers, and IndexedDB message bus.
 
-importScripts('../providers/wetriedtls.js', '../providers/nkwwlkj.js', '../providers/registry.js', '../services/custom-api.js', '../services/deepseek.js', '../services/ai-service.js', '../services/name-matcher.js', '../services/storage.js', '../services/download-queue.js');
+importScripts('../providers/wetriedtls.js', '../providers/nkwwlkj.js', '../providers/registry.js', '../services/custom-api.js', '../services/deepseek.js', '../services/ai-service.js', '../services/name-matcher.js', '../services/text-processors.js', '../services/storage.js', '../services/download-queue.js');
 
 function shouldOpenPopup(urlStr) {
   if (!urlStr) return false;
