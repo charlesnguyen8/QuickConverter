@@ -749,6 +749,25 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert.strictEqual(readerText.PHRASE_ORIGIN_LABELS.number, 'Number');
   });
 
+  await test('an entry with an empty meaning hides those characters in conversion', () => {
+    const hv = new Map([...HAN_VIET, ['的', 'đích'], ['书', 'thư']]);
+    assert.strictEqual(T.createConverter({ hanViet: hv, names: [{ id: 'n', original: '的', translation: '' }] }).convert('他的书。'), 'Tha thư.');
+    assert.strictEqual(T.createConverter({ hanViet: hv, soft: [{ id: 's', original: '的', translation: '' }] }).convert('他的书。'), 'Tha thư.');
+    assert.strictEqual(T.createConverter({ hanViet: hv, locked: [{ id: 'l', original: '的', translation: '  ' }] }).convert('的书'), 'Thư', 'the next word still starts the sentence with a capital');
+  });
+
+  await test('savePhraseEntry saves an empty meaning but still needs the Chinese', async () => {
+    const saved = [];
+    const storage = {
+      getNameList: async () => [],
+      addNameEntry: async (id, entry, kind) => { saved.push([id, entry, kind]); return entry; },
+      updateNameEntry: async () => null
+    };
+    await readerText.savePhraseEntry(storage, 'n1', 'soft', { original: '的', translation: '' });
+    assert.deepStrictEqual(saved, [['n1', { original: '的', translation: '' }, 'soft']]);
+    assert.strictEqual(await readerText.savePhraseEntry(storage, 'n1', 'soft', { original: ' ', translation: 'x' }), null);
+  });
+
   await test('suggestionsForPhrase keeps candidates that contain or sit inside the tapped text', () => {
     const candidates = [
       { text: '韩当', suggested: 'Hàn Đương' },

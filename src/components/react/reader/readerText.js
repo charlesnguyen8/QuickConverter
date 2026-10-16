@@ -129,7 +129,7 @@ export function phraseSaveKind(segment) {
 export async function savePhraseEntry(storage, novelId, kind, { original, translation }) {
   const key = String(original || '').trim();
   const value = String(translation || '').trim();
-  if (!storage || !novelId || !key || !value) return null;
+  if (!storage || !novelId || !key) return null;
   const list = (await storage.getNameList(novelId, kind)) || [];
   const existing = list.find((entry) => entry && String(entry.original || '').trim().toLowerCase() === key.toLowerCase());
   if (existing) return storage.updateNameEntry(novelId, existing.id, { translation: value }, kind);

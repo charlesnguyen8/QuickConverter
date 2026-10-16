@@ -251,6 +251,13 @@ function test(name, fn) {
   });
 
   const ReaderPhrasePopover = (await loadComponent('components/react/reader/ReaderPhrasePopover.jsx')).default;
+  test('ReaderPhrasePopover lets you save an empty meaning to hide a character', () => {
+    const html = render(h(ReaderPhrasePopover, { phrase: { source: '的', reading: 'đích', translation: '', origin: 'soft' } }));
+    assert(!/id="reader-phrase-use-btn"[^>]*\sdisabled=""/.test(html), 'Use works with an empty meaning');
+    assert(!/id="reader-phrase-name-btn"[^>]*\sdisabled=""/.test(html), 'Save as name works with an empty meaning');
+    assert(/id="reader-phrase-use-btn"[^>]*\sdisabled=""/.test(render(h(ReaderPhrasePopover, { phrase: { source: '的', reading: 'đích', translation: '', origin: 'soft' }, saving: true }))), 'still disabled while saving');
+  });
+
   test('ReaderPhrasePopover lists possible names for the tapped phrase with add and reject actions', () => {
     const phrase = { source: '韩', reading: 'hàn', translation: 'hàn', origin: 'hanViet' };
     const html = render(h(ReaderPhrasePopover, {

@@ -126,17 +126,17 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
             type="text"
             value={custom}
             onChange={(e) => setCustom(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && value && onPick) { e.preventDefault(); onPick(value); } }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && onPick) { e.preventDefault(); onPick(value); } }}
             className="flex-1 min-w-0 min-h-10 px-3 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
             placeholder="Your own meaning"
           />
-          <button id="reader-phrase-use-btn" type="button" disabled={saving || !value} onClick={() => onPick && onPick(value)} className={`${BTN} text-white bg-indigo-500 hover:bg-indigo-600`}>
+          <button id="reader-phrase-use-btn" type="button" disabled={saving} onClick={() => onPick && onPick(value)} className={`${BTN} text-white bg-indigo-500 hover:bg-indigo-600`}>
             Use
           </button>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button id="reader-phrase-name-btn" type="button" disabled={saving || !value} onClick={() => onSaveName && onSaveName(value)} className={`${BTN} text-slate-200 bg-slate-800 border border-slate-700 hover:bg-slate-700`}>
+          <button id="reader-phrase-name-btn" type="button" disabled={saving} onClick={() => onSaveName && onSaveName(value)} className={`${BTN} text-slate-200 bg-slate-800 border border-slate-700 hover:bg-slate-700`}>
             Save as name
           </button>
           {phrase.entryId ? (

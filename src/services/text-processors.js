@@ -6,17 +6,17 @@
     return scope && scope.LongestMatcher && typeof scope.LongestMatcher.createMatcher === 'function' ? scope.LongestMatcher : null;
   }
 
-  function cleanPair(entry) {
+  function cleanPair(entry, allowEmpty = false) {
     const original = entry && entry.original ? String(entry.original).trim() : '';
     const translation = entry && entry.translation ? String(entry.translation).trim() : '';
-    return original && translation ? { original, translation } : null;
+    return original && (translation || allowEmpty) ? { original, translation } : null;
   }
 
-  function nameEntries(names, tier) {
+  function nameEntries(names, tier, allowEmpty = false) {
     const out = [];
     const seen = new Set();
     (Array.isArray(names) ? names : []).forEach((entry, i) => {
-      const pair = cleanPair(entry);
+      const pair = cleanPair(entry, allowEmpty);
       if (!pair || seen.has(pair.original)) return;
       seen.add(pair.original);
       out.push({ id: 'name:' + ((entry && entry.id) || 'idx_' + i), ...pair, kind: 'name', tier, caseSensitive: true });
@@ -24,11 +24,11 @@
     return out;
   }
 
-  function lockedEntries(entries, tier, kind = 'locked') {
+  function lockedEntries(entries, tier, kind = 'locked', allowEmpty = false) {
     const out = [];
     const seen = new Set();
     (Array.isArray(entries) ? entries : []).forEach((entry, i) => {
-      const pair = cleanPair(entry);
+      const pair = cleanPair(entry, allowEmpty);
       if (!pair) return;
       const key = pair.original.toLowerCase();
       if (seen.has(key)) return;
@@ -260,6 +260,10 @@
           continue;
         }
       }
+      if (match && !String(match.translation || '').trim()) {
+        i += match.length;
+        continue;
+      }
       if (match) {
         const matched = source.slice(i, i + match.length);
         const origin = originOf(match.id);
@@ -309,9 +313,9 @@
     const api = resolveMatcher();
     const tiers = api ? api.TIERS : { namelist: 6, locked: 5, soft: 4, qtNames: 3, vietPhrase: 1 };
     const entries = [
-      ...nameEntries(options.names, tiers.namelist),
-      ...lockedEntries(options.locked, tiers.locked, 'locked'),
-      ...lockedEntries(options.soft, tiers.soft, 'soft')
+      ...nameEntries(options.names, tiers.namelist, true),
+      ...lockedEntries(options.locked, tiers.locked, 'locked', true),
+      ...lockedEntries(options.soft, tiers.soft, 'soft', true)
     ];
     const dicts = options.dictionaries || {};
     const isMap = (m) => !!m && typeof m.get === 'function' && typeof m.has === 'function';
