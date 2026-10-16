@@ -1,22 +1,26 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useReaderSearch } from './readerLocation.js';
 
-function getParams() {
-  if (typeof window === 'undefined') return { id: null, ch: 0 };
-  const params = new URLSearchParams(window.location.search);
+function getParams(search) {
+  const params = new URLSearchParams(search || '');
   return { id: params.get('id'), ch: parseInt(params.get('ch'), 10) || 0 };
 }
 
 export default function ReaderSourceDrawer() {
-  const [params] = useState(getParams);
+  const search = useReaderSearch();
+  const params = useMemo(() => getParams(search), [search]);
   const [chapter, setChapter] = useState(null);
   const [open, setOpen] = useState(false);
   const [reasoningOpen, setReasoningOpen] = useState(true);
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!storage || !params.id) return;
     try {
       const record = await storage.getChapter(params.id, params.ch);
+      if (seq !== loadSeq.current) return;
       setChapter(record || null);
     } catch (e) {
       console.error('Error loading source drawer:', e);

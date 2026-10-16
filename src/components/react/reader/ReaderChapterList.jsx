@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProgressRing } from '../shared/QueueDock.jsx';
 import ManualChapterAction, { canBulkDownload } from '../shared/ManualChapterAction.jsx';
 import ReaderDeepseekCard from './ReaderDeepseekCard.jsx';
+import { navigateToChapter, useReaderSearch } from './readerLocation.js';
 
-function getParams() {
-  if (typeof window === 'undefined') return { id: null, ch: NaN };
-  const params = new URLSearchParams(window.location.search);
+function getParams(search) {
+  const params = new URLSearchParams(search || '');
   return { id: params.get('id'), ch: parseFloat(params.get('ch')) };
 }
 
@@ -28,7 +28,7 @@ export function ReaderChapterRow({ novel, chapter, chNum, downloadedChapter, que
 
   const goRead = () => {
     if (!isDownloaded) return;
-    window.location.href = `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(chNum)}`;
+    navigateToChapter(novel.id, chNum);
   };
 
   const startDownload = (e) => { e.stopPropagation(); if (onDownload) onDownload(chNum, chapter); };
@@ -126,7 +126,8 @@ export function ReaderChapterRow({ novel, chapter, chNum, downloadedChapter, que
 }
 
 export default function ReaderChapterList({ open = false, onClose }) {
-  const [{ id, ch }] = useState(getParams);
+  const search = useReaderSearch();
+  const { id, ch } = useMemo(() => getParams(search), [search]);
   const [novel, setNovel] = useState(null);
   const [catalog, setCatalog] = useState([]);
   const [downloadedMap, setDownloadedMap] = useState(new Map());

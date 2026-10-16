@@ -1,13 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { navigateToChapter, useReaderSearch } from './readerLocation.js';
 
-function getParams() {
-  if (typeof window === 'undefined') return { id: null, ch: 0 };
-  const params = new URLSearchParams(window.location.search);
+function getParams(search) {
+  const params = new URLSearchParams(search || '');
   return { id: params.get('id'), ch: parseInt(params.get('ch'), 10) || 0 };
 }
 
 export default function ReaderNav() {
-  const [{ id, ch }] = useState(getParams);
+  const search = useReaderSearch();
+  const { id, ch } = useMemo(() => getParams(search), [search]);
   const [novel, setNovel] = useState(null);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export default function ReaderNav() {
   else if (currentIndex < 0 && (!novel.totalChapters || ch < novel.totalChapters)) nextCh = ch + 1;
 
   const go = (target) => {
-    window.location.href = `reader.html?id=${encodeURIComponent(novel.id)}&ch=${encodeURIComponent(target)}`;
+    navigateToChapter(novel.id, target);
   };
 
   return (

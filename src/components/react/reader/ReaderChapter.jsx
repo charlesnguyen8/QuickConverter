@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createNameMatcher } from '../novel/nameListSource.js';
 import { buildReaderConverter, chapterDisplayText } from './readerText.js';
+import { useReaderSearch } from './readerLocation.js';
 
-function getParams() {
-  if (typeof window === 'undefined') return { id: null, ch: 0 };
-  const params = new URLSearchParams(window.location.search);
+function getParams(search) {
+  const params = new URLSearchParams(search || '');
   return { id: params.get('id'), ch: parseInt(params.get('ch'), 10) || 0 };
 }
 
@@ -66,15 +66,18 @@ function readPrefs() {
 }
 
 export default function ReaderChapter() {
-  const [params] = useState(getParams);
+  const search = useReaderSearch();
+  const params = useMemo(() => getParams(search), [search]);
   const [novel, setNovel] = useState(null);
   const [chapter, setChapter] = useState(null);
   const [loadDone, setLoadDone] = useState(false);
   const [prefs, setPrefs] = useState(readPrefs);
   const titleRef = useRef(null);
   const paragraphRefs = useRef([]);
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!storage || !params.id) return;
     try {
@@ -82,12 +85,13 @@ export default function ReaderChapter() {
         storage.getNovelById(params.id),
         storage.getChapter(params.id, params.ch)
       ]);
+      if (seq !== loadSeq.current) return;
       setNovel(novelRecord || null);
       setChapter(chapterRecord || null);
     } catch (e) {
       console.error('Error loading reader content:', e);
     } finally {
-      setLoadDone(true);
+      if (seq === loadSeq.current) setLoadDone(true);
     }
   }, [params.id, params.ch]);
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReaderHeader from './ReaderHeader.jsx';
 import ReaderChapter from './ReaderChapter.jsx';
 import ReaderNav from './ReaderNav.jsx';
@@ -8,17 +8,18 @@ import ReaderToast from './ReaderToast.jsx';
 import ReaderChapterList from './ReaderChapterList.jsx';
 import { canBulkDownload } from '../shared/ManualChapterAction.jsx';
 import NameListDrawer from '../novel/NameListDrawer.jsx';
+import { navigateToChapter, useReaderSearch } from './readerLocation.js';
 
 const CHAPTERS_OPEN_KEY = 'quickconverter_reader_chapters_open';
 
-function getParams() {
-  if (typeof window === 'undefined') return { id: null, ch: NaN };
-  const params = new URLSearchParams(window.location.search);
+function getParams(search) {
+  const params = new URLSearchParams(search || '');
   return { id: params.get('id'), ch: parseFloat(params.get('ch')) };
 }
 
 export default function ReaderApp() {
-  const [{ id, ch }] = useState(getParams);
+  const search = useReaderSearch();
+  const { id, ch } = useMemo(() => getParams(search), [search]);
   const [novel, setNovel] = useState(null);
   const [chapter, setChapter] = useState(null);
   const [status, setStatus] = useState('loading');
@@ -38,6 +39,7 @@ export default function ReaderApp() {
     }
   });
   const panelRef = useRef(null);
+  const loadSeq = useRef(0);
 
   const updateChaptersOpen = useCallback((next) => {
     setChaptersOpen(next);
@@ -52,6 +54,7 @@ export default function ReaderApp() {
   const toggleChapters = useCallback(() => updateChaptersOpen(!chaptersOpen), [chaptersOpen, updateChaptersOpen]);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!id || !Number.isFinite(ch) || !storage) {
       setStatus('invalid');
@@ -59,6 +62,7 @@ export default function ReaderApp() {
     }
     try {
       const novelRecord = await storage.getNovelById(id);
+      if (seq !== loadSeq.current) return;
       if (!novelRecord) {
         setErrorMsg('Novel not found in your library.');
         setStatus('error');
@@ -66,9 +70,11 @@ export default function ReaderApp() {
       }
       setNovel(novelRecord);
       const chapterRecord = await storage.getChapter(novelRecord.id, ch);
+      if (seq !== loadSeq.current) return;
       setChapter(chapterRecord || null);
       setStatus('ready');
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       console.error('Error rendering reader:', err);
       setErrorMsg(err.message);
       setStatus('error');
@@ -76,6 +82,11 @@ export default function ReaderApp() {
   }, [id, ch]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    setDownloading(false);
+    setFailed(false);
+  }, [id, ch]);
 
   useEffect(() => {
     const onRefresh = () => load();
@@ -108,7 +119,7 @@ export default function ReaderApp() {
   }, [toggleChapters]);
 
   const goToChapter = useCallback((target) => {
-    window.location.href = `reader.html?id=${encodeURIComponent(id)}&ch=${encodeURIComponent(target)}`;
+    navigateToChapter(id, target);
   }, [id]);
 
   useEffect(() => {

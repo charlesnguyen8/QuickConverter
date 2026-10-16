@@ -240,6 +240,80 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert.deepStrictEqual(errors, ['out of memory']);
   });
 
+  const readerLocation = await loadComponent('components/react/reader/readerLocation.js');
+  const fakeWindow = (search, { history = true } = {}) => {
+    const win = new EventTarget();
+    win.location = { search, href: `chrome-extension://x/src/views/reader.html${search}` };
+    win.pushed = [];
+    win.scrolled = [];
+    win.scrollTo = (x, y) => win.scrolled.push([x, y]);
+    if (history) {
+      win.history = {
+        pushState: (state, title, url) => {
+          win.pushed.push({ state, url });
+          win.location.search = url.slice(url.indexOf('?'));
+        }
+      };
+    }
+    return win;
+  };
+
+  await test('readerChapterHref encodes the novel id and chapter', () => {
+    assert.strictEqual(readerLocation.readerChapterHref('n 1&x', 3), 'reader.html?id=n%201%26x&ch=3');
+    assert.strictEqual(readerLocation.readerChapterHref('n1', 2.5), 'reader.html?id=n1&ch=2.5');
+  });
+
+  await test('switching chapters updates the URL in place so loaded dictionaries survive', () => {
+    const win = fakeWindow('?id=n1&ch=3');
+    const events = [];
+    win.addEventListener(readerLocation.READER_LOCATION_EVENT, () => events.push(win.location.search));
+    readerLocation.navigateToChapter('n1', 4, win);
+    assert.deepStrictEqual(win.pushed.map((p) => p.url), ['reader.html?id=n1&ch=4']);
+    assert.deepStrictEqual(win.pushed[0].state, { id: 'n1', ch: 4 });
+    assert.strictEqual(win.location.href, 'chrome-extension://x/src/views/reader.html?id=n1&ch=3', 'must not trigger a full page load');
+    assert.deepStrictEqual(events, ['?id=n1&ch=4'], 'listeners see the new chapter');
+    assert.deepStrictEqual(win.scrolled, [[0, 0]], 'the new chapter starts at the top');
+  });
+
+  await test('switching to the chapter already open does nothing', () => {
+    const win = fakeWindow('?id=n1&ch=4');
+    let fired = 0;
+    win.addEventListener(readerLocation.READER_LOCATION_EVENT, () => { fired++; });
+    readerLocation.navigateToChapter('n1', 4, win);
+    assert.strictEqual(win.pushed.length, 0);
+    assert.strictEqual(fired, 0);
+  });
+
+  await test('switching chapters falls back to a page load without the History API', () => {
+    const win = fakeWindow('?id=n1&ch=3', { history: false });
+    readerLocation.navigateToChapter('n1', 4, win);
+    assert.strictEqual(win.location.href, 'reader.html?id=n1&ch=4');
+  });
+
+  await test('reader location subscribers follow in-page switches and back/forward', () => {
+    const win = fakeWindow('?id=n1&ch=3');
+    const seen = [];
+    const unsubscribe = readerLocation.subscribeReaderLocation((search) => seen.push(search), win);
+    readerLocation.navigateToChapter('n1', 4, win);
+    win.location.search = '?id=n1&ch=3';
+    win.dispatchEvent(new Event('popstate'));
+    unsubscribe();
+    readerLocation.navigateToChapter('n1', 5, win);
+    assert.deepStrictEqual(seen, ['?id=n1&ch=4', '?id=n1&ch=3']);
+  });
+
+  await test('reader views switch chapters through navigateToChapter, not a page load', () => {
+    for (const file of ['ReaderApp.jsx', 'ReaderNav.jsx', 'ReaderChapterList.jsx']) {
+      const src = read('src', 'components', 'react', 'reader', file);
+      assert(!/location\.href\s*=\s*`reader\.html/.test(src), `${file} must not reload the page to change chapter`);
+      assert(src.includes('navigateToChapter('), `${file} must use navigateToChapter`);
+    }
+    for (const file of ['ReaderApp.jsx', 'ReaderNav.jsx', 'ReaderChapter.jsx', 'ReaderChapterList.jsx', 'ReaderSourceDrawer.jsx']) {
+      const src = read('src', 'components', 'react', 'reader', file);
+      assert(src.includes('useReaderSearch('), `${file} must follow in-page chapter changes`);
+    }
+  });
+
   console.log(`--- Dictionary Converter Test Suite: ${passed}/${passed + failed} passed ---`);
   if (failed > 0) process.exit(1);
   console.log('Dictionary Converter Test Suite: ALL TESTS PASSED!');
