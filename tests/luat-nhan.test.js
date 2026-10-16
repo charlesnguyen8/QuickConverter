@@ -126,6 +126,35 @@ test('an {s} match that is itself a VietPhrase key is not used', () => {
   assert.strictEqual(rules.contains('第十二章'), null);
 });
 
+test('{h}{t}: a surname followed by a suffix becomes "Ho hau"', () => {
+  const rules = L.createRules([], {
+    hoNguoi: new Map([['李', 'Lý'], ['欧阳', 'Âu Dương']]),
+    hauTu: new Map([['哥', 'ca'], ['长老', 'trưởng lão']])
+  });
+  for (const [input, expected, length] of [['李哥来了', 'Lý ca', 2], ['欧阳长老说', 'Âu Dương trưởng lão', 4]]) {
+    const matched = rules.contains(input);
+    assert(matched, input);
+    assert.deepStrictEqual([matched.index, matched.length, matched.key], [0, length, '{h}{t}'], input);
+    assert.strictEqual(rules.translate(input.slice(0, length), matched.key, matched.valueN), expected, input);
+  }
+});
+
+test('{h}{t} is skipped when VietPhrase already has the phrase or a longer phrase covers it', () => {
+  const lists = { hoNguoi: new Map([['李', 'Lý']]), hauTu: new Map([['哥', 'ca']]) };
+  assert.strictEqual(L.createRules([], { ...lists, vietPhraseHas: (k) => k === '李哥' }).contains('李哥来了'), null);
+  assert.strictEqual(L.createRules([], { ...lists, vietPhraseHas: (k) => k === '李哥来' }).contains('李哥来了'), null);
+});
+
+test('an {n} rule earlier in the window still wins over {h}{t}', () => {
+  const rules = L.createRules([['在{n}身后', 'sau lưng {n}']], {
+    dictionaryN: new Map([['他', 'hắn']]),
+    hoNguoi: new Map([['李', 'Lý']]),
+    hauTu: new Map([['哥', 'ca']])
+  });
+  assert.strictEqual(rules.contains('在他身后李哥').key, '在{n}身后');
+  assert.strictEqual(rules.contains('李哥在他身后').key, '{h}{t}');
+});
+
 test('parseRules follows QT line rules and skips comments', () => {
   const parsed = L.parseRules('﻿# comment\n{s}年=năm {s}\n{s}年=khác\na=b=c\n\n第{s}章=chương {s}');
   assert.deepStrictEqual(plain(parsed), [['{s}年', 'năm {s}'], ['第{s}章', 'chương {s}']]);

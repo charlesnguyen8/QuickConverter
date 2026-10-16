@@ -7,7 +7,10 @@
     qtNames: { file: 'Names.txt', kind: 'dictionary' },
     pronouns: { file: 'Pronouns.txt', kind: 'dictionary' },
     ignoredPhrases: { file: 'IgnoredChinesePhrases.txt', kind: 'list' },
-    luatNhan: { file: 'LuatNhan.txt', kind: 'rules' }
+    luatNhan: { file: 'LuatNhan.txt', kind: 'rules' },
+    hoNguoi: { file: 'HoNguoi.txt', kind: 'dictionary' },
+    hauTu: { file: 'HauTu.txt', kind: 'dictionary' },
+    danhTu: { file: 'DanhTu.txt', kind: 'dictionary' }
   };
   const cache = new Map();
 

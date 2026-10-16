@@ -213,6 +213,10 @@
     const opts = options || {};
     const dictionaryN = opts.dictionaryN && typeof opts.dictionaryN.get === 'function' ? opts.dictionaryN : new Map();
     const vietPhraseHas = typeof opts.vietPhraseHas === 'function' ? opts.vietPhraseHas : () => false;
+    const fullVietPhraseHas = typeof opts.fullVietPhraseHas === 'function' ? opts.fullVietPhraseHas : vietPhraseHas;
+    const isMap = (m) => !!m && typeof m.get === 'function' && typeof m.has === 'function';
+    const hoNguoi = isMap(opts.hoNguoi) ? opts.hoNguoi : null;
+    const hauTu = isMap(opts.hauTu) ? opts.hauTu : null;
     const ordered = (Array.isArray(rules) ? rules : []).filter((rule) => Array.isArray(rule) && rule[0]).slice().sort(byLengthThenKey);
 
     const nRules = ordered
@@ -254,11 +258,43 @@
       return null;
     }
 
+    function isHoHau(phrase) {
+      for (let split = 1; split < phrase.length; split++) {
+        if (hoNguoi.has(phrase.slice(0, split)) && hauTu.has(phrase.slice(split))) return true;
+      }
+      return false;
+    }
+
+    function findHoHauPhrase(window, start) {
+      const windowLength = Math.min(20, window.length - start);
+      if (windowLength < 2) return 0;
+      for (let length = Math.min(6, windowLength); length >= 2; length--) {
+        const phrase = window.slice(start, start + length);
+        if (!isHoHau(phrase) || fullVietPhraseHas(phrase)) continue;
+        let covered = false;
+        for (let longer = length + 1; longer <= windowLength && !covered; longer++) {
+          covered = fullVietPhraseHas(window.slice(start, start + longer));
+        }
+        if (!covered) return length;
+      }
+      return 0;
+    }
+
     function contains(text) {
       const window = String(text || '');
       const present = new Set(Array.from(window));
       let best = matchN(window, present);
-      const bestIndex = best ? best.index : Infinity;
+      let bestIndex = best ? best.index : Infinity;
+      if (hoNguoi && hauTu) {
+        for (let index = 0; index < Math.min(window.length, bestIndex); index++) {
+          const length = findHoHauPhrase(window, index);
+          if (length > 0) {
+            best = { index, length, key: '{h}{t}', valueN: '' };
+            bestIndex = index;
+            break;
+          }
+        }
+      }
       if (bestIndex > 0 && Array.from(window).some((ch) => numbers().isNumberStart(ch))) {
         const sMatch = matchS(window, present);
         if (sMatch && sMatch.index < bestIndex) best = sMatch;
@@ -285,6 +321,15 @@
         if (!value || template === null) return null;
         const decimal = convertDecimal(value);
         return decimal === null ? null : replaceAll(template, '{s}', decimal);
+      }
+      if (ruleKey === '{h}{t}') {
+        if (!hoNguoi || !hauTu) return null;
+        for (let split = 1; split < chinese.length; split++) {
+          const ho = chinese.slice(0, split);
+          const hau = chinese.slice(split);
+          if (hoNguoi.has(ho) && hauTu.has(hau)) return `${String(hoNguoi.get(ho)).trim()} ${String(hauTu.get(hau)).trim()}`;
+        }
+        return null;
       }
       if (ruleKey.includes('{s}')) {
         if (template === null) return null;

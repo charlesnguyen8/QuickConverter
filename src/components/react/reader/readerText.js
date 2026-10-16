@@ -16,7 +16,7 @@ export async function buildReaderConverter(novel, services, { onError } = {}) {
     return undefined;
   };
   const safe = (promise) => Promise.resolve(promise).catch(report);
-  const [hanVietMap, locked, soft, vietPhrase, qtNames, pronouns, ignoredPhrases, luatNhan] = await Promise.all([
+  const [hanVietMap, locked, soft, vietPhrase, qtNames, pronouns, ignoredPhrases, luatNhan, hoNguoi, hauTu] = await Promise.all([
     safe(hanViet.load()),
     safe(storage.getNameList(novel.id, 'locked')),
     safe(storage.getNameList(novel.id, 'soft')),
@@ -24,12 +24,16 @@ export async function buildReaderConverter(novel, services, { onError } = {}) {
     safe(dictionaries.load('qtNames')),
     safe(dictionaries.load('pronouns')),
     safe(dictionaries.load('ignoredPhrases')),
-    safe(dictionaries.load('luatNhan'))
+    safe(dictionaries.load('luatNhan')),
+    safe(dictionaries.load('hoNguoi')),
+    safe(dictionaries.load('hauTu'))
   ]);
   const loaded = {};
   if (vietPhrase) loaded.vietPhrase = vietPhrase;
   if (qtNames) loaded.qtNames = qtNames;
   if (pronouns) loaded.pronouns = pronouns;
+  if (hoNguoi) loaded.hoNguoi = hoNguoi;
+  if (hauTu) loaded.hauTu = hauTu;
   const converter = processors.createConverter({
     hanViet: hanVietMap || new Map(),
     names: Array.isArray(novel.nameList) ? novel.nameList : [],

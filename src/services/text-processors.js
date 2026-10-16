@@ -337,7 +337,8 @@
     const ruleEngine = resolveGlobal('LuatNhan');
     const vietPhraseHas = (key) => isMap(dicts.vietPhrase) && dicts.vietPhrase.has(key);
     let rules = null;
-    if (ruleEngine && Array.isArray(options.luatNhan) && options.luatNhan.length > 0) {
+    const hoHau = isMap(dicts.hoNguoi) && isMap(dicts.hauTu);
+    if (ruleEngine && ((Array.isArray(options.luatNhan) && options.luatNhan.length > 0) || hoHau)) {
       const pronouns = isMap(dicts.pronouns) ? dicts.pronouns : new Map();
       const userNames = new Map(nameEntries(options.names, tiers.namelist).map((entry) => [entry.original, entry.translation]));
       const qtNames = isMap(dicts.qtNames) ? dicts.qtNames : new Map();
@@ -349,7 +350,14 @@
           return undefined;
         }
       };
-      rules = ruleEngine.createRules(options.luatNhan, { dictionaryN, vietPhraseHas });
+      const fullVietPhraseHas = (key) => vietPhraseHas(key) || qtNames.has(key) || userNames.has(key);
+      rules = ruleEngine.createRules(Array.isArray(options.luatNhan) ? options.luatNhan : [], {
+        dictionaryN,
+        vietPhraseHas,
+        fullVietPhraseHas,
+        hoNguoi: hoHau ? dicts.hoNguoi : null,
+        hauTu: hoHau ? dicts.hauTu : null
+      });
     }
     const context = { matcher, hanViet, ignored, rules, numbers, vietPhraseHas, minUserTier: tiers.soft, nameTier: tiers.qtNames };
     return {

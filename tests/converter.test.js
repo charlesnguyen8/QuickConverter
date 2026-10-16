@@ -184,6 +184,36 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert.deepStrictEqual(origins.filter(([, origin]) => origin === 'luatNhan' || origin === 'number'), [['三月五号', 'luatNhan'], ['三百', 'number']]);
   });
 
+  await test('surname + suffix names convert as "Ho hau" and give way to your name list', () => {
+    const hv = new Map([...RULE_HV, ['李', 'lý'], ['哥', 'ca'], ['来', 'lai']]);
+    const dictionaries = { hoNguoi: new Map([['李', 'Lý']]), hauTu: new Map([['哥', 'huynh']]) };
+    assert.strictEqual(T.createConverter({ hanViet: hv, dictionaries, luatNhan: [] }).convert('李哥来了'), 'Lý huynh lai liễu');
+    const mine = T.createConverter({ hanViet: hv, dictionaries, luatNhan: [], names: [{ id: 'n', original: '李哥', translation: 'Brother Li' }] });
+    assert.strictEqual(mine.convert('李哥来了'), 'Brother Li lai liễu');
+  });
+
+  await test('QtDictionaries knows the surname, suffix and place-name files', async () => {
+    const urls = [];
+    const fetchEnv = loadEnv({ fetch: async (url) => { urls.push(url); return { ok: true, text: async () => '李=Lý\n' }; } });
+    for (const name of ['hoNguoi', 'hauTu', 'danhTu']) await fetchEnv.QtDictionaries.load(name);
+    assert.deepStrictEqual(urls, ['../dict/HoNguoi.txt', '../dict/HauTu.txt', '../dict/DanhTu.txt']);
+    for (const f of ['HoNguoi.txt', 'HauTu.txt', 'DanhTu.txt']) assert(fs.existsSync(path.join(repoRoot, 'src', 'dict', f)), `src/dict/${f} is bundled`);
+  });
+
+  await test('buildReaderConverter loads the surname and suffix lists for the {h}{t} rule', async () => {
+    const asked = [];
+    const services = {
+      storage: { getNameList: async () => [] },
+      hanViet: { load: async () => new Map() },
+      dictionaries: { load: async (name) => { asked.push(name); return name === 'luatNhan' || name === 'ignoredPhrases' ? [] : new Map([[name, name]]); } },
+      processors: { createConverter: (lists) => ({ lists }) }
+    };
+    const { buildReaderConverter } = await loadComponent('components/react/reader/readerText.js');
+    const converter = await buildReaderConverter({ id: 'n1', nameList: [] }, services);
+    assert(asked.includes('hoNguoi') && asked.includes('hauTu'));
+    assert(converter.lists.dictionaries.hoNguoi && converter.lists.dictionaries.hauTu);
+  });
+
   await test('QtDictionaries loads LuatNhan.txt as rules', async () => {
     const fetchEnv = loadEnv({ fetch: async (url) => ({ ok: true, text: async () => (url.endsWith('LuatNhan.txt') ? '# c\n{s}年=năm {s}\n' : '') }) });
     const rules = await fetchEnv.QtDictionaries.load('luatNhan');
@@ -278,7 +308,7 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
       processors: { createConverter: (lists) => ({ lists }) }
     };
     const converter = await readerText.buildReaderConverter({ id: 'n1', nameList: [{ original: '林', translation: 'L' }] }, services);
-    assert.deepStrictEqual(Object.keys(converter.lists.dictionaries).sort(), ['pronouns', 'qtNames', 'vietPhrase']);
+    assert.deepStrictEqual(Object.keys(converter.lists.dictionaries).sort(), ['hauTu', 'hoNguoi', 'pronouns', 'qtNames', 'vietPhrase']);
     assert.deepStrictEqual(converter.lists.ignoredPhrases, ['x']);
     assert.strictEqual(converter.lists.names[0].original, '林');
     assert.strictEqual(converter.lists.locked[0].original, 'locked');
