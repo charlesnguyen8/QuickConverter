@@ -289,6 +289,51 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     assert.strictEqual(S.getCatalogChapterNumber({}, '100043460'), null);
   });
 
+  await test('StorageService relays chapter-saved notices to open views', () => {
+    const sent = [];
+    const listeners = new Set();
+    const fakeChrome = {
+      runtime: {
+        lastError: undefined,
+        sendMessage(msg, cb) { sent.push(msg); for (const l of listeners) l(msg, {}, () => {}); if (cb) cb(); },
+        onMessage: {
+          addListener(l) { listeners.add(l); },
+          removeListener(l) { listeners.delete(l); }
+        }
+      }
+    };
+    const storageEnv = loadEnv({ chrome: fakeChrome, indexedDB: { open() { throw new Error('not used'); } } });
+    vm.runInContext(read('src', 'services', 'storage.js'), storageEnv);
+    const S = storageEnv.StorageService || storageEnv.window.StorageService;
+
+    const received = [];
+    const unsubscribe = S.subscribeChapterSaved((msg) => received.push(plain(msg)));
+    S.notifyChapterSaved('novel-9', 3);
+    for (const l of listeners) l({ action: 'QUEUE_STATE_UPDATE' }, {}, () => {});
+    assert.deepStrictEqual(plain(sent), [{ action: 'CHAPTER_SAVED', novelId: 'novel-9', chapterNumber: 3 }]);
+    assert.deepStrictEqual(received, [{ action: 'CHAPTER_SAVED', novelId: 'novel-9', chapterNumber: 3 }], 'only CHAPTER_SAVED reaches the handler');
+
+    unsubscribe();
+    S.notifyChapterSaved('novel-9', 4);
+    assert.strictEqual(received.length, 1, 'unsubscribe stops notices');
+  });
+
+  await test('StorageService chapter-saved helpers are safe without the extension runtime', () => {
+    const storageEnv = loadEnv({ indexedDB: { open() { throw new Error('not used'); } } });
+    vm.runInContext(read('src', 'services', 'storage.js'), storageEnv);
+    const S = storageEnv.StorageService || storageEnv.window.StorageService;
+    S.notifyChapterSaved('novel-9', 3);
+    const unsubscribe = S.subscribeChapterSaved(() => {});
+    assert.strictEqual(typeof unsubscribe, 'function');
+    unsubscribe();
+  });
+
+  await test('background announces each chapter saved from an open page', () => {
+    const bg = read('src', 'scripts', 'background.js');
+    const saveHandler = bg.slice(bg.indexOf("message.action === 'SAVE_CHAPTER'"), bg.indexOf("message.action === 'UPDATE_NOVEL_METADATA'"));
+    assert(/StorageService\.notifyChapterSaved\(novel\.id,\s*chapterNumber\)/.test(saveHandler), 'SAVE_CHAPTER must call StorageService.notifyChapterSaved(novel.id, chapterNumber)');
+  });
+
   await test('manifest grants the site and injects the content script on book and chapter pages', () => {
     const manifest = JSON.parse(read('manifest.json'));
     assert(manifest.host_permissions.includes('*://*.nkwwlkj.cn/*'));

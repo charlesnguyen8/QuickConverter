@@ -275,6 +275,19 @@ export default function NovelChapters() {
     return () => window.removeEventListener('novel-chapters-refresh', onRefresh);
   }, [load]);
 
+  useEffect(() => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    const unsubscribe = storage && typeof storage.subscribeChapterSaved === 'function'
+      ? storage.subscribeChapterSaved((msg) => { if (!msg.novelId || msg.novelId === novelId) load(); })
+      : () => {};
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      unsubscribe();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [novelId, load]);
+
   const handleDelete = useCallback(async (chNum) => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!storage) return;

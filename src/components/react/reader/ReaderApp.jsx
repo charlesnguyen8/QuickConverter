@@ -84,6 +84,20 @@ export default function ReaderApp() {
   }, [load]);
 
   useEffect(() => {
+    const refresh = () => window.dispatchEvent(new Event('reader-chapter-refresh'));
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    const unsubscribe = storage && typeof storage.subscribeChapterSaved === 'function'
+      ? storage.subscribeChapterSaved((msg) => { if (!msg.novelId || msg.novelId === id) refresh(); })
+      : () => {};
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      unsubscribe();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [id]);
+
+  useEffect(() => {
     if (novel) document.title = `${novel.title} - Ch. ${ch}`;
   }, [novel, ch]);
 

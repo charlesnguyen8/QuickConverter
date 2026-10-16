@@ -764,6 +764,24 @@ const StorageService = {
     return moved;
   },
 
+  notifyChapterSaved(novelId, chapterNumber) {
+    if (typeof chrome === 'undefined' || !chrome.runtime || typeof chrome.runtime.sendMessage !== 'function') return;
+    try {
+      chrome.runtime.sendMessage({ action: 'CHAPTER_SAVED', novelId, chapterNumber }, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch (e) {}
+  },
+
+  subscribeChapterSaved(handler) {
+    if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.onMessage) return () => {};
+    const listener = (message) => {
+      if (message && message.action === 'CHAPTER_SAVED') handler(message);
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    return () => chrome.runtime.onMessage.removeListener(listener);
+  },
+
   getCatalogChapterNumber(novel, chapterSlug) {
     if (!novel || !Array.isArray(novel.chapterList) || chapterSlug === undefined || chapterSlug === null) return null;
     const match = novel.chapterList.find((c) => String(c.slug) === String(chapterSlug));

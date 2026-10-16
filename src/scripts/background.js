@@ -97,6 +97,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
 
         console.log(`[QuickConverter] Saved Chapter ${chapterNumber} for ${novel.title} (${(rawText || '').length} chars)`);
+        StorageService.notifyChapterSaved(novel.id, chapterNumber);
 
         sendResponse({
           success: true,
