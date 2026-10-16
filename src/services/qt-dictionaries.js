@@ -6,7 +6,8 @@
     vietPhrase: { file: 'VietPhrase.txt', kind: 'dictionary' },
     qtNames: { file: 'Names.txt', kind: 'dictionary' },
     pronouns: { file: 'Pronouns.txt', kind: 'dictionary' },
-    ignoredPhrases: { file: 'IgnoredChinesePhrases.txt', kind: 'list' }
+    ignoredPhrases: { file: 'IgnoredChinesePhrases.txt', kind: 'list' },
+    luatNhan: { file: 'LuatNhan.txt', kind: 'rules' }
   };
   const cache = new Map();
 
@@ -51,6 +52,16 @@
     return lines(text).map((line) => line.trim()).filter(Boolean);
   }
 
+  function parseByKind(kind, text) {
+    if (kind === 'list') return parseList(text);
+    if (kind === 'rules') {
+      const scope = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : self);
+      if (!scope || !scope.LuatNhan) throw new Error('LuatNhan module is not loaded.');
+      return scope.LuatNhan.parseRules(text);
+    }
+    return parseDictionary(text);
+  }
+
   function load(name) {
     const spec = FILES[name];
     if (!spec) return Promise.reject(new Error(`Unknown QT dictionary: ${name}`));
@@ -60,7 +71,7 @@
           if (!resp.ok) throw new Error(`Could not load ${spec.file} (HTTP ${resp.status})`);
           return resp.text();
         })
-        .then((text) => (spec.kind === 'list' ? parseList(text) : parseDictionary(text)))
+        .then((text) => parseByKind(spec.kind, text))
         .catch((err) => {
           cache.delete(name);
           throw err;

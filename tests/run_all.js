@@ -23,6 +23,7 @@ const testFiles = [
   'longest-matcher.test.js',
   'text-processors.test.js',
   'converter.test.js',
+  'luat-nhan.test.js',
   'components.test.js'
 ];
 

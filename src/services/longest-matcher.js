@@ -180,6 +180,30 @@
       return false;
     }
 
+    function chooseAt(source, i) {
+      const candidates = candidatesAt(source, i);
+      for (let c = candidates.length - 1; c >= 0; c--) {
+        if (!blockedInside(source, i, candidates[c], candidates)) return candidates[c];
+      }
+      return null;
+    }
+
+    function matchAt(text, index) {
+      const source = typeof text === 'string' ? text : '';
+      const chosen = chooseAt(source, index);
+      return chosen ? toMatch(index, chosen) : null;
+    }
+
+    function hasTierInside(text, start, end, minTier) {
+      const source = typeof text === 'string' ? text : '';
+      let k = start + (charAt(source, start).length || 1);
+      while (k < end) {
+        if (candidatesAt(source, k).some((candidate) => candidate.meta.tier >= minTier)) return true;
+        k += charAt(source, k).length || 1;
+      }
+      return false;
+    }
+
     function findAll(text, findOptions) {
       const all = !!(findOptions && findOptions.all);
       const source = typeof text === 'string' ? text : '';
@@ -195,15 +219,7 @@
           continue;
         }
 
-        const candidates = candidatesAt(source, i);
-
-        let chosen = null;
-        for (let c = candidates.length - 1; c >= 0; c--) {
-          if (!blockedInside(source, i, candidates[c], candidates)) {
-            chosen = candidates[c];
-            break;
-          }
-        }
+        const chosen = chooseAt(source, i);
         if (chosen) {
           matches.push(toMatch(i, chosen));
           i = chosen.end;
@@ -229,7 +245,7 @@
       return out;
     }
 
-    return { findAll, replaceAll };
+    return { findAll, replaceAll, matchAt, hasTierInside };
   }
 
   const LongestMatcher = { createMatcher, isWordChar, isCjkChar, TIERS };
