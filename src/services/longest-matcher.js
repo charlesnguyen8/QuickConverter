@@ -1,7 +1,8 @@
 (function (global) {
   'use strict';
 
-  const TIERS = Object.freeze({ namelist: 3, locked: 2, soft: 1 });
+  const TIERS = Object.freeze({ namelist: 6, locked: 5, soft: 4, qtNames: 3, vietPhrase: 1 });
+  const DEFAULT_SOURCE_MAX_LENGTH = 30;
   const WORD_CHAR = /[\p{L}\p{N}-]/u;
   const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 
@@ -48,6 +49,14 @@
     const field = opts.field || 'original';
     const caseSensitive = !!opts.caseSensitive;
     const strictOverlap = opts.overlap === 'strict';
+    const sources = (Array.isArray(opts.sources) ? opts.sources : [])
+      .filter((src) => src && src.map && typeof src.map.get === 'function' && typeof src.map.has === 'function')
+      .map((src) => ({
+        id: src.id || 'source',
+        map: src.map,
+        tier: typeof src.tier === 'number' ? src.tier : TIERS.vietPhrase,
+        maxLength: src.maxLength || DEFAULT_SOURCE_MAX_LENGTH
+      }));
     const list = Array.isArray(entries) ? entries : [];
 
     const root = { children: new Map(), terminals: null };
@@ -56,6 +65,10 @@
     const fold = (ch) => (foldKeys ? ch.toLowerCase() : ch);
     let tiersVary = false;
     let firstTier = null;
+    sources.forEach((src) => {
+      if (firstTier === null) firstTier = src.tier;
+      else if (src.tier !== firstTier) tiersVary = true;
+    });
 
     list.forEach((entry, i) => {
       if (!entry) return;
@@ -114,7 +127,23 @@
           if (meta) found.push({ end: j, meta, bounded: hasBoundaries(source, start, j) });
         }
       }
-      return found;
+      if (sources.length === 0) return found;
+      const byEnd = new Map(found.map((t) => [t.end, t]));
+      for (const src of sources) {
+        const limit = Math.min(source.length, start + src.maxLength);
+        for (let end = start + 1; end <= limit; end++) {
+          const key = source.slice(start, end);
+          if (!src.map.has(key)) continue;
+          const existing = byEnd.get(end);
+          if (existing && existing.meta.tier >= src.tier) continue;
+          byEnd.set(end, {
+            end,
+            meta: { id: src.id + ':' + key, value: key, original: key, translation: String(src.map.get(key)), tier: src.tier, sensitive: true },
+            bounded: hasBoundaries(source, start, end)
+          });
+        }
+      }
+      return [...byEnd.values()].sort((a, b) => a.end - b.end);
     }
 
     function candidatesAt(source, start) {

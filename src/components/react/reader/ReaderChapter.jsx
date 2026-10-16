@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createNameMatcher } from '../novel/nameListSource.js';
-import { chapterDisplayText } from './readerText.js';
+import { buildReaderConverter, chapterDisplayText } from './readerText.js';
 
 function getParams() {
   if (typeof window === 'undefined') return { id: null, ch: 0 };
@@ -114,24 +114,15 @@ export default function ReaderChapter() {
       return undefined;
     }
     let cancelled = false;
-    const storage = typeof window !== 'undefined' ? window.StorageService : null;
-    const processors = typeof window !== 'undefined' ? window.TextProcessors : null;
-    const hanVietService = typeof window !== 'undefined' ? window.HanViet : null;
-    if (!storage || !processors || !hanVietService) return undefined;
-    Promise.all([
-      hanVietService.load(),
-      storage.getNameList(novel.id, 'locked'),
-      storage.getNameList(novel.id, 'soft')
-    ])
-      .then(([hanViet, locked, soft]) => {
-        if (cancelled) return;
-        setConverter(processors.createConverter({
-          hanViet,
-          names: Array.isArray(novel.nameList) ? novel.nameList : [],
-          locked,
-          soft
-        }));
-      })
+    const services = typeof window !== 'undefined' ? {
+      storage: window.StorageService,
+      hanViet: window.HanViet,
+      dictionaries: window.QtDictionaries,
+      processors: window.TextProcessors
+    } : {};
+    if (!services.storage || !services.hanViet || !services.dictionaries || !services.processors) return undefined;
+    buildReaderConverter(novel, services, { onError: (e) => console.warn('[Reader] Dictionary unavailable for conversion:', e) })
+      .then((next) => { if (!cancelled) setConverter(next); })
       .catch((e) => console.error('Error preparing dictionary conversion:', e));
     return () => { cancelled = true; };
   }, [conversionMode, novel]);
@@ -262,7 +253,7 @@ export default function ReaderChapter() {
           ) : null}
           {conversionMode ? (
             <span id="chapter-converted-badge" className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30" title="Converted from the original Chinese with your name list, glossaries and Hán Việt readings. Turn it off in the novel view.">
-              {convert ? 'Dictionary conversion' : 'Converting…'}
+              {convert ? 'Dictionary conversion' : 'Loading dictionaries…'}
             </span>
           ) : (
             <span className="ml-auto text-[11px] text-slate-500 italic hidden sm:inline">Double-click text to edit</span>

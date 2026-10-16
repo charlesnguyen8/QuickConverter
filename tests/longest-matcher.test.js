@@ -209,6 +209,42 @@ test('a case-sensitive and a case-insensitive entry can share the same letters',
   assert.deepStrictEqual(ids(matcher.findAll('Lin and lin and LIN.')), ['name', 'term', 'term']);
 });
 
+test('lookup-table sources match like entries and report their translation', () => {
+  const T = LongestMatcher.TIERS;
+  const vietPhrase = new Map([['他们', 'bọn họ'], ['来', 'lai']]);
+  const matcher = LongestMatcher.createMatcher([], { ...opts, sources: [{ id: 'vp', map: vietPhrase, tier: T.vietPhrase }] });
+  const hits = matcher.findAll('他们来了');
+  assert.deepStrictEqual(hits.map((h) => [h.index, h.length, h.translation, h.tier]), [[0, 2, 'bọn họ', T.vietPhrase], [2, 1, 'lai', T.vietPhrase]]);
+});
+
+test('tiers rank user lists above QT Names above VietPhrase', () => {
+  const T = LongestMatcher.TIERS;
+  assert(T.namelist > T.locked && T.locked > T.soft && T.soft > T.qtNames && T.qtNames > T.vietPhrase, 'tier order');
+  const matcher = LongestMatcher.createMatcher(
+    [{ id: 'mine', original: '林动', translation: 'Lâm Động (mine)' }],
+    { ...opts, sources: [
+      { id: 'names', map: new Map([['林动', 'Lin Dong (QT)'], ['萧炎', 'Tiêu Viêm']]), tier: T.qtNames },
+      { id: 'vp', map: new Map([['林动', 'rừng động'], ['大萧', 'đại tiêu']]), tier: T.vietPhrase }
+    ] }
+  );
+  assert.deepStrictEqual(matcher.findAll('林动').map((h) => h.translation), ['Lâm Động (mine)'], 'your list wins on the same key');
+  assert.deepStrictEqual(matcher.findAll('大萧炎').map((h) => h.translation), ['Tiêu Viêm'], 'a QT name starting inside a VietPhrase phrase wins');
+});
+
+test('lookup-table sources stop at maxLength', () => {
+  const matcher = LongestMatcher.createMatcher([], { ...opts, sources: [{ id: 'vp', map: new Map([['一二三', 'x'], ['一', 'y']]), tier: 1, maxLength: 2 }] });
+  assert.deepStrictEqual(matcher.findAll('一二三').map((h) => h.translation), ['y']);
+});
+
+test('a chapter scans quickly against a large lookup table', () => {
+  const big = new Map();
+  for (let i = 0; i < 200000; i++) big.set(String.fromCharCode(0x4e00 + (i % 20000)) + String.fromCharCode(0x4e00 + Math.floor(i / 20000)), 'v');
+  const text = '一丁七丆万丈三上下丌不与丏丐'.repeat(500);
+  const started = Date.now();
+  LongestMatcher.createMatcher([], { ...opts, sources: [{ id: 'vp', map: big, tier: 1 }] }).findAll(text);
+  assert(Date.now() - started < 1500, `took ${Date.now() - started}ms`);
+});
+
 test('strict overlap mode rejects a match when a longer entry starts inside it', () => {
   const entries = [{ id: 'qy', original: '青阳' }, { id: 'yzz', original: '阳镇长' }];
   assert.deepStrictEqual(ids(LongestMatcher.createMatcher(entries, opts).findAll('青阳镇长')), ['qy'], 'greedy by default');

@@ -156,8 +156,23 @@
 
   // QT2025's TranslateAll output assembly: matched phrases and per-character Hán Việt
   // readings are joined with QT's spacing, punctuation and capitalization rules.
-  function convertLine(line, matcher, byId, hanViet) {
-    const source = standardizeLine(line);
+  function escapeRegExp(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function ignoredPatterns(phrases) {
+    return (Array.isArray(phrases) ? phrases : [])
+      .map((phrase) => Array.from(standardizeLine(String(phrase || ''))).filter((ch) => !/\s/.test(ch)))
+      .filter((chars) => chars.length > 0)
+      .map((chars) => new RegExp(chars.map(escapeRegExp).join('\\s*'), 'g'));
+  }
+
+  function convertLine(line, matcher, hanViet, ignored) {
+    let source = standardizeLine(line);
+    if (ignored.length > 0) {
+      ignored.forEach((pattern) => { source = source.replace(pattern, ''); });
+      source = source.replace(/ {2,}/g, ' ').trim();
+    }
     if (!source) return '';
     const matchAt = new Map();
     if (matcher) matcher.findAll(source).forEach((match) => matchAt.set(match.index, match));
@@ -186,7 +201,7 @@
     while (i < source.length) {
       const match = matchAt.get(i);
       if (match) {
-        appendWord(byId.get(match.id).translation);
+        appendWord(match.translation);
         i += match.length;
         if (isChinese(charAt(i))) appendChar(' ');
         continue;
@@ -214,17 +229,35 @@
     const options = lists || {};
     const hanViet = options.hanViet && typeof options.hanViet.get === 'function' && typeof options.hanViet.has === 'function' ? options.hanViet : new Map();
     const api = resolveMatcher();
-    const tiers = api ? api.TIERS : { namelist: 3, locked: 2, soft: 1 };
+    const tiers = api ? api.TIERS : { namelist: 6, locked: 5, soft: 4, qtNames: 3, vietPhrase: 1 };
     const entries = [
       ...nameEntries(options.names, tiers.namelist),
       ...lockedEntries(options.locked, tiers.locked, 'locked'),
       ...lockedEntries(options.soft, tiers.soft, 'soft')
     ];
-    const byId = new Map(entries.map((entry) => [entry.id, entry]));
-    const matcher = api && entries.length > 0 ? api.createMatcher(entries, { field: 'original' }) : null;
+    const dicts = options.dictionaries || {};
+    const isMap = (m) => !!m && typeof m.get === 'function' && typeof m.has === 'function';
+    const sources = [];
+    if (isMap(dicts.qtNames)) sources.push({ id: 'qtNames', map: dicts.qtNames, tier: tiers.qtNames });
+    if (isMap(dicts.vietPhrase) || isMap(dicts.pronouns)) {
+      const vietPhrase = isMap(dicts.vietPhrase) ? dicts.vietPhrase : new Map();
+      const pronouns = isMap(dicts.pronouns) ? dicts.pronouns : new Map();
+      sources.push({
+        id: 'vietPhrase',
+        tier: tiers.vietPhrase,
+        map: {
+          has: (key) => pronouns.has(key) || vietPhrase.has(key),
+          get: (key) => (pronouns.has(key) ? pronouns.get(key) : vietPhrase.get(key))
+        }
+      });
+    }
+    const matcher = api && (entries.length > 0 || sources.length > 0)
+      ? api.createMatcher(entries, { field: 'original', sources })
+      : null;
+    const ignored = ignoredPatterns(options.ignoredPhrases);
     return {
       convert(text) {
-        return String(text || '').split('\n').map((line) => convertLine(line, matcher, byId, hanViet)).join('\n');
+        return String(text || '').split('\n').map((line) => convertLine(line, matcher, hanViet, ignored)).join('\n');
       }
     };
   }
