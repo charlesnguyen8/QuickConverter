@@ -22,6 +22,7 @@ const testFiles = [
   'ocr-panel.test.js',
   'longest-matcher.test.js',
   'text-processors.test.js',
+  'converter.test.js',
   'components.test.js'
 ];
 

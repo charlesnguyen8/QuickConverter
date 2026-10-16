@@ -4,6 +4,7 @@ import NovelDeepseekCard from './NovelDeepseekCard.jsx';
 import NovelChapters from './NovelChapters.jsx';
 import NameListDrawer from './NameListDrawer.jsx';
 import { canBulkDownload } from '../shared/ManualChapterAction.jsx';
+import { ConversionModeToggle } from './ConversionModeToggle.jsx';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -212,6 +213,19 @@ export default function NovelApp() {
     }
   }, [novel, refreshChapterList]);
 
+  const handleConversionMode = useCallback(async (next) => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!novel || !storage || typeof storage.updateNovel !== 'function') return;
+    setNovel((prev) => (prev ? { ...prev, conversionMode: next } : prev));
+    try {
+      const updated = await storage.updateNovel(novel.id, { conversionMode: next });
+      if (updated) setNovel((prev) => ({ ...(prev || {}), ...updated }));
+    } catch (e) {
+      console.error('Error saving conversion mode:', e);
+      setNovel((prev) => (prev ? { ...prev, conversionMode: !next } : prev));
+    }
+  }, [novel]);
+
   const settingsHref = novelId
     ? `settings.html?from=novel&id=${encodeURIComponent(novelId)}`
     : 'settings.html?from=novel';
@@ -288,7 +302,12 @@ export default function NovelApp() {
               </span>
             </h2>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <ConversionModeToggle
+                checked={!!(novel && novel.conversionMode)}
+                disabled={!novel}
+                onChange={handleConversionMode}
+              />
               <button
                 id="download-all-btn"
                 type="button"

@@ -24,7 +24,7 @@
     return out;
   }
 
-  function lockedEntries(entries, tier) {
+  function lockedEntries(entries, tier, kind = 'locked') {
     const out = [];
     const seen = new Set();
     (Array.isArray(entries) ? entries : []).forEach((entry, i) => {
@@ -33,7 +33,7 @@
       const key = pair.original.toLowerCase();
       if (seen.has(key)) return;
       seen.add(key);
-      out.push({ id: 'lock:' + i, ...pair, kind: 'locked', tier, caseSensitive: false });
+      out.push({ id: kind + ':' + i, ...pair, kind, tier, caseSensitive: false });
     });
     return out;
   }
@@ -128,13 +128,115 @@
     return stripLockedMarkers(restoreTokens(text, mapping));
   }
 
+  const PUNCTUATION = {
+    '，': ', ', '。': '.', '．': '.', '：': ': ', '“': '"', '「': '"', '”': '" ', '」': '" ',
+    '‘': "'", '’': "' ", '？': '?', '！': '!', '、': ', ', '\u3000': ' ', '…': '...'
+  };
+  const SENTENCE_ENDERS = ['\n', '\t', '. ', '"', "'", '? ', '! ', '." ', '?" ', '!" ', ': '];
+
+  function standardizeLine(line) {
+    let out = '';
+    for (const ch of line) {
+      if (PUNCTUATION[ch] !== undefined) {
+        out += PUNCTUATION[ch];
+        continue;
+      }
+      const code = ch.codePointAt(0);
+      out += code >= 0xFF01 && code <= 0xFF5E ? String.fromCodePoint(code - 0xFEE0) : ch;
+    }
+    return out.replace(/[ \t]+/g, ' ').trim();
+  }
+
+  function capitalize(text) {
+    const chars = Array.from(text);
+    if (chars.length === 0) return text;
+    if (chars[0] === '[' && chars.length > 1) return '[' + chars[1].toUpperCase() + chars.slice(2).join('');
+    return chars[0].toUpperCase() + chars.slice(1).join('');
+  }
+
+  // QT2025's TranslateAll output assembly: matched phrases and per-character Hán Việt
+  // readings are joined with QT's spacing, punctuation and capitalization rules.
+  function convertLine(line, matcher, byId, hanViet) {
+    const source = standardizeLine(line);
+    if (!source) return '';
+    const matchAt = new Map();
+    if (matcher) matcher.findAll(source).forEach((match) => matchAt.set(match.index, match));
+
+    const isChinese = (ch) => !!ch && hanViet.has(ch);
+    const charAt = (index) => {
+      const code = source.codePointAt(index);
+      return code === undefined ? '' : String.fromCodePoint(code);
+    };
+    let result = '';
+    let last = '\n';
+
+    const appendWord = (text) => {
+      if (SENTENCE_ENDERS.some((ender) => last.endsWith(ender))) last = capitalize(text);
+      else if (last.endsWith(' ') || last.endsWith('(')) last = text;
+      else last = ' ' + text;
+      if ((!text || /^[,.?!]/.test(text)) && result.endsWith(' ')) result = result.slice(0, -1);
+      result += last;
+    };
+    const appendChar = (ch) => {
+      result += ch;
+      last += ch;
+    };
+
+    let i = 0;
+    while (i < source.length) {
+      const match = matchAt.get(i);
+      if (match) {
+        appendWord(byId.get(match.id).translation);
+        i += match.length;
+        if (isChinese(charAt(i))) appendChar(' ');
+        continue;
+      }
+      const ch = charAt(i);
+      const next = charAt(i + ch.length);
+      if (isChinese(ch)) {
+        appendWord(hanViet.get(ch));
+        if (isChinese(next)) appendChar(' ');
+      } else if ((ch === '"' || ch === "'") && !/[ .?!\t]$/.test(last) && next && next !== ' ' && next !== ',') {
+        appendChar(' ');
+        appendChar(ch);
+      } else {
+        appendChar(ch);
+        const prev = i > 0 ? source[i - 1] : '';
+        const decimal = ch === '.' && /[0-9]/.test(prev) && /[0-9]/.test(next);
+        if (/[.?!]/.test(ch) && next && !/[ "']/.test(next) && !decimal) appendChar(' ');
+      }
+      i += ch.length;
+    }
+    return result.trim();
+  }
+
+  function createConverter(lists) {
+    const options = lists || {};
+    const hanViet = options.hanViet && typeof options.hanViet.get === 'function' && typeof options.hanViet.has === 'function' ? options.hanViet : new Map();
+    const api = resolveMatcher();
+    const tiers = api ? api.TIERS : { namelist: 3, locked: 2, soft: 1 };
+    const entries = [
+      ...nameEntries(options.names, tiers.namelist),
+      ...lockedEntries(options.locked, tiers.locked, 'locked'),
+      ...lockedEntries(options.soft, tiers.soft, 'soft')
+    ];
+    const byId = new Map(entries.map((entry) => [entry.id, entry]));
+    const matcher = api && entries.length > 0 ? api.createMatcher(entries, { field: 'original' }) : null;
+    return {
+      convert(text) {
+        return String(text || '').split('\n').map((line) => convertLine(line, matcher, byId, hanViet)).join('\n');
+      }
+    };
+  }
+
   const TextProcessors = {
     tokenizeSource,
     restoreTokens,
     applyLockedGlossary,
     stripLockedMarkers,
     prepareForAi,
-    restoreFromAi
+    restoreFromAi,
+    createConverter
   };
 
   if (typeof window !== 'undefined') window.TextProcessors = TextProcessors;

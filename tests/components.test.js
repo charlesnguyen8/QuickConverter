@@ -267,6 +267,21 @@ function test(name, fn) {
     assert(novelHeader && novelHeader[0].includes('id="open-name-list-btn"'), 'novel Name List trigger must live in the top bar next to Settings');
   });
 
+  test('NovelApp has a per-novel dictionary conversion toggle, off by default', () => {
+    assert(/id="conversion-mode-toggle"[^>]*role="switch"/.test(novelApp) || /role="switch"[^>]*id="conversion-mode-toggle"/.test(novelApp), 'toggle is a switch');
+    assert(/id="conversion-mode-toggle"[^>]*aria-checked="false"/.test(novelApp) || /aria-checked="false"[^>]*id="conversion-mode-toggle"/.test(novelApp), 'off by default');
+  });
+
+  const { ConversionModeToggle } = await loadComponent('components/react/novel/ConversionModeToggle.jsx');
+  test('ConversionModeToggle reflects its state and explains the mode', () => {
+    const on = render(h(ConversionModeToggle, { checked: true, onChange() {} }));
+    assert(/aria-checked="true"/.test(on), 'checked state');
+    assert(on.includes('Dictionary conversion'), 'labelled');
+    const off = render(h(ConversionModeToggle, { checked: false, disabled: true, onChange() {} }));
+    assert(/aria-checked="false"/.test(off) && /disabled/.test(off), 'unchecked and disabled');
+    assert(/min-h-10|h-10/.test(on), 'touch target is at least 40px');
+  });
+
   test('NameListDrawer exposes the Name List, Locked and Soft glossary tabs', () => {
     for (const id of ['name-list-tabs', 'name-list-tab-namelist', 'name-list-tab-locked', 'name-list-tab-soft', 'name-list-generate-prompt-btn']) {
       assert(novelApp.includes(`id="${id}"`), `missing #${id}`);

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createNameMatcher } from '../novel/nameListSource.js';
+import { chapterDisplayText } from './readerText.js';
 
 function getParams() {
   if (typeof window === 'undefined') return { id: null, ch: 0 };
@@ -104,7 +105,39 @@ export default function ReaderChapter() {
     return () => window.removeEventListener('reader-prefs-updated', onPrefs);
   }, []);
 
-  const text = chapter ? (chapter.convertedText || chapter.rawText || '') : '';
+  const conversionMode = !!(novel && novel.conversionMode);
+  const [converter, setConverter] = useState(null);
+
+  useEffect(() => {
+    if (!conversionMode || !novel) {
+      setConverter(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    const processors = typeof window !== 'undefined' ? window.TextProcessors : null;
+    const hanVietService = typeof window !== 'undefined' ? window.HanViet : null;
+    if (!storage || !processors || !hanVietService) return undefined;
+    Promise.all([
+      hanVietService.load(),
+      storage.getNameList(novel.id, 'locked'),
+      storage.getNameList(novel.id, 'soft')
+    ])
+      .then(([hanViet, locked, soft]) => {
+        if (cancelled) return;
+        setConverter(processors.createConverter({
+          hanViet,
+          names: Array.isArray(novel.nameList) ? novel.nameList : [],
+          locked,
+          soft
+        }));
+      })
+      .catch((e) => console.error('Error preparing dictionary conversion:', e));
+    return () => { cancelled = true; };
+  }, [conversionMode, novel]);
+
+  const convert = converter ? converter.convert : null;
+  const text = useMemo(() => chapterDisplayText(chapter, { conversionMode, convert }), [chapter, conversionMode, convert]);
   const paragraphs = useMemo(() => text
     .split('\n\n')
     .map((p) => p.trim())
@@ -117,7 +150,9 @@ export default function ReaderChapter() {
   const catalogItem = novel && Array.isArray(novel.chapterList)
     ? novel.chapterList.find((c) => Number(c.chapterNumber) === params.ch)
     : null;
-  const fallbackTitle = (chapter && chapter.title) || (catalogItem && catalogItem.title) || `Chapter ${params.ch}`;
+  const savedTitle = (chapter && chapter.title) || (catalogItem && catalogItem.title) || `Chapter ${params.ch}`;
+  const fallbackTitle = conversionMode && convert ? convert(savedTitle) : savedTitle;
+  const editable = !conversionMode;
   const novelTitle = (novel && novel.title) || 'Novel';
   const nameList = novel && Array.isArray(novel.nameList) ? novel.nameList : [];
   const nameMatcher = useMemo(() => createNameMatcher(nameList, { caseSensitive: true }), [nameList]);
@@ -178,6 +213,7 @@ export default function ReaderChapter() {
   };
 
   const editParagraph = (idx) => {
+    if (!editable) return;
     makeEditable(paragraphRefs.current[idx], persistParagraphs);
   };
 
@@ -193,7 +229,10 @@ export default function ReaderChapter() {
     }
   };
 
-  const editTitle = () => makeEditable(titleRef.current, persistTitle);
+  const editTitle = () => {
+    if (!editable) return;
+    makeEditable(titleRef.current, persistTitle);
+  };
 
   const showTranslated = !!(chapter && (chapter.isTranslated || chapter.modelUsed));
   const showEdited = !!(chapter && chapter.isUserEdited);
@@ -221,7 +260,13 @@ export default function ReaderChapter() {
               Edited
             </span>
           ) : null}
-          <span className="ml-auto text-[11px] text-slate-500 italic hidden sm:inline">Double-click text to edit</span>
+          {conversionMode ? (
+            <span id="chapter-converted-badge" className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30" title="Converted from the original Chinese with your name list, glossaries and Hán Việt readings. Turn it off in the novel view.">
+              {convert ? 'Dictionary conversion' : 'Converting…'}
+            </span>
+          ) : (
+            <span className="ml-auto text-[11px] text-slate-500 italic hidden sm:inline">Double-click text to edit</span>
+          )}
         </div>
         <div className="group/title flex items-center gap-2 pt-1">
           <h1
@@ -287,7 +332,7 @@ export default function ReaderChapter() {
                 <React.Fragment key={i}>{seg.text}</React.Fragment>
               )))}
             </p>
-            <div className="paragraph-actions absolute right-2 -top-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none select-none">
+            {editable ? <div className="paragraph-actions absolute right-2 -top-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none select-none">
               <button
                 type="button"
                 onClick={() => editParagraph(idx)}
@@ -299,7 +344,7 @@ export default function ReaderChapter() {
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                 </svg>
               </button>
-            </div>
+            </div> : null}
           </div>
         ))}
       </div>
