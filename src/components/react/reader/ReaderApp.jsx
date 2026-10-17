@@ -290,6 +290,7 @@ export default function ReaderApp() {
             onDownload={handleDownload}
             deepseekRef={panelRef}
             manualChapter={catalogItem && (catalogItem.locked || !canBulkDownload(novel)) ? catalogItem : null}
+            novel={novel}
           />
         ) : null}
       </main>

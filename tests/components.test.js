@@ -478,6 +478,37 @@ function test(name, fn) {
   const ManualChapterAction = (await loadComponent('components/react/shared/ManualChapterAction.jsx')).default;
   const manualChapter = { chapterNumber: 3, title: 'Ch 3', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043460' };
   const lockedChapter = { chapterNumber: 5, title: 'Ch 5', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100659849', locked: true };
+  const providerLoginMod = await loadComponent('components/react/shared/ProviderLogin.jsx');
+  const { ProviderLoginStatus } = providerLoginMod;
+  const ProviderLoginBanner = providerLoginMod.default;
+  const LOGIN_URL = 'https://www.nkwwlkj.cn/signup/login?redirect=https%3A%2F%2Fwww.nkwwlkj.cn%2F';
+  test('ProviderLoginStatus shows a login link that opens the official site in a new tab when logged out', () => {
+    const html = render(h(ProviderLoginStatus, { state: { loggedIn: false, userId: null, userName: '' }, providerName: '独阅读', loginUrl: LOGIN_URL, onRecheck: () => {} }));
+    assert(html.includes('id="provider-login-status"'), 'status container');
+    assert(/not logged in/i.test(html) && html.includes('独阅读'), 'says the user is not logged in to the site');
+    const link = html.match(/<a[^>]*id="provider-login-btn"[^>]*>/);
+    assert(link, 'login link');
+    assert(link[0].includes(`href="${LOGIN_URL.replace(/&/g, '&amp;')}"`), 'links to the official login page');
+    assert(link[0].includes('target="_blank"'), 'opens a new tab');
+    assert(html.includes('id="provider-login-recheck-btn"'), 'offers a manual re-check');
+  });
+
+  test('ProviderLoginStatus reflects a logged-in user and hides the login link', () => {
+    const html = render(h(ProviderLoginStatus, { state: { loggedIn: true, userId: '9', userName: '守玄' }, providerName: '独阅读', loginUrl: LOGIN_URL }));
+    assert(/logged in/i.test(html) && !/not logged in/i.test(html), 'logged-in status');
+    assert(html.includes('守玄'), 'shows the account name');
+    assert(!html.includes('id="provider-login-btn"'), 'no login link once logged in');
+  });
+
+  test('ProviderLoginStatus renders nothing until the status is known', () => {
+    assert.strictEqual(render(h(ProviderLoginStatus, { state: null, providerName: '独阅读', loginUrl: LOGIN_URL })), '');
+  });
+
+  test('ProviderLoginBanner renders nothing for sites without login support', () => {
+    assert.strictEqual(render(h(ProviderLoginBanner, { novel: { url: 'https://wetriedtls.com/series/x' } })), '');
+    assert.strictEqual(render(h(ProviderLoginBanner, { novel: null })), '');
+  });
+
   test('ManualChapterAction links unlocked chapters to the page and badges locked ones', () => {
     const open = render(h(ManualChapterAction, { chapter: manualChapter }));
     assert(open.includes('Open to save'), 'unlocked chapter offers Open to save');

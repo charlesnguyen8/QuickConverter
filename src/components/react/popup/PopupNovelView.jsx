@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import PopupDeepseekCard from './PopupDeepseekCard.jsx';
 import ManualChapterAction, { canBulkDownload } from '../shared/ManualChapterAction.jsx';
+import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
 
 const storage = () => (typeof window !== 'undefined' ? window.StorageService : null);
 const queue = () => (typeof window !== 'undefined' ? window.DownloadQueueService : null);
@@ -315,6 +316,8 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
           </div>
         </div>
       ) : null}
+
+      <ProviderLoginBanner novel={novel} compact />
 
         <PopupDeepseekCard ref={deepseekRef} novelId={novelId} />
 

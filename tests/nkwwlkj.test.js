@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadComponent } = require('./helpers/render');
 
 console.log('\n--- Running nkwwlkj.cn Provider Test Suite ---');
 
@@ -332,6 +333,138 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     const bg = read('src', 'scripts', 'background.js');
     const saveHandler = bg.slice(bg.indexOf("message.action === 'SAVE_CHAPTER'"), bg.indexOf("message.action === 'UPDATE_NOVEL_METADATA'"));
     assert(/StorageService\.saveOpenedChapter\(/.test(saveHandler), 'SAVE_CHAPTER must save through StorageService.saveOpenedChapter, which announces the save (behavior covered in ocr-panel.test.js)');
+  });
+
+  const LOGGED_OUT_HEAD = `<script type="text/javascript">
+        var SD = SD || {};
+        SD.book = {book_id: "", chapter_id: "", up_reader_id: "", is_paid: 0};
+        SD.userinfo = {reader_id: 0, reader_name: '""', avatar_thumb_url: '""', vip_lv: ""};
+    </script>
+    <div id="header"><a target="_blank"  href="https://www.nkwwlkj.cn/signup/login?redirect=https%3A%2F%2Fwww.nkwwlkj.cn%2F">登录</a></div>`;
+  const LOGGED_IN_HEAD = `<script type="text/javascript">
+        SD.userinfo = {reader_id: 327475, reader_name: '"\\u5b88\\u7384"', avatar_thumb_url: '"https:\\/\\/img.example\\/a.jpg"', vip_lv: "1"};
+    </script>`;
+
+  await test('parseLoginState reads the logged-out state from SD.userinfo', () => {
+    assert.deepStrictEqual(plain(P.parseLoginState(LOGGED_OUT_HEAD)), { loggedIn: false, userId: null, userName: '' });
+  });
+
+  await test('parseLoginState reads the logged-in reader id and decoded name', () => {
+    assert.deepStrictEqual(plain(P.parseLoginState(LOGGED_IN_HEAD)), { loggedIn: true, userId: '327475', userName: '守玄' });
+    const plainName = "SD.userinfo = {reader_id: 12, reader_name: 'reader12', vip_lv: \"\"};";
+    assert.deepStrictEqual(plain(P.parseLoginState(plainName)), { loggedIn: true, userId: '12', userName: 'reader12' });
+  });
+
+  await test('parseLoginState returns null when the page has no user info', () => {
+    assert.strictEqual(P.parseLoginState('<html><body>maintenance</body></html>'), null);
+    assert.strictEqual(P.parseLoginState(''), null);
+  });
+
+  await test('loginUrl points at the official login page and returns to the given page', () => {
+    const url = new URL(P.loginUrl(BOOK_URL));
+    assert.strictEqual(url.origin + url.pathname, 'https://www.nkwwlkj.cn/signup/login');
+    assert.strictEqual(url.searchParams.get('redirect'), BOOK_URL);
+    assert.strictEqual(new URL(P.loginUrl()).searchParams.get('redirect'), 'https://www.nkwwlkj.cn/');
+  });
+
+  await test('fetchLoginState asks the site with the user cookies and parses the answer', async () => {
+    const calls = [];
+    const fetchEnv = loadEnv({
+      fetch: async (url, init) => {
+        calls.push([url, init]);
+        return { ok: true, text: async () => LOGGED_IN_HEAD };
+      }
+    });
+    const state = await fetchEnv.NkwwlkjProvider.fetchLoginState();
+    assert.deepStrictEqual(plain(state), { loggedIn: true, userId: '327475', userName: '守玄' });
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(new URL(calls[0][0]).hostname, 'www.nkwwlkj.cn');
+    assert.strictEqual(calls[0][1].credentials, 'include', 'sends the site cookies');
+    assert.strictEqual(calls[0][1].cache, 'no-store', 'never answers from cache');
+  });
+
+  await test('fetchLoginState returns null when the site cannot be reached', async () => {
+    const down = loadEnv({ fetch: async () => { throw new Error('offline'); } });
+    assert.strictEqual(await down.NkwwlkjProvider.fetchLoginState(), null);
+    const bad = loadEnv({ fetch: async () => ({ ok: false, status: 502, text: async () => '' }) });
+    assert.strictEqual(await bad.NkwwlkjProvider.fetchLoginState(), null);
+  });
+
+  await test('registry resolves the provider of a novel by url or domain', () => {
+    const R = env.ProviderRegistry;
+    assert.strictEqual(R.getProviderForNovel({ url: BOOK_URL }).id, 'nkwwlkj');
+    assert.strictEqual(R.getProviderForNovel({ domain: 'nkwwlkj.cn' }).id, 'nkwwlkj');
+    assert.strictEqual(R.getProviderForNovel(null), null);
+    assert.strictEqual(R.getProviderForNovel({ url: 'https://example.com/x' }), null);
+  });
+
+  const { watchLoginState } = await loadComponent('components/react/shared/ProviderLogin.jsx');
+  function fakeWindow() {
+    const handlers = {};
+    return {
+      document: { visibilityState: 'visible' },
+      addEventListener: (type, fn) => { (handlers[type] = handlers[type] || []).push(fn); },
+      removeEventListener: (type, fn) => { handlers[type] = (handlers[type] || []).filter((f) => f !== fn); },
+      fire: (type) => (handlers[type] || []).forEach((fn) => fn({ type })),
+      count: () => Object.values(handlers).reduce((n, list) => n + list.length, 0)
+    };
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  await test('watchLoginState checks at once and again when the user comes back from the login tab', async () => {
+    const answers = [{ loggedIn: false, userId: null, userName: '' }, { loggedIn: true, userId: '9', userName: '守玄' }];
+    let checks = 0;
+    const provider = { fetchLoginState: async () => answers[Math.min(checks++, answers.length - 1)] };
+    const win = fakeWindow();
+    const seen = [];
+    const watcher = watchLoginState({ provider, target: win, onState: (s) => seen.push(s) });
+    await tick();
+    assert.deepStrictEqual(seen.map((s) => s && s.loggedIn), [false], 'shows logged out first');
+
+    win.fire('focus');
+    await tick();
+    assert.deepStrictEqual(seen.map((s) => s && s.loggedIn), [false, true], 'reflects the login after returning');
+    assert.strictEqual(seen[1].userName, '守玄');
+
+    win.document.visibilityState = 'hidden';
+    win.fire('visibilitychange');
+    await tick();
+    assert.strictEqual(checks, 2, 'does not check while the page is hidden');
+
+    watcher.stop();
+    assert.strictEqual(win.count(), 0, 'stop removes the listeners');
+  });
+
+  await test('watchLoginState can be re-checked on demand and ignores answers after stop', async () => {
+    let resolveLate;
+    let checks = 0;
+    const provider = {
+      fetchLoginState: () => {
+        checks++;
+        if (checks === 1) return Promise.resolve({ loggedIn: false, userId: null, userName: '' });
+        return new Promise((r) => { resolveLate = r; });
+      }
+    };
+    const seen = [];
+    const watcher = watchLoginState({ provider, target: fakeWindow(), onState: (s) => seen.push(s) });
+    await tick();
+    watcher.recheck();
+    watcher.recheck();
+    assert.strictEqual(checks, 2, 'overlapping checks are not started twice');
+    watcher.stop();
+    resolveLate({ loggedIn: true, userId: '1', userName: 'x' });
+    await tick();
+    assert.strictEqual(seen.length, 1, 'no update after stop');
+  });
+
+  await test('watchLoginState does nothing for providers without a login check', async () => {
+    const win = fakeWindow();
+    const seen = [];
+    const watcher = watchLoginState({ provider: { id: 'wetriedtls' }, target: win, onState: (s) => seen.push(s) });
+    await tick();
+    assert.deepStrictEqual(seen, []);
+    assert.strictEqual(win.count(), 0);
+    watcher.stop();
   });
 
   await test('manifest grants the site and injects the content script on book and chapter pages', () => {

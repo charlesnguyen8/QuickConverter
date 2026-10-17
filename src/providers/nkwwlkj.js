@@ -141,6 +141,34 @@ const NkwwlkjProvider = (() => {
     return slug ? `Book ${slug}` : '';
   }
 
+  function decodeUserName(raw) {
+    const value = String(raw || '').trim();
+    if (!value) return '';
+    try {
+      const parsed = JSON.parse(value);
+      return typeof parsed === 'string' ? parsed.trim() : value;
+    } catch (e) {
+      return value;
+    }
+  }
+
+  function parseLoginState(html) {
+    const info = String(html || '').match(/SD\.userinfo\s*=\s*\{([^}]*)\}/);
+    if (!info) return null;
+    const idMatch = info[1].match(/reader_id\s*:\s*["']?(\d+)/);
+    const nameMatch = info[1].match(/reader_name\s*:\s*'([^']*)'/) || info[1].match(/reader_name\s*:\s*("(?:[^"\\]|\\.)*")/);
+    const userId = idMatch && Number(idMatch[1]) > 0 ? idMatch[1] : null;
+    return {
+      loggedIn: !!userId,
+      userId,
+      userName: userId && nameMatch ? decodeUserName(nameMatch[1]) : ''
+    };
+  }
+
+  function loginUrl(redirect) {
+    return `${ORIGIN}/signup/login?redirect=${encodeURIComponent(redirect || `${ORIGIN}/`)}`;
+  }
+
   async function fetchBookHtml(slug, seriesUrl) {
     const resp = await fetch(seriesUrl || bookUrl(slug));
     if (!resp.ok) return null;
@@ -152,6 +180,7 @@ const NkwwlkjProvider = (() => {
     name: '独阅读 (nkwwlkj.cn)',
     domains: ['www.nkwwlkj.cn', 'nkwwlkj.cn'],
     supportsBulkDownload: false,
+    shortName: '独阅读',
 
     matches(url) {
       if (!url) return false;
@@ -262,6 +291,21 @@ const NkwwlkjProvider = (() => {
 
     async fetchChapterContent() {
       throw new Error('独阅读 chapters cannot be downloaded in the background. Open the chapter page in the browser to save it.');
+    },
+
+    parseLoginState,
+
+    loginUrl,
+
+    async fetchLoginState() {
+      try {
+        const resp = await fetch(`${ORIGIN}/index`, { credentials: 'include', cache: 'no-store' });
+        if (!resp.ok) return null;
+        return parseLoginState(await resp.text());
+      } catch (e) {
+        console.warn('[nkwwlkj Provider] Could not check the login state:', e);
+        return null;
+      }
     },
 
     formatTitle

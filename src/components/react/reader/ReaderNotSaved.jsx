@@ -1,7 +1,8 @@
 import React from 'react';
 import ReaderDeepseekCard from './ReaderDeepseekCard.jsx';
+import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
 
-export default function ReaderNotSaved({ downloading = false, failed = false, translating = false, model = 'deepseek-flash', onDownload, deepseekRef, manualChapter = null }) {
+export default function ReaderNotSaved({ downloading = false, failed = false, translating = false, model = 'deepseek-flash', onDownload, deepseekRef, manualChapter = null, novel = null }) {
   if (manualChapter) {
     const locked = !!manualChapter.locked;
     return (
@@ -17,6 +18,7 @@ export default function ReaderNotSaved({ downloading = false, failed = false, tr
               : "This site can't be downloaded in the background. Open the chapter page and it is saved automatically, then come back here."}
           </p>
         </div>
+        <ProviderLoginBanner novel={novel} compact />
         {locked ? null : (
           <a
             id="reader-open-source-link"

@@ -47,9 +47,13 @@ const ProviderRegistry = (() => {
     return Array.from(domains);
   }
 
+  function getProviderForNovel(novel) {
+    if (!novel) return null;
+    return (novel.url && getProviderForUrl(novel.url)) || (novel.domain && getProviderForDomain(novel.domain)) || null;
+  }
+
   function canBulkDownload(novel) {
-    if (!novel) return true;
-    const provider = (novel.url && getProviderForUrl(novel.url)) || (novel.domain && getProviderForDomain(novel.domain)) || null;
+    const provider = getProviderForNovel(novel);
     return !provider || provider.supportsBulkDownload !== false;
   }
 
@@ -69,6 +73,7 @@ const ProviderRegistry = (() => {
     getProviderById,
     getAllProviders,
     getAllSupportedDomains,
+    getProviderForNovel,
     canBulkDownload
   };
 })();

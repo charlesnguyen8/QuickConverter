@@ -4,6 +4,7 @@ import NovelDeepseekCard from './NovelDeepseekCard.jsx';
 import NovelChapters from './NovelChapters.jsx';
 import NameListDrawer from './NameListDrawer.jsx';
 import { canBulkDownload } from '../shared/ManualChapterAction.jsx';
+import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
 import { ConversionModeToggle } from './ConversionModeToggle.jsx';
 
 function getNovelId() {
@@ -291,6 +292,8 @@ export default function NovelApp() {
       </header>
 
       <main className="max-w-5xl mx-auto w-full px-6 py-8 flex-1 flex flex-col gap-8">
+        <ProviderLoginBanner novel={novel} />
+
         <NovelHero />
 
         <section className="flex flex-col gap-4">
