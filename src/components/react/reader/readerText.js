@@ -76,7 +76,13 @@ export function paragraphsFromLines(lines) {
     const offset = current.text.length;
     current.text += text;
     (line.segments || []).forEach((seg) => {
-      current.segments.push({ ...seg, start: seg.start + offset, end: seg.end + offset, line: lineIndex });
+      current.segments.push({
+        ...seg,
+        start: seg.start + offset,
+        end: seg.end + offset,
+        line: lineIndex,
+        ...(typeof line.source === 'string' ? { lineSource: line.source, hidden: line.hidden || [] } : {})
+      });
     });
   });
   return paragraphs.filter((p) => p.text.trim() !== '&nbsp;');
@@ -99,7 +105,21 @@ export function phraseOptions(segment, meaningsOf) {
 }
 
 function touching(a, b) {
-  return !!a && !!b && a.line === b.line && typeof a.sourceEnd === 'number' && a.sourceEnd === b.sourceStart;
+  if (!a || !b || a.line !== b.line || typeof a.sourceEnd !== 'number' || typeof b.sourceStart !== 'number') return false;
+  if (a.sourceEnd === b.sourceStart) return true;
+  if (typeof a.lineSource !== 'string' || a.sourceEnd > b.sourceStart) return false;
+  let k = a.sourceEnd;
+  while (k < b.sourceStart) {
+    const hidden = (a.hidden || []).find(([start]) => start === k);
+    if (hidden) {
+      k = hidden[1];
+    } else if (/\s/.test(a.lineSource[k])) {
+      k += 1;
+    } else {
+      return false;
+    }
+  }
+  return k === b.sourceStart;
 }
 
 export function canExtendPhrase(paragraph, from, to, direction) {
@@ -115,7 +135,9 @@ export function phraseRange(paragraph, from, to) {
   const chunk = segments.slice(from, to + 1);
   for (let k = 1; k < chunk.length; k++) if (!touching(chunk[k - 1], chunk[k])) return null;
   return {
-    source: chunk.map((seg) => seg.source).join(''),
+    source: typeof chunk[0].lineSource === 'string'
+      ? chunk[0].lineSource.slice(chunk[0].sourceStart, chunk[chunk.length - 1].sourceEnd)
+      : chunk.map((seg) => seg.source).join(''),
     reading: chunk.map((seg) => seg.reading).join(' '),
     translation: paragraph.text.slice(chunk[0].start, chunk[chunk.length - 1].end),
     origin: 'selection'

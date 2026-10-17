@@ -683,7 +683,7 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     const lines = converter.convertDetailed(DETAIL_TEXT);
     assert.strictEqual(lines.map((l) => l.text).join('\n'), converter.convert(DETAIL_TEXT));
     assert.strictEqual(lines.length, 4);
-    assert.deepStrictEqual(plain(lines[1]), { text: '', segments: [] });
+    assert.deepStrictEqual(plain(lines[1]), { text: '', segments: [], source: '', hidden: [] });
   });
 
   await test('convertDetailed marks each phrase with its Chinese, Hán Việt reading and where the meaning came from', () => {
@@ -924,6 +924,36 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert.strictEqual(readerText.phraseRange(para, number, number + 1).source, '三百步');
     assert.strictEqual(readerText.PHRASE_ORIGIN_LABELS.luatNhan, 'LuatNhan rule');
     assert.strictEqual(readerText.PHRASE_ORIGIN_LABELS.number, 'Number');
+  });
+
+  await test('a selection grows across a character hidden by an empty meaning and keeps it in the Chinese', () => {
+    const hv = new Map([...HAN_VIET, ['的', 'đích']]);
+    const lists = { hanViet: hv, soft: [{ original: '的', translation: '' }] };
+    const converter = T.createConverter(lists);
+    const [para] = readerText.paragraphsFromLines(converter.convertDetailed('他的大笑，来'));
+    const idx = (src) => para.segments.findIndex((s) => s.source === src);
+    assert.strictEqual(idx('的'), -1, 'the hidden character has no chunk of its own');
+    assert.strictEqual(readerText.canExtendPhrase(para, idx('他'), idx('他'), 'right'), true, 'the arrow steps over the hidden character');
+    assert.strictEqual(readerText.canExtendPhrase(para, idx('大'), idx('大'), 'left'), true);
+    const phrase = readerText.phraseRange(para, idx('他'), idx('大'));
+    assert.strictEqual(phrase.source, '他的大', 'the selected Chinese includes the hidden character');
+    assert.strictEqual(phrase.translation, 'Tha đại');
+    assert.strictEqual(readerText.canExtendPhrase(para, idx('笑'), idx('笑'), 'right'), false, 'punctuation still stops the selection');
+    const saved = T.createConverter({ ...lists, names: [{ id: 's', original: phrase.source, translation: 'Saved' }] });
+    assert.strictEqual(saved.convert('他的大笑'), 'Saved tiếu', 'the saved selection matches the text it came from');
+  });
+
+  await test('a selection grows across the spaces QT puts around Arabic digits', () => {
+    const converter = T.createConverter({ hanViet: RULE_HV });
+    const [para] = readerText.paragraphsFromLines(converter.convertDetailed('他走了3步'));
+    const number = para.segments.findIndex((s) => s.origin === 'number');
+    assert(number > 0, 'the digits are a number chunk');
+    assert.strictEqual(readerText.canExtendPhrase(para, number, number, 'left'), true, 'joins the chunk before');
+    assert.strictEqual(readerText.canExtendPhrase(para, number, number, 'right'), true, 'joins the chunk after');
+    const phrase = readerText.phraseRange(para, number - 1, number + 1);
+    assert(phrase, 'the chunks around the digits form one selection');
+    const saved = T.createConverter({ hanViet: RULE_HV, names: [{ id: 's', original: phrase.source, translation: 'Saved' }] });
+    assert.strictEqual(saved.convert('他走了3步'), 'Tha tẩu Saved', 'the saved selection matches the text it came from');
   });
 
   await test('an entry with an empty meaning hides those characters in conversion', () => {

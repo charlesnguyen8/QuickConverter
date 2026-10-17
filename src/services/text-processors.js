@@ -269,7 +269,7 @@
 
   const RULE_WINDOW = 30;
 
-  function convertLine(line, context, segments) {
+  function convertLine(line, context, segments, layout) {
     const { matcher, hanViet, ignored, rules, numbers, vietPhraseHas, minUserTier, nameTier, standardize } = context;
     let source = standardize(line);
     if (ignored.length > 0) {
@@ -280,6 +280,10 @@
     const record = Array.isArray(segments) ? segments : null;
     const numberAt = numbers ? numbers.prescanNumbers(source, vietPhraseHas) : new Map();
     if (numbers) source = numbers.numberModifier(source);
+    if (layout) {
+      layout.source = source;
+      layout.hidden = [];
+    }
     let pendingRule = null;
     let ruleScannedUntil = -1;
 
@@ -350,6 +354,7 @@
         }
       }
       if (match && !String(match.translation || '').trim()) {
+        if (layout) layout.hidden.push([i, i + match.length]);
         i += match.length;
         continue;
       }
@@ -462,8 +467,9 @@
       convertDetailed(text) {
         return String(text || '').split('\n').map((line) => {
           const segments = [];
-          const converted = convertLine(line, context, segments);
-          return { text: converted, segments: segments.filter((seg) => seg.end > seg.start) };
+          const layout = { source: '', hidden: [] };
+          const converted = convertLine(line, context, segments, layout);
+          return { text: converted, segments: segments.filter((seg) => seg.end > seg.start), source: layout.source, hidden: layout.hidden };
         });
       }
     };
