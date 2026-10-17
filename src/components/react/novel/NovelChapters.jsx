@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ProgressRing } from '../shared/QueueDock.jsx';
-import ManualChapterAction, { canBulkDownload } from '../shared/ManualChapterAction.jsx';
+import ManualChapterAction, { ChapterAccessBadge, canBulkDownload } from '../shared/ManualChapterAction.jsx';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -164,6 +164,7 @@ export function ChapterRow({ novel, chapter, chNum, downloadedChapter, queueStat
         >
           {chapter.title || `Chapter ${chNum}`}
         </span>
+        <ChapterAccessBadge chapter={chapter} />
       </div>
 
       <div className="flex items-center gap-2.5 flex-shrink-0">

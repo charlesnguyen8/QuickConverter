@@ -11,26 +11,24 @@ export default function ReaderNotSaved({ downloading = false, failed = false, tr
           {locked ? '🔒' : '📖'}
         </div>
         <div className="flex flex-col gap-1 items-center">
-          <h2 className="text-lg font-bold text-slate-100">{locked ? 'Locked Chapter' : 'Chapter Not Saved Yet'}</h2>
+          <h2 className="text-lg font-bold text-slate-100">{locked ? 'Paid Chapter' : 'Chapter Not Saved Yet'}</h2>
           <p className="text-sm text-slate-400 max-w-md">
             {locked
-              ? 'This is a paid chapter on the source site, so it cannot be saved.'
+              ? 'Unlock this chapter with coins on the source site, then open the chapter page. Its image is read with OCR and saved automatically, then come back here.'
               : "This site can't be downloaded in the background. Open the chapter page and it is saved automatically, then come back here."}
           </p>
         </div>
         <ProviderLoginBanner novel={novel} compact />
-        {locked ? null : (
-          <a
-            id="reader-open-source-link"
-            href={manualChapter.url || '#'}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 px-6 py-2.5 min-h-10 rounded-lg text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-          >
-            <span>Open chapter page</span>
-            <span aria-hidden="true">↗</span>
-          </a>
-        )}
+        <a
+          id="reader-open-source-link"
+          href={manualChapter.url || '#'}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-2 px-6 py-2.5 min-h-10 rounded-lg text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        >
+          <span>Open chapter page</span>
+          <span aria-hidden="true">↗</span>
+        </a>
       </div>
     );
   }

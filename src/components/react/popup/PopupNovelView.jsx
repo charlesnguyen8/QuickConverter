@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import PopupDeepseekCard from './PopupDeepseekCard.jsx';
-import ManualChapterAction, { canBulkDownload } from '../shared/ManualChapterAction.jsx';
+import ManualChapterAction, { ChapterAccessBadge, canBulkDownload } from '../shared/ManualChapterAction.jsx';
 import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
 
 const storage = () => (typeof window !== 'undefined' ? window.StorageService : null);
@@ -80,6 +80,7 @@ export const ChapterRow = memo(function ChapterRow({ novel, chapter, downloadedC
           : 'text-xs font-medium text-slate-300 truncate group-hover:text-slate-200 transition'}>
           {chapter.title || `Chapter ${chNum}`}
         </span>
+        <ChapterAccessBadge chapter={chapter} compact />
       </div>
 
       <div className="flex items-center gap-1.5 flex-shrink-0">
