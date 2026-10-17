@@ -486,6 +486,7 @@ export default function ReaderChapter() {
           onExtendRight={() => extendSelection('right')}
           onPick={(translation, source) => savePhrase(phraseSaveKind(selectedPhrase), translation, source)}
           onSaveName={(translation, source) => savePhrase('namelist', translation, source)}
+          onSaveLocked={(translation, source) => savePhrase('locked', translation, source)}
           readingOf={converter && converter.readingOf}
           meaningsOf={converter && converter.meaningsOf}
           onOpenName={openPhraseName}

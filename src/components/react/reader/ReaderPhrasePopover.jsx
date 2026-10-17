@@ -3,7 +3,7 @@ import { PHRASE_KIND_LABELS, PHRASE_ORIGIN_LABELS, editedPhrase, phraseSaveKind 
 
 const BTN = 'min-h-10 inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm font-semibold transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-40 disabled:pointer-events-none';
 
-export default function ReaderPhrasePopover({ phrase, options = [], saving = false, canExtendLeft = false, canExtendRight = false, onExtendLeft, onExtendRight, onPick, onSaveName, onOpenName, onClose, suggestions = [], suggestionsLoading = false, onAcceptSuggestion, onRejectSuggestion, readingOf, meaningsOf }) {
+export default function ReaderPhrasePopover({ phrase, options = [], saving = false, canExtendLeft = false, canExtendRight = false, onExtendLeft, onExtendRight, onPick, onSaveName, onSaveLocked, onOpenName, onClose, suggestions = [], suggestionsLoading = false, onAcceptSuggestion, onRejectSuggestion, readingOf, meaningsOf }) {
   const [custom, setCustom] = useState(phrase ? phrase.translation : '');
   const [sourceText, setSourceText] = useState(phrase ? phrase.source : '');
 
@@ -152,6 +152,9 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
         <div className="flex flex-wrap gap-2">
           <button id="reader-phrase-name-btn" type="button" disabled={!canSave} onClick={() => onSaveName && onSaveName(value, edited.source)} className={`${BTN} text-slate-200 bg-slate-800 border border-slate-700 hover:bg-slate-700`}>
             Save as name
+          </button>
+          <button id="reader-phrase-locked-btn" type="button" disabled={!canSave} onClick={() => onSaveLocked && onSaveLocked(value, edited.source)} title="Save this meaning to the Locked Glossary" className={`${BTN} text-slate-200 bg-slate-800 border border-slate-700 hover:bg-slate-700`}>
+            Save as locked
           </button>
           {phrase.entryId ? (
             <button id="reader-phrase-open-name" type="button" onClick={() => onOpenName && onOpenName(phrase.entryId)} className={`${BTN} text-indigo-300 hover:text-indigo-200 hover:bg-slate-800`}>

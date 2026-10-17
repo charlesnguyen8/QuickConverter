@@ -717,6 +717,23 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     ]);
   });
 
+  await test('savePhraseEntry saves to the Locked Glossary, updating the same Chinese there', async () => {
+    const calls = [];
+    const lists = { locked: [{ id: 'l1', original: '平静', translation: 'old' }], namelist: [{ id: 'n1', original: '是很平静', translation: 'x' }] };
+    const storage = {
+      getNameList: async (id, kind) => lists[kind] || [],
+      updateNameEntry: async (...args) => { calls.push(['update', ...args]); return {}; },
+      addNameEntry: async (...args) => { calls.push(['add', ...args]); return {}; }
+    };
+    await readerText.savePhraseEntry(storage, 'n1', 'locked', { original: '是很平静', translation: 'rất là bình tĩnh' });
+    await readerText.savePhraseEntry(storage, 'n1', 'locked', { original: '平静', translation: 'bình tĩnh' });
+    assert.deepStrictEqual(calls, [
+      ['add', 'n1', { original: '是很平静', translation: 'rất là bình tĩnh' }, 'locked'],
+      ['update', 'n1', 'l1', { translation: 'bình tĩnh' }, 'locked']
+    ], 'a Name List entry for the same Chinese does not count as a locked entry');
+    assert.strictEqual(readerText.PHRASE_KIND_LABELS.locked, 'Locked Glossary');
+  });
+
   await test('buildReaderConverter can list every dictionary meaning of a phrase', async () => {
     const vietPhrase = env.QtDictionaries.parseDictionary('工作=công tác/làm việc\n');
     const services = {

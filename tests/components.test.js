@@ -273,6 +273,21 @@ function test(name, fn) {
     assert(/id="reader-phrase-use-btn"[^>]*\sdisabled=""/.test(render(h(ReaderPhrasePopover, { phrase: { source: '的', reading: 'đích', translation: '', origin: 'soft' }, saving: true }))), 'still disabled while saving');
   });
 
+  test('ReaderPhrasePopover offers Save as locked next to Save as name', () => {
+    const phrase = { source: '是很平静', reading: 'thị ngận bình tĩnh', translation: 'rất là bình tĩnh', origin: 'soft' };
+    const html = render(h(ReaderPhrasePopover, { phrase, options: ['rất là bình tĩnh', 'thị ngận bình tĩnh'] }));
+    const btn = html.match(/<button[^>]*id="reader-phrase-locked-btn"[^>]*>([\s\S]*?)<\/button>/);
+    assert(btn, 'Save as locked button');
+    assert(/Save as locked/.test(btn[1]), 'labelled Save as locked');
+    assert(/min-h-10/.test(btn[0]), 'touch-friendly height');
+    assert(/Locked Glossary/.test(btn[0]), 'tooltip names the Locked Glossary');
+    assert(html.indexOf('id="reader-phrase-name-btn"') < html.indexOf('id="reader-phrase-locked-btn"'), 'sits after Save as name');
+    assert(!/id="reader-phrase-locked-btn"[^>]*\sdisabled=""/.test(html), 'enabled for a phrase');
+    const empty = render(h(ReaderPhrasePopover, { phrase: { ...phrase, translation: '' } }));
+    assert(!/id="reader-phrase-locked-btn"[^>]*\sdisabled=""/.test(empty), 'works with an empty meaning, like Save as name');
+    assert(/id="reader-phrase-locked-btn"[^>]*\sdisabled=""/.test(render(h(ReaderPhrasePopover, { phrase, saving: true }))), 'disabled while saving');
+  });
+
   test('ReaderPhrasePopover lists possible names for the tapped phrase with add and reject actions', () => {
     const phrase = { source: '韩', reading: 'hàn', translation: 'hàn', origin: 'hanViet' };
     const html = render(h(ReaderPhrasePopover, {
