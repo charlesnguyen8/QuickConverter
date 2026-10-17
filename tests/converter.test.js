@@ -62,8 +62,80 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
   });
 
   await test('full-width ASCII is narrowed', () => {
-    assert.strictEqual(convert('他ＡＢ'), 'ThaAB');
+    assert.strictEqual(convert('他ＡＢ'), 'Tha AB', 'narrowed, and QT spaces Chinese from the Latin text after it');
     assert.strictEqual(convert('他１２３'), 'Tha 123', 'narrowed digits form a number, which QT appends as a word');
+  });
+
+  const T2S = new Map([['這', '这'], ['書', '书'], ['蕭', '萧'], ['動', '动'], ['陽', '阳'], ['鎮', '镇'], ['進', '进'], ['說', '说']]);
+  const CLEAN_HV = new Map([...HAN_VIET, ['这', 'giá'], ['是', 'thị'], ['一', 'nhất'], ['本', 'bản'], ['书', 'thư'], ['她', 'tha']]);
+  const cleanConvert = (text, lists = {}) => T.createConverter({ hanViet: CLEAN_HV, dictionaries: { traditional: T2S }, ...lists }).convert(text);
+
+  await test('traditional Chinese is converted to simplified before matching', () => {
+    assert.strictEqual(cleanConvert('這是本書'), cleanConvert('这是本书'));
+    assert.strictEqual(cleanConvert('這是本書'), 'Giá thị bản thư');
+    assert.strictEqual(cleanConvert('林動走進青陽鎮。', { names: NAMES, locked: LOCKED }), 'Lâm Động tẩu tiến Thanh Dương trấn.', 'names and glossary match traditional text');
+  });
+
+  await test('your own entries saved in traditional Chinese still match', () => {
+    const names = [{ id: 'n9', original: '蕭炎', translation: 'Tiêu Viêm' }];
+    assert.strictEqual(cleanConvert('萧炎说', { names }), 'Tiêu Viêm thuyết');
+    assert.strictEqual(cleanConvert('蕭炎說', { names }), 'Tiêu Viêm thuyết');
+  });
+
+  await test('without the traditional table, text converts as before', () => {
+    assert.strictEqual(T.createConverter({ hanViet: CLEAN_HV }).convert('这是本书'), 'Giá thị bản thư');
+  });
+
+  await test('HTML entities are decoded like .NET WebUtility.HtmlDecode', () => {
+    assert.strictEqual(cleanConvert('他&amp;她'), 'Tha & tha');
+    assert.strictEqual(cleanConvert('他&nbsp;说'), 'Tha thuyết', 'a non-breaking space separates like a space');
+    assert.strictEqual(cleanConvert('&#x4ED6;说&#20182;'), 'Tha thuyết tha', 'hex and decimal character references');
+    assert.strictEqual(cleanConvert('&lt;他&gt;&quot;'), '< tha >"', 'decoded, then spaced from the Chinese like typed brackets');
+    assert.strictEqual(cleanConvert('他&NotEqualTilde;'), 'Tha &NotEqualTilde;', 'names .NET does not know stay as they are');
+    assert.strictEqual(cleanConvert('他&amp说'), 'Tha &amp thuyết', 'no semicolon, no entity');
+  });
+
+  await test('QT spacing separates Chinese from Latin letters and digits on both sides', () => {
+    assert.strictEqual(cleanConvert('这是本书。 他&amp;她 ＡＢＣ 等'), 'Giá thị bản thư. Tha & tha ABC 等');
+    assert.strictEqual(cleanConvert('ABC他'), 'ABC tha');
+    assert.strictEqual(cleanConvert('他(她)'), 'Tha (tha)');
+    assert.strictEqual(cleanConvert('3.14他'), '3.14 tha', 'decimal points stay inside numbers');
+  });
+
+  await test('control characters are dropped and long dot runs collapse', () => {
+    assert.strictEqual(cleanConvert('他\u0007她\u0000说'), 'Tha tha thuyết');
+    assert.strictEqual(cleanConvert('他……'), 'Tha...');
+    assert.strictEqual(cleanConvert('他. . . . . .'), 'Tha...');
+  });
+
+  await test('QtDictionaries loads the traditional-to-simplified table as a character map', async () => {
+    const urls = [];
+    const fetchEnv = loadEnv({
+      fetch: async (url) => {
+        urls.push(url);
+        return { ok: true, text: async () => '﻿9019=8FD9\n66F8=4E66\nbad line\n' };
+      }
+    });
+    const map = await fetchEnv.QtDictionaries.load('traditional');
+    assert.deepStrictEqual(urls, ['../dict/TraditionalToSimplified.txt']);
+    assert.strictEqual(map.get('這'), '这');
+    assert.strictEqual(map.get('書'), '书');
+    assert.strictEqual(map.size, 2, 'malformed lines are skipped');
+    const bundled = read('src', 'dict', 'TraditionalToSimplified.txt').split(/\r?\n/).filter(Boolean);
+    assert.strictEqual(bundled.length, 2619, 'the full Windows StrConv table is bundled');
+  });
+
+  await test('the bundled table matches the Windows StrConv samples QT relies on', () => {
+    const map = new Map(read('src', 'dict', 'TraditionalToSimplified.txt').split(/\r?\n/).filter(Boolean).map((line) => {
+      const [from, to] = line.split('=');
+      return [String.fromCodePoint(parseInt(from, 16)), String.fromCodePoint(parseInt(to, 16))];
+    }));
+    const simplify = (text) => Array.from(text).map((ch) => map.get(ch) || ch).join('');
+    assert.strictEqual(simplify('這是一本書'), '这是一本书');
+    assert.strictEqual(simplify('著作與看著'), '着作与看着');
+    assert.strictEqual(simplify('乾坤一擲'), '乾坤一掷');
+    assert.strictEqual(simplify('後臺發展'), '後台发展');
+    assert.strictEqual(simplify('滑鼠裡面'), '滑鼠里面');
   });
 
   await test('a name starting inside a soft or locked term wins', () => {
@@ -83,7 +155,7 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
   });
 
   await test('characters missing from the Hán Việt list stay as they are', () => {
-    assert.strictEqual(convert('他龘'), 'Tha龘');
+    assert.strictEqual(convert('他龘'), 'Tha 龘', 'kept as is; QT only counts listed characters as Chinese, so it is spaced like other text');
   });
 
   await test('paragraph breaks are kept and each paragraph starts with a capital', () => {
@@ -214,6 +286,28 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert(converter.lists.dictionaries.hoNguoi && converter.lists.dictionaries.hauTu);
   });
 
+  await test('buildReaderConverter passes the traditional-to-simplified table to the converter', async () => {
+    const asked = [];
+    const table = new Map([['這', '这']]);
+    const services = {
+      storage: { getNameList: async () => [] },
+      hanViet: { load: async () => new Map() },
+      dictionaries: { load: async (name) => { asked.push(name); if (name === 'traditional') return table; return name === 'luatNhan' || name === 'ignoredPhrases' ? [] : new Map(); } },
+      processors: { createConverter: (lists) => ({ lists }) }
+    };
+    const { buildReaderConverter } = await loadComponent('components/react/reader/readerText.js');
+    const converter = await buildReaderConverter({ id: 'n1', nameList: [] }, services);
+    assert(asked.includes('traditional'));
+    assert.strictEqual(converter.lists.dictionaries.traditional, table);
+  });
+
+  await test('chapter titles are converted with the traditional-to-simplified table too', () => {
+    const storage = read('src', 'services', 'storage.js');
+    const titleConverter = storage.slice(storage.indexOf('async _titleConverter'), storage.indexOf('async _convertCatalogTitles'));
+    assert(/dictionaries\.load\('traditional'\)/.test(titleConverter), '_titleConverter loads the table');
+    assert(/traditional/.test(titleConverter.slice(titleConverter.indexOf('const loaded'))), '_titleConverter passes it to createConverter');
+  });
+
   await test('QtDictionaries loads LuatNhan.txt as rules', async () => {
     const fetchEnv = loadEnv({ fetch: async (url) => ({ ok: true, text: async () => (url.endsWith('LuatNhan.txt') ? '# c\n{s}年=năm {s}\n' : '') }) });
     const rules = await fetchEnv.QtDictionaries.load('luatNhan');
@@ -308,7 +402,7 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
       processors: { createConverter: (lists) => ({ lists }) }
     };
     const converter = await readerText.buildReaderConverter({ id: 'n1', nameList: [{ original: '林', translation: 'L' }] }, services);
-    assert.deepStrictEqual(Object.keys(converter.lists.dictionaries).sort(), ['hauTu', 'hoNguoi', 'pronouns', 'qtNames', 'vietPhrase']);
+    assert.deepStrictEqual(Object.keys(converter.lists.dictionaries).sort(), ['hauTu', 'hoNguoi', 'pronouns', 'qtNames', 'traditional', 'vietPhrase']);
     assert.deepStrictEqual(converter.lists.ignoredPhrases, ['x']);
     assert.strictEqual(converter.lists.names[0].original, '林');
     assert.strictEqual(converter.lists.locked[0].original, 'locked');
@@ -415,7 +509,7 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
   });
 
   const DICT_FILES = {
-    'ChinesePhienAmWords.txt': '第=đệ\n章=chương\n来=lai',
+    'ChinesePhienAmWords.txt': '第=đệ\n章=chương\n来=lai\n林=lâm\n动=động\n了=liễu',
     'VietPhrase.txt': '第=thứ\n来了=tới',
     'Names.txt': '',
     'Pronouns.txt': '',

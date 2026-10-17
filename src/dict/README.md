@@ -6,6 +6,10 @@ VietPhrase.txt (phrase dictionary), Names.txt (shared proper names), Pronouns.tx
 IgnoredChinesePhrases.txt (site spam removed before conversion) come from the same QT2025
 data folder, under the same personal-use terms. Loaded on demand by services/qt-dictionaries.js.
 
+TraditionalToSimplified.txt maps traditional to simplified characters (hex code points), the
+table Windows StrConv uses and QT2025 relies on, copied from quick-translator-engine's
+strconv_t2s.tsv under the same terms. The converter simplifies input with it before matching.
+
 HoNguoi.txt (surnames), HauTu.txt (person suffixes) and DanhTu.txt (place/organisation
 templates) come from QT2025/Resources, same terms. jieba/ holds Jieba's word dictionary
 (dict.txt) and HMM tables (prob_emit.json, prob_trans.json) from the same folder, used to

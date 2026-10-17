@@ -206,7 +206,7 @@ const StorageService = {
       console.warn('[QuickConverter] Dictionary unavailable for title conversion:', e);
       return undefined;
     });
-    const [hanVietMap, locked, soft, vietPhrase, qtNames, pronouns, ignoredPhrases, luatNhan, hoNguoi, hauTu] = await Promise.all([
+    const [hanVietMap, locked, soft, vietPhrase, qtNames, pronouns, ignoredPhrases, luatNhan, hoNguoi, hauTu, traditional] = await Promise.all([
       safe(() => hanViet.load()),
       safe(() => this.getNameList(novel.id, 'locked')),
       safe(() => this.getNameList(novel.id, 'soft')),
@@ -216,7 +216,8 @@ const StorageService = {
       safe(() => dictionaries.load('ignoredPhrases')),
       safe(() => dictionaries.load('luatNhan')),
       safe(() => dictionaries.load('hoNguoi')),
-      safe(() => dictionaries.load('hauTu'))
+      safe(() => dictionaries.load('hauTu')),
+      safe(() => dictionaries.load('traditional'))
     ]);
     const loaded = {};
     if (vietPhrase) loaded.vietPhrase = vietPhrase;
@@ -224,6 +225,7 @@ const StorageService = {
     if (pronouns) loaded.pronouns = pronouns;
     if (hoNguoi) loaded.hoNguoi = hoNguoi;
     if (hauTu) loaded.hauTu = hauTu;
+    if (traditional) loaded.traditional = traditional;
     return processors.createConverter({
       hanViet: hanVietMap || new Map(),
       names: Array.isArray(novel.nameList) ? novel.nameList : [],
