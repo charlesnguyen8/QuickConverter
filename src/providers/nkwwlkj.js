@@ -193,7 +193,7 @@ const NkwwlkjProvider = (() => {
   }
 
   async function fetchBookHtml(slug, seriesUrl) {
-    const resp = await fetch(seriesUrl || bookUrl(slug));
+    const resp = await fetch(seriesUrl || bookUrl(slug), { credentials: 'omit' });
     if (!resp.ok) return null;
     return resp.text();
   }

@@ -257,6 +257,33 @@ const TRANSLATION = { enabled: true, apiKey: 'sk-local', prompt: 'Translate to E
     assert(names.some((n) => n.original === 'Wang Lin'), 'captured names are added like a normal download');
   });
 
+  await test('saveRecognizedChapter marks the chapter as paid in the catalog (image-only pages are paid chapters)', async () => {
+    const { S, stores } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    stores.novels['novel-1'].chapterList[1].locked = false;
+    S.updateNovel = async (id, updates) => (stores.novels[id] = { ...stores.novels[id], ...updates });
+    await S.saveRecognizedChapter('novel-1', 7, { text: OCR_TEXT, url: PAGE_URL, translation: { enabled: false } });
+    const list = stores.novels['novel-1'].chapterList;
+    assert.strictEqual(list.find((c) => c.chapterNumber === 7).locked, true, 'the OCR-saved chapter is paid');
+    assert.strictEqual(list.find((c) => c.chapterNumber === 6).locked, undefined, 'other chapters are untouched');
+  });
+
+  await test('syncNovelChapters keeps a chapter paid after the user bought it', async () => {
+    const { env, S, stores } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    S.updateNovel = async (id, updates) => (stores.novels[id] = { ...stores.novels[id], ...updates });
+    const provider = env.ProviderRegistry.getProviderForUrl();
+    provider.fetchChapterList = async () => CATALOG.map((c) => ({ ...c, locked: false }));
+    await S.syncNovelChapters('novel-1');
+    const list = stores.novels['novel-1'].chapterList;
+    assert.strictEqual(list.find((c) => c.slug === '100043460').locked, true, 'a chapter seen as paid stays paid');
+    assert.strictEqual(list.find((c) => c.slug === '100043459').locked, false, 'free chapters stay free');
+
+    provider.fetchChapterList = async () => CATALOG.map((c) => ({ ...c, locked: true }));
+    await S.syncNovelChapters('novel-1');
+    assert.strictEqual(stores.novels['novel-1'].chapterList.find((c) => c.slug === '100043459').locked, true, 'a chapter the site starts charging for becomes paid');
+  });
+
   await test('saveRecognizedChapter never saves an empty chapter', async () => {
     const { S, stores } = makeStorageEnv();
     await seedCatalogNovel(S, stores);

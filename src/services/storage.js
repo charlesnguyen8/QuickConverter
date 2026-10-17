@@ -818,8 +818,10 @@ const StorageService = {
       }
 
       if (provider && typeof provider.fetchChapterList === 'function') {
-        const chapters = await provider.fetchChapterList(novel.slug, novel.url);
-        if (Array.isArray(chapters) && chapters.length > 0) {
+        const fetched = await provider.fetchChapterList(novel.slug, novel.url);
+        if (Array.isArray(fetched) && fetched.length > 0) {
+          const paidSlugs = new Set((novel.chapterList || []).filter((c) => c && c.locked === true && c.slug).map((c) => String(c.slug)));
+          const chapters = fetched.map((c) => (c && c.slug && paidSlugs.has(String(c.slug)) && c.locked !== true ? { ...c, locked: true } : c));
           const updates = {
             chapterList: await this._convertCatalogTitles(novel, chapters)
           };
@@ -1489,6 +1491,16 @@ const StorageService = {
 
     if (translated) {
       await this._addCapturedGlossary(novel.id, Number(chapterNumber), translated);
+    }
+
+    if (catalogItem && catalogItem.locked !== true) {
+      try {
+        await this.updateNovel(novel.id, {
+          chapterList: novel.chapterList.map((c) => (c === catalogItem ? { ...c, locked: true } : c))
+        });
+      } catch (e) {
+        console.warn('[StorageService] Failed to mark the chapter as paid:', e);
+      }
     }
 
     this.notifyChapterSaved(novel.id, Number(chapterNumber));

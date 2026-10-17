@@ -253,6 +253,19 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     assert.deepStrictEqual(calls, [BOOK_URL, BOOK_URL]);
   });
 
+  await test('the chapter list is read as the public page, so chapters the user bought still show as paid', async () => {
+    const inits = [];
+    const fetchEnv = loadEnv({
+      fetch: async (url, init) => {
+        inits.push(init || {});
+        return { ok: true, text: async () => DETAIL_HTML };
+      }
+    });
+    await fetchEnv.NkwwlkjProvider.fetchChapterList('100181750');
+    await fetchEnv.NkwwlkjProvider.fetchSeriesMetadata('100181750');
+    assert.deepStrictEqual(inits.map((i) => i.credentials), ['omit', 'omit'], 'the logged-in view hides the lock on bought chapters, so cookies are never sent');
+  });
+
   await test('fetchChapterContent never fetches and explains that chapters are captured from the open page', async () => {
     let fetched = false;
     const fetchEnv = loadEnv({ fetch: async () => { fetched = true; return { ok: true, text: async () => '' }; } });
