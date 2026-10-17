@@ -76,36 +76,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'SAVE_CHAPTER') {
     (async () => {
       try {
-        const { slug, chapterNumber, title, url, rawText, novelTitle, domain } = message;
+        const { slug, chapterNumber, title, url, rawText, domain } = message;
 
-        let novel = await StorageService.getNovelBySlug(slug);
-        if (!novel) {
-          console.log(`[QuickConverter] Cannot save chapter for unmanaged novel: ${slug}`);
-          return sendResponse({ success: false, error: 'Novel is not managed' });
-        }
-
-        if (domain && !novel.domain) {
-          await StorageService.updateNovel(novel.id, { domain });
-        }
-
-        const savedChapter = await StorageService.saveChapter({
-          novelId: novel.id,
+        const result = await StorageService.saveOpenedChapter({
+          slug,
           chapterNumber,
-          title: title || `Chapter ${chapterNumber}`,
+          title,
           url: url || (sender.tab && sender.tab.url) || '',
-          rawText: rawText || ''
+          rawText,
+          domain
         });
 
-        console.log(`[QuickConverter] Saved Chapter ${chapterNumber} for ${novel.title} (${(rawText || '').length} chars)`);
-        StorageService.notifyChapterSaved(novel.id, chapterNumber);
+        if (result.success) {
+          console.log(`[QuickConverter] Saved Chapter ${chapterNumber} for ${result.novelTitle} (${(rawText || '').length} chars)`);
+        } else {
+          console.log(`[QuickConverter] Cannot save chapter for unmanaged novel: ${slug}`);
+        }
 
-        sendResponse({
-          success: true,
-          isSaved: true,
-          chapterId: savedChapter.id,
-          novelId: novel.id,
-          novelTitle: novel.title
-        });
+        sendResponse(result);
       } catch (err) {
         console.error('Error saving chapter:', err);
         sendResponse({ error: err.message, success: false });

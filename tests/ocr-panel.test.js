@@ -167,6 +167,332 @@ const TRANSLATION = { enabled: true, apiKey: 'sk-local', prompt: 'Translate to E
     assert.strictEqual(result.text, 'VI[Lin Dong walked into Qingyang Town.]');
   });
 
+  const CATALOG = [
+    { chapterNumber: 6, title: '第六章 前情', slug: '100043459', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043459' },
+    { chapterNumber: 7, title: '第七章 青阳镇', slug: '100043460', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043460', locked: true }
+  ];
+  const PAGE_URL = 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043460?from=list';
+  const OCR_TEXT = '林动走进青阳镇。' + '\n\n' + '第二段。';
+
+  async function seedCatalogNovel(S, stores) {
+    await seedNovel(S, stores);
+    stores.novels['novel-1'].chapterList = CATALOG.map((c) => ({ ...c }));
+  }
+
+  await test('saveOpenedChapter keeps the existing text-chapter save: raw page text under the managed novel', async () => {
+    const { S, stores, aiCalls } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    const announced = [];
+    S.notifyChapterSaved = (novelId, chapterNumber) => announced.push([novelId, chapterNumber]);
+    const resp = await S.saveOpenedChapter({
+      slug: '100181750',
+      chapterNumber: 6,
+      title: '第六章 前情',
+      url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043459',
+      rawText: '正文第一段。',
+      domain: 'www.nkwwlkj.cn'
+    });
+    assert.strictEqual(resp.success, true);
+    assert.strictEqual(resp.isSaved, true);
+    assert.strictEqual(resp.novelId, 'novel-1');
+    assert.strictEqual(resp.chapterId, 'novel-1_ch6');
+    const saved = stores.chapters['novel-1_ch6'];
+    assert.strictEqual(saved.rawText, '正文第一段。');
+    assert.strictEqual(saved.title, '第六章 前情');
+    assert.strictEqual(saved.url, 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043459');
+    assert.strictEqual(saved.chapterNumber, 6);
+    assert.strictEqual(saved.isTranslated, undefined, 'text chapters are saved raw, not translated');
+    assert.strictEqual(saved.ocrSource, undefined, 'text chapters are not flagged as OCR');
+    assert.strictEqual(aiCalls.length, 0, 'no translation runs for an opened text chapter');
+    assert.deepStrictEqual(announced, [['novel-1', 6]], 'announces the saved chapter so open views refresh');
+  });
+
+  await test('saveOpenedChapter refuses chapters of an unmanaged novel', async () => {
+    const { S, stores } = makeStorageEnv();
+    const resp = await S.saveOpenedChapter({ slug: 'unknown', chapterNumber: 1, rawText: 'x' });
+    assert.strictEqual(resp.success, false);
+    assert.strictEqual(resp.error, 'Novel is not managed');
+    assert.deepStrictEqual(Object.keys(stores.chapters), []);
+  });
+
+  await test('saveRecognizedChapter saves OCR text with the catalog title, order and the page URL when translation is off', async () => {
+    const { S, stores, aiCalls } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    const announced = [];
+    S.notifyChapterSaved = (novelId, chapterNumber) => announced.push([novelId, chapterNumber, !!stores.chapters['novel-1_ch7']]);
+    const saved = await S.saveRecognizedChapter('novel-1', 7, { text: OCR_TEXT, url: PAGE_URL, translation: { ...TRANSLATION, enabled: false } });
+    assert.strictEqual(aiCalls.length, 0, 'translation stays off when the user has it off');
+    const record = stores.chapters['novel-1_ch7'];
+    assert(record, 'chapter is saved');
+    assert.strictEqual(saved.id, 'novel-1_ch7');
+    assert.strictEqual(record.novelId, 'novel-1');
+    assert.strictEqual(record.chapterNumber, 7);
+    assert.strictEqual(record.title, '第七章 青阳镇');
+    assert.strictEqual(record.url, PAGE_URL);
+    assert.strictEqual(record.rawText, OCR_TEXT);
+    assert.strictEqual(record.originalRawText, OCR_TEXT);
+    assert.strictEqual(record.isTranslated, false);
+    assert.strictEqual(record.ocrSource, true);
+    assert.deepStrictEqual(announced, [['novel-1', 7, true]], 'announces the chapter only after it is stored');
+  });
+
+  await test('saveRecognizedChapter translates OCR text with the user settings and the OCR note when translation is on', async () => {
+    const { S, stores, aiCalls } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    const progress = [];
+    await S.saveRecognizedChapter('novel-1', 7, { text: 'Lin Dong walked into Qingyang Town.', url: PAGE_URL, translation: { ...TRANSLATION }, onProgress: (p) => progress.push(p.phase) });
+    assert.strictEqual(aiCalls.length, 1);
+    assert.strictEqual(aiCalls[0].model, 'm1', 'uses the configured model');
+    assert.strictEqual(aiCalls[0].provider, 'custom', 'uses the configured provider');
+    assert(aiCalls[0].prompt.startsWith('Translate to English.'), 'uses the configured prompt');
+    assert(/OCR/.test(aiCalls[0].prompt) && /misread/i.test(aiCalls[0].prompt), 'translation is told the source came from OCR');
+    const record = stores.chapters['novel-1_ch7'];
+    assert.strictEqual(record.rawText, 'VI[Lâm Động walked into Thanh Dương trấn.]');
+    assert.strictEqual(record.originalRawText, 'Lin Dong walked into Qingyang Town.');
+    assert.strictEqual(record.isTranslated, true);
+    assert.strictEqual(record.modelUsed, 'test-model');
+    assert.strictEqual(record.title, '第七章 青阳镇');
+    assert(progress.includes('saving'), 'reports the saving phase');
+    const names = await S.getNameList('novel-1');
+    assert(names.some((n) => n.original === 'Wang Lin'), 'captured names are added like a normal download');
+  });
+
+  await test('saveRecognizedChapter never saves an empty chapter', async () => {
+    const { S, stores } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    for (const text of ['', '   \n\n  ', null]) {
+      await assert.rejects(() => S.saveRecognizedChapter('novel-1', 7, { text, url: PAGE_URL }), /no text/i);
+    }
+    assert.deepStrictEqual(Object.keys(stores.chapters), [], 'nothing is saved');
+  });
+
+  const { saveImageChapter } = await loadComponent('components/react/ocr/ocrSave.js');
+  const IMAGE = { bytes: new ArrayBuffer(8), mimeType: 'image/png', width: 939, height: 4200 };
+  const TARGET = { novelId: 'novel-1', chapterNumber: 7, url: PAGE_URL };
+
+  await test('saveImageChapter recognizes the image with the OCR engine, saves it and reports saved only after storage succeeds', async () => {
+    const { S, stores } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    const recognized = [];
+    const statuses = [];
+    const result = await saveImageChapter({
+      image: IMAGE,
+      target: TARGET,
+      storage: S,
+      recognize: async (bytes, mimeType) => { recognized.push([bytes, mimeType]); return OCR_TEXT; },
+      getTranslation: () => ({ ...TRANSLATION, enabled: false }),
+      onStatus: (s) => statuses.push({ status: s.status, savedYet: !!stores.chapters['novel-1_ch7'] })
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.sourceText, OCR_TEXT);
+    assert.deepStrictEqual(recognized, [[IMAGE.bytes, 'image/png']], 'the captured image goes to the OCR engine once');
+    assert.deepStrictEqual(statuses.map((s) => s.status), ['recognizing', 'saving', 'saved']);
+    assert.strictEqual(statuses.find((s) => s.status === 'saving').savedYet, false, 'not saved while saving is in progress');
+    assert.strictEqual(statuses.find((s) => s.status === 'saved').savedYet, true, 'saved is reported after the record exists');
+    assert.strictEqual(stores.chapters['novel-1_ch7'].rawText, OCR_TEXT);
+    assert.strictEqual(stores.chapters['novel-1_ch7'].url, PAGE_URL);
+  });
+
+  await test('saveImageChapter translates with ocrSource and shows translation progress when the user has translation on', async () => {
+    const { S, stores, aiCalls } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    const statuses = [];
+    const result = await saveImageChapter({
+      image: IMAGE,
+      target: TARGET,
+      storage: S,
+      recognize: async () => 'Lin Dong walked into Qingyang Town.',
+      getTranslation: () => ({ ...TRANSLATION }),
+      onStatus: (s) => statuses.push(s)
+    });
+    assert.strictEqual(result.ok, true);
+    assert(/misread/i.test(aiCalls[0].prompt), 'translation runs with ocrSource');
+    assert.deepStrictEqual([...new Set(statuses.map((s) => s.status))], ['recognizing', 'translating', 'saving', 'saved']);
+    assert(statuses.some((s) => s.status === 'translating' && s.translatedText === 'EN'), 'streams the translation to the panel');
+    assert.strictEqual(result.translatedText, 'VI[Lâm Động walked into Thanh Dương trấn.]');
+    assert.strictEqual(stores.chapters['novel-1_ch7'].isTranslated, true);
+  });
+
+  await test('saveImageChapter reports an OCR failure, saves nothing and can be retried', async () => {
+    const { S, stores } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    const statuses = [];
+    const result = await saveImageChapter({
+      image: IMAGE,
+      target: TARGET,
+      storage: S,
+      recognize: async () => { throw new Error('model failed to load'); },
+      getTranslation: () => ({ ...TRANSLATION, enabled: false }),
+      onStatus: (s) => statuses.push(s.status)
+    });
+    assert.strictEqual(result.ok, false);
+    assert(/could not read the chapter image/i.test(result.error) && result.error.includes('model failed to load'), 'clear error with the cause');
+    assert.strictEqual(statuses[statuses.length - 1], 'error');
+    assert(!statuses.includes('saved'));
+    assert.deepStrictEqual(Object.keys(stores.chapters), [], 'nothing is saved');
+
+    const retry = await saveImageChapter({
+      image: IMAGE, target: TARGET, storage: S,
+      recognize: async () => OCR_TEXT,
+      getTranslation: () => ({ ...TRANSLATION, enabled: false })
+    });
+    assert.strictEqual(retry.ok, true, 'a retry succeeds once OCR works');
+    assert.strictEqual(stores.chapters['novel-1_ch7'].rawText, OCR_TEXT);
+  });
+
+  await test('saveImageChapter refuses an empty recognition result', async () => {
+    const { S, stores } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    const statuses = [];
+    const result = await saveImageChapter({
+      image: IMAGE, target: TARGET, storage: S,
+      recognize: async () => '  \n ',
+      getTranslation: () => ({ ...TRANSLATION, enabled: false }),
+      onStatus: (s) => statuses.push(s.status)
+    });
+    assert.strictEqual(result.ok, false);
+    assert(/no text was found/i.test(result.error), 'explains that no text was found');
+    assert(/not saved/i.test(result.error), 'says the chapter was not saved');
+    assert.strictEqual(statuses[statuses.length - 1], 'error');
+    assert.deepStrictEqual(Object.keys(stores.chapters), [], 'an empty chapter is never saved');
+  });
+
+  await test('saveImageChapter reports a missing chapter image without running OCR', async () => {
+    const { S, stores } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    let ran = false;
+    const result = await saveImageChapter({
+      image: null, target: TARGET, storage: S,
+      recognize: async () => { ran = true; return OCR_TEXT; },
+      getTranslation: () => ({ ...TRANSLATION, enabled: false })
+    });
+    assert.strictEqual(result.ok, false);
+    assert(/image/i.test(result.error));
+    assert.strictEqual(ran, false);
+    assert.deepStrictEqual(Object.keys(stores.chapters), []);
+  });
+
+  await test('saveImageChapter keeps the recognized text when saving fails, so a retry does not re-run OCR', async () => {
+    const { S, stores } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    const failing = { saveRecognizedChapter: async () => { throw new Error('QuotaExceededError'); } };
+    const first = await saveImageChapter({
+      image: IMAGE, target: TARGET, storage: failing,
+      recognize: async () => OCR_TEXT,
+      getTranslation: () => ({ ...TRANSLATION, enabled: false })
+    });
+    assert.strictEqual(first.ok, false);
+    assert(/could not save/i.test(first.error) && first.error.includes('QuotaExceededError'));
+    assert.strictEqual(first.sourceText, OCR_TEXT, 'the recognized text is kept for the retry');
+
+    let ocrRuns = 0;
+    const retry = await saveImageChapter({
+      image: IMAGE, target: TARGET, storage: S, sourceText: first.sourceText,
+      recognize: async () => { ocrRuns++; return 'other'; },
+      getTranslation: () => ({ ...TRANSLATION, enabled: false })
+    });
+    assert.strictEqual(retry.ok, true);
+    assert.strictEqual(ocrRuns, 0, 'OCR is not repeated');
+    assert.strictEqual(stores.chapters['novel-1_ch7'].rawText, OCR_TEXT);
+  });
+
+  await test('saveImageChapter stops with an error when translation is on but its settings are incomplete', async () => {
+    const { S, stores } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    const result = await saveImageChapter({
+      image: IMAGE, target: TARGET, storage: S,
+      recognize: async () => OCR_TEXT,
+      getTranslation: () => null
+    });
+    assert.strictEqual(result.ok, false);
+    assert(/translat/i.test(result.error));
+    assert.deepStrictEqual(Object.keys(stores.chapters), [], 'not saved untranslated behind the user\'s back');
+  });
+
+  function runContentScript({ html, check }) {
+    const sent = [];
+    const appended = [];
+    const listeners = {};
+    const makeEl = (tag) => ({ tagName: tag.toUpperCase(), style: {}, id: '', addEventListener() {}, remove() {} });
+    const document = {
+      documentElement: { outerHTML: html },
+      getElementById: (id) => appended.find((el) => el.id === id) || null,
+      createElement: makeEl,
+      body: { appendChild: (el) => appended.push(el) }
+    };
+    const env = {
+      console: { log() {}, warn() {}, error() {} },
+      URL,
+      URLSearchParams,
+      setTimeout,
+      clearTimeout,
+      MutationObserver: class { observe() {} },
+      document,
+      chrome: {
+        runtime: {
+          lastError: undefined,
+          getURL: (p) => `chrome-extension://abc/${p}`,
+          sendMessage: (msg, cb) => {
+            sent.push(msg);
+            if (msg.action === 'CHECK_CHAPTER') setTimeout(() => cb(check), 0);
+            else if (msg.action === 'SAVE_CHAPTER') setTimeout(() => cb({ success: true }), 0);
+          }
+        }
+      }
+    };
+    env.window = {
+      location: { href: PAGE_URL },
+      addEventListener: (type, fn) => { listeners[type] = fn; },
+      removeEventListener() {},
+      getComputedStyle: () => ({ backgroundImage: 'none' })
+    };
+    env.globalThis = env;
+    vm.createContext(env);
+    vm.runInContext(read('src', 'providers', 'nkwwlkj.js'), env);
+    vm.runInContext(read('src', 'providers', 'registry.js'), env);
+    vm.runInContext(read('src', 'scripts', 'content.js'), env);
+    return { sent, appended, listeners };
+  }
+
+  const flush = () => new Promise((r) => setTimeout(r, 20));
+  const BREAD = '<div class="crumbs"><a href="/book/book_detail/100181750">武动</a></div>';
+  const SD = 'var sd = { book_id: 100181750, chapter_id: 100043460 };';
+
+  await test('content script: an opened image chapter of a managed novel opens the OCR panel in save mode', async () => {
+    const html = `<script>${SD}</script>${BREAD}<div class="article-title">第七章</div><div class="read-bd" id="J_ImgRead"><div id="J_BookImage"></div></div>`;
+    const { sent, appended } = runContentScript({ html, check: { isManaged: true, isSaved: false, chapterNumber: 7, novelId: 'novel-1' } });
+    await flush();
+    assert(sent.some((m) => m.action === 'CHECK_CHAPTER'), 'checks whether the chapter is saved');
+    assert(!sent.some((m) => m.action === 'SAVE_CHAPTER'), 'never saves the empty text of an image page');
+    const frame = appended.find((el) => el.tagName === 'IFRAME');
+    assert(frame, 'the OCR panel opens automatically');
+    const src = new URL(frame.src);
+    assert.strictEqual(src.searchParams.get('id'), 'novel-1');
+    assert.strictEqual(src.searchParams.get('save'), '1', 'panel is in save mode');
+    assert.strictEqual(src.searchParams.get('ch'), '7', 'panel knows the chapter number');
+  });
+
+  await test('content script: an already saved image chapter only offers the read-only panel', async () => {
+    const html = `<script>${SD}</script>${BREAD}<div class="article-title">第七章</div><div class="read-bd" id="J_ImgRead"><div id="J_BookImage"></div></div>`;
+    const { appended } = runContentScript({ html, check: { isManaged: true, isSaved: true, chapterNumber: 7, novelId: 'novel-1' } });
+    await flush();
+    assert(!appended.some((el) => el.tagName === 'IFRAME'), 'panel is not opened automatically');
+    assert(appended.some((el) => el.tagName === 'BUTTON'), 'the translate button is still offered');
+  });
+
+  await test('content script: an opened text chapter is still saved with SAVE_CHAPTER and its page text', async () => {
+    const html = `<script>${SD}</script>${BREAD}<div class="article-title">第七章 青阳镇</div><div class="read-bd" id="J_BookRead"><p class="chapter">正文第一段。</p></div>`;
+    const { sent, appended } = runContentScript({ html, check: { isManaged: true, isSaved: false, chapterNumber: 7, novelId: 'novel-1' } });
+    await flush();
+    const save = sent.find((m) => m.action === 'SAVE_CHAPTER');
+    assert(save, 'text chapter is saved');
+    assert.strictEqual(save.slug, '100181750');
+    assert.strictEqual(save.chapterNumber, 7);
+    assert.strictEqual(save.rawText, '正文第一段。');
+    assert.strictEqual(save.url, PAGE_URL);
+    assert(!appended.some((el) => el.tagName === 'IFRAME'), 'no OCR panel for text chapters');
+  });
+
   const ocrText = await loadComponent('components/react/ocr/ocrText.js');
   const line = (text, x, y, h = 24) => [{ text, box: { x, y, width: 700, height: h }, confidence: 0.99 }];
 

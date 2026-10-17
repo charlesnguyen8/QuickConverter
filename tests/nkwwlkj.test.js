@@ -331,7 +331,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
   await test('background announces each chapter saved from an open page', () => {
     const bg = read('src', 'scripts', 'background.js');
     const saveHandler = bg.slice(bg.indexOf("message.action === 'SAVE_CHAPTER'"), bg.indexOf("message.action === 'UPDATE_NOVEL_METADATA'"));
-    assert(/StorageService\.notifyChapterSaved\(novel\.id,\s*chapterNumber\)/.test(saveHandler), 'SAVE_CHAPTER must call StorageService.notifyChapterSaved(novel.id, chapterNumber)');
+    assert(/StorageService\.saveOpenedChapter\(/.test(saveHandler), 'SAVE_CHAPTER must save through StorageService.saveOpenedChapter, which announces the save (behavior covered in ocr-panel.test.js)');
   });
 
   await test('manifest grants the site and injects the content script on book and chapter pages', () => {

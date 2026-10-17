@@ -1375,35 +1375,129 @@ const StorageService = {
       translationUsage: translationUsage
     });
 
-    if (capturedNames.length > 0) {
-      try {
-        await this.addNameEntries(novel.id, capturedNames, Number(chapterNumber));
-      } catch (e) {
-        console.warn('[StorageService] Failed to save auto-detected name list:', e);
-      }
-    }
-
-    if (capturedLocked.length > 0) {
-      try {
-        await this.addNameEntries(novel.id, capturedLocked, Number(chapterNumber), 'locked');
-      } catch (e) {
-        console.warn('[StorageService] Failed to save auto-detected locked glossary:', e);
-      }
-    }
-
-    if (capturedSoft.length > 0) {
-      try {
-        await this.addNameEntries(novel.id, capturedSoft, Number(chapterNumber), 'soft');
-      } catch (e) {
-        console.warn('[StorageService] Failed to save auto-detected soft glossary:', e);
-      }
-    }
+    await this._addCapturedGlossary(novel.id, Number(chapterNumber), { names: capturedNames, locked: capturedLocked, soft: capturedSoft });
 
     if (options && typeof options.onProgress === 'function') {
       options.onProgress({ phase: 'completed', percent: 100, text: 'Completed' });
     }
 
     return { ...saved, translationDelay };
+  },
+
+  async _addCapturedGlossary(novelId, chapterNumber, { names = [], locked = [], soft = [] } = {}) {
+    if (names.length > 0) {
+      try {
+        await this.addNameEntries(novelId, names, chapterNumber);
+      } catch (e) {
+        console.warn('[StorageService] Failed to save auto-detected name list:', e);
+      }
+    }
+
+    if (locked.length > 0) {
+      try {
+        await this.addNameEntries(novelId, locked, chapterNumber, 'locked');
+      } catch (e) {
+        console.warn('[StorageService] Failed to save auto-detected locked glossary:', e);
+      }
+    }
+
+    if (soft.length > 0) {
+      try {
+        await this.addNameEntries(novelId, soft, chapterNumber, 'soft');
+      } catch (e) {
+        console.warn('[StorageService] Failed to save auto-detected soft glossary:', e);
+      }
+    }
+  },
+
+  async saveOpenedChapter({ slug, chapterNumber, title, url, rawText, domain } = {}) {
+    const novel = await this.getNovelBySlug(slug);
+    if (!novel) {
+      return { success: false, error: 'Novel is not managed' };
+    }
+
+    if (domain && !novel.domain) {
+      await this.updateNovel(novel.id, { domain });
+    }
+
+    const savedChapter = await this.saveChapter({
+      novelId: novel.id,
+      chapterNumber,
+      title: title || `Chapter ${chapterNumber}`,
+      url: url || '',
+      rawText: rawText || ''
+    });
+
+    this.notifyChapterSaved(novel.id, chapterNumber);
+
+    return {
+      success: true,
+      isSaved: true,
+      chapterId: savedChapter.id,
+      novelId: novel.id,
+      novelTitle: novel.title
+    };
+  },
+
+  async saveRecognizedChapter(novelId, chapterNumber, options = {}) {
+    const text = typeof options.text === 'string' ? options.text.trim() : '';
+    if (!text) {
+      throw new Error('No text was recognized in the chapter image. The chapter was not saved.');
+    }
+
+    const novel = await this.getNovelById(novelId);
+    if (!novel) {
+      throw new Error(`Novel not found for ID: ${novelId}`);
+    }
+
+    const catalogItem = (novel.chapterList || []).find(
+      (c) => Number(c.chapterNumber) === Number(chapterNumber)
+    );
+    const chapterTitle = (catalogItem && catalogItem.title) || options.title || `Chapter ${chapterNumber}`;
+    const chapterUrl = options.url || (catalogItem && catalogItem.url) || '';
+    const translation = options.translation;
+
+    let translated = null;
+    if (translation && translation.enabled) {
+      translated = await this._translateRaw(novel, text, translation, {
+        onProgress: options.onProgress,
+        onChunk: options.onChunk,
+        signal: options.signal,
+        ocrSource: true
+      });
+    }
+
+    if (typeof options.onProgress === 'function') {
+      options.onProgress({ phase: 'saving', percent: 99, text: 'Saving chapter...' });
+    }
+
+    const saved = await this.saveChapter({
+      novelId: novel.id,
+      chapterNumber: Number(chapterNumber),
+      title: chapterTitle,
+      url: chapterUrl,
+      rawText: translated ? translated.text : text,
+      originalRawText: text,
+      reasoningText: null,
+      ocrSource: true,
+      isTranslated: !!translated,
+      modelUsed: translated ? translated.modelUsed : null,
+      translatedAt: translated ? Date.now() : null,
+      translationCost: translated ? translated.costInfo : null,
+      translationUsage: translated ? translated.usage : null
+    });
+
+    if (translated) {
+      await this._addCapturedGlossary(novel.id, Number(chapterNumber), translated);
+    }
+
+    this.notifyChapterSaved(novel.id, Number(chapterNumber));
+
+    if (typeof options.onProgress === 'function') {
+      options.onProgress({ phase: 'completed', percent: 100, text: 'Completed' });
+    }
+
+    return saved;
   },
 
   async deleteChapter(novelId, chapterNumber) {

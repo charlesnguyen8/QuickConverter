@@ -135,13 +135,20 @@
   const OCR_PANEL_ID = 'qc-ocr-panel';
   const OCR_BUTTON_ID = 'qc-ocr-open-btn';
 
-  function lookupNovelId(urlInfo) {
+  function lookupChapter(urlInfo) {
+    if (!urlInfo.slug) return Promise.resolve(null);
+    const hasNumber = urlInfo.chapterNumber !== null && urlInfo.chapterNumber !== undefined;
     return new Promise((resolve) => {
       chrome.runtime.sendMessage(
-        { action: 'CHECK_CHAPTER', slug: urlInfo.slug, chapterSlug: urlInfo.chapterSlug },
+        {
+          action: 'CHECK_CHAPTER',
+          slug: urlInfo.slug,
+          chapterNumber: hasNumber ? urlInfo.chapterNumber : undefined,
+          chapterSlug: urlInfo.chapterSlug
+        },
         (response) => {
           void chrome.runtime.lastError;
-          resolve(response && response.novelId ? response.novelId : null);
+          resolve(response || null);
         }
       );
     });
@@ -164,13 +171,29 @@
     }
   }
 
-  async function openImageChapterPanel(provider, urlInfo) {
+  function saveTargetOf(check) {
+    if (!check || !check.isManaged || check.isSaved || !check.novelId) return null;
+    if (check.chapterNumber === null || check.chapterNumber === undefined) return null;
+    return { novelId: check.novelId, chapterNumber: check.chapterNumber };
+  }
+
+  async function openImageChapterPanel(provider, urlInfo, knownCheck) {
     if (document.getElementById(OCR_PANEL_ID)) return;
-    const novelId = urlInfo.slug ? await lookupNovelId(urlInfo) : null;
+    const check = knownCheck !== undefined ? knownCheck : await lookupChapter(urlInfo);
+    const novelId = check && check.novelId ? check.novelId : null;
+    const target = saveTargetOf(check);
+    const params = new URLSearchParams();
+    if (novelId) params.set('id', novelId);
+    if (target) {
+      params.set('save', '1');
+      params.set('ch', String(target.chapterNumber));
+      params.set('url', window.location.href);
+    }
+    const query = params.toString();
     const frame = document.createElement('iframe');
     frame.id = OCR_PANEL_ID;
     frame.title = 'QuickConverter image chapter reader';
-    frame.src = chrome.runtime.getURL('views/ocr-panel.html') + (novelId ? `?id=${encodeURIComponent(novelId)}` : '');
+    frame.src = chrome.runtime.getURL('views/ocr-panel.html') + (query ? `?${query}` : '');
     Object.assign(frame.style, {
       position: 'fixed',
       top: '0',
@@ -186,7 +209,7 @@
     const onMessage = (event) => {
       if (event.source !== frame.contentWindow || event.origin !== extOrigin) return;
       const type = event.data && event.data.type;
-      if (type === 'QC_OCR_READY') {
+      if (type === 'QC_OCR_READY' || type === 'QC_OCR_RETRY') {
         sendChapterImage(provider, frame, extOrigin);
       } else if (type === 'QC_OCR_CLOSE') {
         window.removeEventListener('message', onMessage);
@@ -222,6 +245,14 @@
     document.body.appendChild(button);
   }
 
+  async function handleImageChapter(provider, urlInfo) {
+    mountImageChapterButton(provider, urlInfo);
+    const check = await lookupChapter(urlInfo);
+    if (saveTargetOf(check)) {
+      openImageChapterPanel(provider, urlInfo, check);
+    }
+  }
+
   function handlePage() {
     const provider = getActiveProvider();
     if (!provider) return;
@@ -236,7 +267,7 @@
     }
 
     if (urlInfo.type === 'chapter' && typeof provider.isImageChapter === 'function' && provider.isImageChapter(document)) {
-      mountImageChapterButton(provider, urlInfo);
+      handleImageChapter(provider, urlInfo);
     } else if (urlInfo.type === 'chapter') {
       checkAndSaveChapter(provider, urlInfo);
     } else if (urlInfo.type === 'series') {

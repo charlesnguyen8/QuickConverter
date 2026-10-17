@@ -560,6 +560,29 @@ function test(name, fn) {
     assert(html.includes('id="ocr-error"') && html.includes('Could not read the chapter image.'));
   });
 
+  test('OcrPanelView in save mode says the recognized chapter is saved to the library', () => {
+    const html = render(h(OcrPanelView, { status: 'waiting', saveMode: true }));
+    assert(!html.includes('Nothing from this page is saved'), 'save mode is not read-only');
+    assert(/saved to your library/i.test(html), 'explains the chapter will be saved');
+  });
+
+  test('OcrPanelView shows save progress and reports saved only in the saved state', () => {
+    const saving = render(h(OcrPanelView, { status: 'saving', saveMode: true, sourceText: '正文。' }));
+    assert(/Saving/.test(saving) && !/Saved to your library\./.test(saving), 'saving is shown as in progress');
+    assert(/id="ocr-translate-btn"[^>]*disabled/.test(saving), 'translate is disabled while saving');
+    const saved = render(h(OcrPanelView, { status: 'saved', saveMode: true, sourceText: '正文。' }));
+    assert(saved.includes('Saved to your library.'), 'saved status');
+    const translating = render(h(OcrPanelView, { status: 'translating', saveMode: true, progressText: 'Translating (40%)...' }));
+    assert(translating.includes('Translating (40%)...'), 'translation progress is shown');
+  });
+
+  test('OcrPanelView offers a retry after a failed save', () => {
+    const failed = render(h(OcrPanelView, { status: 'error', saveMode: true, error: 'No text was found in the chapter image. The chapter was not saved.', onRetry: () => {} }));
+    assert(failed.includes('id="ocr-retry-btn"'), 'retry button');
+    assert(failed.includes('The chapter was not saved.'));
+    assert(!render(h(OcrPanelView, { status: 'saved', saveMode: true, onRetry: () => {} })).includes('id="ocr-retry-btn"'), 'no retry once saved');
+  });
+
   // --- QueueDock paused banner ---
   const QueueDock = (await loadComponent('components/react/shared/QueueDock.jsx')).default;
   test('QueueDock paused banner surfaces the pause error', () => {

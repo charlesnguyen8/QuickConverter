@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ReaderDeepseekCard from '../reader/ReaderDeepseekCard.jsx';
 import { isOcrImageMessage } from './ocrText.js';
+import { saveImageChapter } from './ocrSave.js';
 
 const STATUS_TEXT = {
   waiting: 'Waiting for the chapter image...',
   recognizing: 'Reading the chapter image (first run loads the OCR model)...',
   recognized: 'Text recognized. Translate it with your configured translator.',
   translating: 'Translating...',
+  saving: 'Saving the chapter to your library...',
+  saved: 'Saved to your library.',
   done: 'Translation complete.',
   error: 'Something went wrong.'
 };
@@ -14,6 +17,19 @@ const STATUS_TEXT = {
 function getNovelId() {
   if (typeof window === 'undefined') return null;
   return new URLSearchParams(window.location.search).get('id');
+}
+
+function getSaveTarget() {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const novelId = params.get('id');
+  const chapterNumber = Number(params.get('ch'));
+  if (params.get('save') !== '1' || !novelId || !Number.isFinite(chapterNumber)) return null;
+  return { novelId, chapterNumber, url: params.get('url') || '' };
+}
+
+function recognizeWithEngine(bytes, mimeType) {
+  return import('./ocrEngine.js').then(({ recognizeChapterImage }) => recognizeChapterImage(bytes, mimeType));
 }
 
 function Paragraphs({ id, text, className }) {
@@ -32,12 +48,16 @@ export function OcrPanelView({
   error = '',
   imageSize = null,
   showSource = true,
+  saveMode = false,
+  progressText = '',
+  onRetry,
   onToggleSource,
   onTranslate,
   onClose,
   deepseekRef
 }) {
-  const busy = status === 'waiting' || status === 'recognizing' || status === 'translating';
+  const busy = status === 'waiting' || status === 'recognizing' || status === 'translating' || status === 'saving';
+  const statusText = status === 'translating' && progressText ? progressText : (STATUS_TEXT[status] || '');
   const canTranslate = !!sourceText && !busy;
 
   return (
@@ -58,16 +78,29 @@ export function OcrPanelView({
 
       <main className="flex-1 flex flex-col gap-4 p-4">
         <p className="text-[11px] text-slate-400">
-          Read-only: the chapter image is read on your device and only the recognized text is sent to your translator. Nothing from this page is saved.
+          {saveMode
+            ? 'The chapter image is read on your device and the recognized text is saved to your library, translated first if your translator is turned on.'
+            : 'Read-only: the chapter image is read on your device and only the recognized text is sent to your translator. Nothing from this page is saved.'}
         </p>
 
-        <div id="ocr-status" className="text-xs font-medium text-indigo-300" role="status">{STATUS_TEXT[status] || ''}</div>
+        <div id="ocr-status" className="text-xs font-medium text-indigo-300" role="status">{statusText}</div>
         {imageSize ? (
           <div id="ocr-image-info" className="text-[11px] text-slate-500">Chapter image: {imageSize.width} × {imageSize.height} px</div>
         ) : null}
 
         {status === 'error' && error ? (
           <div id="ocr-error" className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">{error}</div>
+        ) : null}
+
+        {status === 'error' && onRetry ? (
+          <button
+            id="ocr-retry-btn"
+            type="button"
+            onClick={onRetry}
+            className="min-h-10 px-4 rounded-lg text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition"
+          >
+            Retry
+          </button>
         ) : null}
 
         <ReaderDeepseekCard
@@ -114,6 +147,9 @@ export function OcrPanelView({
 
 export default function OcrPanelApp() {
   const [novelId] = useState(getNovelId);
+  const [saveTarget] = useState(getSaveTarget);
+  const [progressText, setProgressText] = useState('');
+  const recognizedRef = useRef('');
   const [status, setStatus] = useState('waiting');
   const [sourceText, setSourceText] = useState('');
   const [translatedText, setTranslatedText] = useState('');
@@ -127,6 +163,54 @@ export default function OcrPanelApp() {
     setStatus('error');
   }, []);
 
+  const getTranslation = useCallback(() => {
+    const panel = deepseekRef.current;
+    if (!panel) return undefined;
+    const options = panel.getDownloadOptions();
+    return options ? options.translation : null;
+  }, []);
+
+  const runSave = useCallback(async (image) => {
+    setError('');
+    setProgressText('');
+    setTranslatedText('');
+    const result = await saveImageChapter({
+      image,
+      target: saveTarget,
+      storage: window.StorageService,
+      recognize: recognizeWithEngine,
+      getTranslation,
+      sourceText: recognizedRef.current,
+      onStatus: (update) => {
+        if (update.sourceText) {
+          setSourceText(update.sourceText);
+          setShowSource(true);
+        }
+        if (typeof update.translatedText === 'string') setTranslatedText(update.translatedText);
+        setProgressText(update.progressText || '');
+        if (update.status === 'error') {
+          fail(update.error);
+        } else {
+          setStatus(update.status);
+        }
+      }
+    });
+    recognizedRef.current = result.ok ? '' : (result.sourceText || '');
+    if (result.ok && result.translatedText) setShowSource(false);
+  }, [saveTarget, getTranslation, fail]);
+
+  const handleRetry = useCallback(() => {
+    if (recognizedRef.current) {
+      runSave(null);
+      return;
+    }
+    setError('');
+    setStatus('waiting');
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'QC_OCR_RETRY' }, '*');
+    }
+  }, [runSave]);
+
   useEffect(() => {
     const onMessage = async (event) => {
       if (event.source === window.parent && event.data && event.data.type === 'QC_OCR_ERROR') {
@@ -134,6 +218,11 @@ export default function OcrPanelApp() {
         return;
       }
       if (!isOcrImageMessage(event, window.parent)) return;
+      if (saveTarget) {
+        setImageSize(event.data.width && event.data.height ? { width: event.data.width, height: event.data.height } : null);
+        runSave({ bytes: event.data.bytes, mimeType: event.data.mimeType });
+        return;
+      }
       setStatus('recognizing');
       setError('');
       setTranslatedText('');
@@ -158,7 +247,7 @@ export default function OcrPanelApp() {
       window.parent.postMessage({ type: 'QC_OCR_READY' }, '*');
     }
     return () => window.removeEventListener('message', onMessage);
-  }, [fail]);
+  }, [fail, saveTarget, runSave]);
 
   const handleTranslate = useCallback(async () => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -198,6 +287,9 @@ export default function OcrPanelApp() {
       error={error}
       imageSize={imageSize}
       showSource={showSource}
+      saveMode={!!saveTarget}
+      progressText={progressText}
+      onRetry={saveTarget ? handleRetry : undefined}
       onToggleSource={() => setShowSource((v) => !v)}
       onTranslate={handleTranslate}
       onClose={handleClose}
