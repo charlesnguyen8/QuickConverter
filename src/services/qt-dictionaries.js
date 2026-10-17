@@ -11,7 +11,8 @@
     hoNguoi: { file: 'HoNguoi.txt', kind: 'dictionary' },
     hauTu: { file: 'HauTu.txt', kind: 'dictionary' },
     danhTu: { file: 'DanhTu.txt', kind: 'dictionary' },
-    traditional: { file: 'TraditionalToSimplified.txt', kind: 'charmap' }
+    traditional: { file: 'TraditionalToSimplified.txt', kind: 'charmap' },
+    lacViet: { file: 'LacViet.txt', kind: 'definitions' }
   };
   const cache = new Map();
 
@@ -62,6 +63,16 @@
     return map;
   }
 
+  function parseDefinitions(text) {
+    const map = new Map();
+    lines(text).forEach((line) => {
+      const parts = line.split('=');
+      if (parts.length !== 2 || !parts[0] || !parts[1] || map.has(parts[0])) return;
+      map.set(parts[0], parts[1]);
+    });
+    return map;
+  }
+
   function parseList(text) {
     return lines(text).map((line) => line.trim()).filter(Boolean);
   }
@@ -69,6 +80,7 @@
   function parseByKind(kind, text) {
     if (kind === 'list') return parseList(text);
     if (kind === 'charmap') return parseCharMap(text);
+    if (kind === 'definitions') return parseDefinitions(text);
     if (kind === 'rules') {
       const scope = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : self);
       if (!scope || !scope.LuatNhan) throw new Error('LuatNhan module is not loaded.');
@@ -96,7 +108,7 @@
     return cache.get(name);
   }
 
-  const QtDictionaries = { parseDictionary, parseList, parseCharMap, load, FILES };
+  const QtDictionaries = { parseDictionary, parseList, parseCharMap, parseDefinitions, load, FILES };
 
   if (typeof window !== 'undefined') window.QtDictionaries = QtDictionaries;
   if (typeof self !== 'undefined') self.QtDictionaries = QtDictionaries;

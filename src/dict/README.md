@@ -10,6 +10,11 @@ TraditionalToSimplified.txt maps traditional to simplified characters (hex code 
 table Windows StrConv uses and QT2025 relies on, copied from quick-translator-engine's
 strconv_t2s.tsv under the same terms. The converter simplifies input with it before matching.
 
+LacViet.txt is QT2025's Lạc Việt Chinese-Vietnamese dictionary (pinyin, Hán Việt and numbered
+definitions; `\n`/`\t` stored as literal text), same source and terms. It is not used for
+conversion: the reader loads it the first time you tap a phrase and shows the definitions in
+the phrase panel.
+
 HoNguoi.txt (surnames), HauTu.txt (person suffixes) and DanhTu.txt (place/organisation
 templates) come from QT2025/Resources, same terms. jieba/ holds Jieba's word dictionary
 (dict.txt) and HMM tables (prob_emit.json, prob_trans.json) from the same folder, used to

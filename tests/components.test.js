@@ -348,6 +348,35 @@ function test(name, fn) {
     assert(/<input[^>]*id="reader-phrase-source"[^>]*lang="zh"[^>]*value="陈舒"/.test(sel), 'the selection is shown in the Chinese source box');
     assert(sel.includes('Selection'), 'origin label for a multi-chunk selection');
   });
+  test('ReaderPhrasePopover shows Lạc Việt definitions for the phrase and its characters', () => {
+    const asked = [];
+    const definitionsOf = (source) => {
+      asked.push(source);
+      return [
+        { source: '修养', entries: [{ pinyin: 'xiūyǎng', hanViet: '', senses: ['1. trình độ', '2. thái độ đúng mực'] }] },
+        { source: '养', entries: [{ pinyin: 'yǎng', hanViet: 'DƯỠNG', senses: ['1. nuôi'] }, { pinyin: 'yàng', hanViet: 'DẠNG', senses: ['phụng dưỡng'] }] }
+      ];
+    };
+    const html = render(h(ReaderPhrasePopover, { phrase: { source: '修养', reading: 'tu dưỡng', translation: 'tu dưỡng', origin: 'vietPhrase' }, definitionsOf }));
+    assert.deepStrictEqual(asked, ['修养'], 'looks up the Chinese in the source box');
+    const section = html.match(/<section[^>]*id="reader-phrase-dictionary"[\s\S]*?<\/section>/);
+    assert(section, 'dictionary section');
+    assert(/Lạc Việt/.test(section[0]), 'labelled with its source');
+    assert(section[0].includes('data-definition="修养"') && section[0].includes('data-definition="养"'), 'one block per looked-up word');
+    for (const text of ['xiūyǎng', '1. trình độ', '2. thái độ đúng mực', 'yǎng', 'DƯỠNG', '1. nuôi', 'yàng', 'DẠNG', 'phụng dưỡng']) {
+      assert(section[0].includes(text), `shows ${text}`);
+    }
+    assert(html.indexOf('id="reader-phrase-name-btn"') < html.indexOf('id="reader-phrase-dictionary"'), 'definitions sit below the save buttons');
+  });
+
+  test('ReaderPhrasePopover shows the dictionary loading, empty and unavailable states', () => {
+    const phrase = { source: '很', reading: 'ngận', translation: 'rất', origin: 'vietPhrase' };
+    assert(render(h(ReaderPhrasePopover, { phrase, definitionsLoading: true })).includes('Loading the Lạc Việt dictionary'), 'loading');
+    assert(render(h(ReaderPhrasePopover, { phrase, definitionsOf: () => [] })).includes('No Lạc Việt entry'), 'nothing found');
+    assert(render(h(ReaderPhrasePopover, { phrase, definitionsError: true })).includes('Lạc Việt dictionary could not be loaded'), 'load failure');
+    assert(!render(h(ReaderPhrasePopover, { phrase })).includes('id="reader-phrase-dictionary"'), 'no section when no dictionary is wired');
+  });
+
   const popPhrase = { source: '工作人员', reading: 'công tác nhân viên', translation: 'nhân viên công tác', origin: 'vietPhrase' };
   const phrasePopover = render(h(ReaderPhrasePopover, {
     phrase: popPhrase,

@@ -3,7 +3,7 @@ import { PHRASE_KIND_LABELS, PHRASE_ORIGIN_LABELS, editedPhrase, phraseSaveKind 
 
 const BTN = 'min-h-10 inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm font-semibold transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-40 disabled:pointer-events-none';
 
-export default function ReaderPhrasePopover({ phrase, options = [], saving = false, canExtendLeft = false, canExtendRight = false, onExtendLeft, onExtendRight, onPick, onSaveName, onSaveLocked, onOpenName, onClose, suggestions = [], suggestionsLoading = false, onAcceptSuggestion, onRejectSuggestion, readingOf, meaningsOf }) {
+export default function ReaderPhrasePopover({ phrase, options = [], saving = false, canExtendLeft = false, canExtendRight = false, onExtendLeft, onExtendRight, onPick, onSaveName, onSaveLocked, onOpenName, onClose, suggestions = [], suggestionsLoading = false, onAcceptSuggestion, onRejectSuggestion, readingOf, meaningsOf, definitionsOf, definitionsLoading = false, definitionsError = false }) {
   const [custom, setCustom] = useState(phrase ? phrase.translation : '');
   const [sourceText, setSourceText] = useState(phrase ? phrase.source : '');
 
@@ -23,6 +23,8 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
   const unedited = edited.source === phrase.source;
   const shownOptions = unedited && options.length > 0 ? options : edited.options;
   const canSave = !saving && !!edited.source;
+  const showDictionary = definitionsLoading || definitionsError || typeof definitionsOf === 'function';
+  const definitions = !definitionsLoading && !definitionsError && typeof definitionsOf === 'function' && edited.source ? definitionsOf(edited.source) : [];
 
   return (
     <>
@@ -162,6 +164,34 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
             </button>
           ) : null}
         </div>
+
+        {showDictionary ? (
+          <section id="reader-phrase-dictionary" className="flex flex-col gap-2.5 rounded-lg border border-slate-700 bg-slate-950/60 p-2.5">
+            <span className="text-[11px] uppercase tracking-wide text-slate-500">Dictionary · Lạc Việt</span>
+            {definitionsLoading ? (
+              <div className="text-xs text-slate-400">Loading the Lạc Việt dictionary…</div>
+            ) : definitionsError ? (
+              <div className="text-xs text-rose-300">The Lạc Việt dictionary could not be loaded.</div>
+            ) : definitions.length === 0 ? (
+              <div className="text-xs text-slate-400">No Lạc Việt entry for this phrase.</div>
+            ) : definitions.map((definition) => (
+              <div key={definition.source} data-definition={definition.source} className="flex flex-col gap-1.5">
+                {definition.entries.map((entry, i) => (
+                  <div key={i} className="flex flex-col gap-0.5">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      {i === 0 ? <span lang="zh" className="text-base font-semibold text-slate-100">{definition.source}</span> : null}
+                      {entry.pinyin ? <span className="text-sm text-indigo-300">{entry.pinyin}</span> : null}
+                      {entry.hanViet ? <span className="text-xs font-semibold text-slate-400">{entry.hanViet}</span> : null}
+                    </div>
+                    {entry.senses.map((sense, j) => (
+                      <p key={j} className="text-sm leading-snug text-slate-300 pl-2">{sense}</p>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </section>
+        ) : null}
       </div>
     </>
   );

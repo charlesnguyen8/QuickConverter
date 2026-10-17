@@ -11,6 +11,7 @@ import {
   phraseRange,
   phraseSaveKind,
   savePhraseEntry,
+  lookupDefinitions,
   suggestionsForPhrase,
   buildNameSuggestions
 } from './readerText.js';
@@ -162,6 +163,28 @@ export default function ReaderChapter() {
 
   const selectedParagraph = selected && detailed ? detailed[selected.p] || null : null;
   const selectedPhrase = selectedParagraph ? phraseRange(selectedParagraph, selected.from, selected.to) : null;
+  const [lacViet, setLacViet] = useState({ status: 'idle', dict: null });
+  const phraseOpen = !!selectedPhrase;
+  useEffect(() => {
+    if (!phraseOpen) {
+      if (lacViet.status === 'error') setLacViet({ status: 'idle', dict: null });
+      return;
+    }
+    if (lacViet.status !== 'idle') return;
+    const dictionaries = typeof window !== 'undefined' ? window.QtDictionaries : null;
+    if (!dictionaries || typeof dictionaries.load !== 'function') return;
+    setLacViet({ status: 'loading', dict: null });
+    dictionaries.load('lacViet')
+      .then((dict) => setLacViet({ status: 'ready', dict }))
+      .catch((e) => {
+        console.warn('[Reader] Lạc Việt dictionary unavailable:', e);
+        setLacViet({ status: 'error', dict: null });
+      });
+  }, [phraseOpen, lacViet.status]);
+  const definitionsOf = useMemo(
+    () => (lacViet.status === 'ready' ? (source) => lookupDefinitions(lacViet.dict, source) : undefined),
+    [lacViet]
+  );
   const canExtendLeft = !!selectedParagraph && canExtendPhrase(selectedParagraph, selected.from, selected.to, 'left');
   const canExtendRight = !!selectedParagraph && canExtendPhrase(selectedParagraph, selected.from, selected.to, 'right');
   const extendSelection = (direction) => {
@@ -489,6 +512,9 @@ export default function ReaderChapter() {
           onSaveLocked={(translation, source) => savePhrase('locked', translation, source)}
           readingOf={converter && converter.readingOf}
           meaningsOf={converter && converter.meaningsOf}
+          definitionsOf={definitionsOf}
+          definitionsLoading={lacViet.status === 'loading'}
+          definitionsError={lacViet.status === 'error'}
           onOpenName={openPhraseName}
           suggestions={phraseSuggestions}
           suggestionsLoading={suggestionsLoading}

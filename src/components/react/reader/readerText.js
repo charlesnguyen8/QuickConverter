@@ -165,6 +165,54 @@ export const PHRASE_KIND_LABELS = {
   soft: 'Soft Glossary'
 };
 
+const LAC_VIET_HAN_VIET_CAPS = /^\s*Hán Việt:\s*((?:\p{Lu}\p{M}*)+(?![\p{L}\p{M}])(?:[ ,]+(?:\p{Lu}\p{M}*)+(?![\p{L}\p{M}]))*)/u;
+const LAC_VIET_HAN_VIET_TITLE = /^\s*Hán Việt:\s*(\p{Lu}[\p{Ll}\p{M}]*(?![\p{L}\p{M}])(?:[ ,]+\p{Lu}[\p{Ll}\p{M}]*(?![\p{L}\p{M}]))*)/u;
+
+export function parseLacViet(raw) {
+  const text = String(raw || '').replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+  return text.split('✚').map((part) => part.trim()).filter(Boolean).map((part) => {
+    let rest = part;
+    let pinyin = '';
+    const reading = /^\[([^\]]*)\]/.exec(rest);
+    if (reading) {
+      pinyin = reading[1].trim();
+      rest = rest.slice(reading[0].length);
+    }
+    let hanViet = '';
+    const hv = LAC_VIET_HAN_VIET_CAPS.exec(rest) || LAC_VIET_HAN_VIET_TITLE.exec(rest);
+    if (hv) {
+      hanViet = hv[1].trim();
+      rest = rest.slice(hv[0].length);
+    }
+    const senses = rest.split('\n').map((line) => line.replace(/\t/g, ' ').trim()).filter(Boolean);
+    return { pinyin, hanViet, senses };
+  });
+}
+
+export function lookupDefinitions(dict, source, limit = 12) {
+  const text = typeof source === 'string' ? source.trim() : '';
+  if (!dict || typeof dict.has !== 'function' || !text) return [];
+  const chars = Array.from(text);
+  const keys = [];
+  const add = (key) => { if (!keys.includes(key) && dict.has(key)) keys.push(key); };
+  add(text);
+  let i = 0;
+  while (i < chars.length) {
+    let step = 1;
+    for (let length = chars.length - i; length >= 2; length--) {
+      const word = chars.slice(i, i + length).join('');
+      if (word !== text && dict.has(word)) {
+        add(word);
+        step = length;
+        break;
+      }
+    }
+    i += step;
+  }
+  if (chars.length > 1) chars.forEach(add);
+  return keys.slice(0, limit).map((key) => ({ source: key, entries: parseLacViet(dict.get(key)) }));
+}
+
 export function suggestionsForPhrase(candidates, phrase, limit = 4) {
   const source = phrase && typeof phrase.source === 'string' ? phrase.source : '';
   if (!source || !Array.isArray(candidates)) return [];

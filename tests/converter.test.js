@@ -811,6 +811,72 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     ]);
   });
 
+  const LAC_VIET_HAO = '✚[hǎo] Hán Việt: HẢO\\n\\t1. tốt; lành; hay\\n\\t2. đẹp; ngon';
+  const LAC_VIET_LIANG = '✚[liáng] Hán Việt: LƯƠNG\\n\\t1. mát\\n\\t2. chán nản; nguội lạnh\\n✚ [liàng] Hán Việt: LƯỢNG để nguội';
+
+  await test('parseLacViet splits readings into pinyin, Hán Việt and numbered senses', () => {
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(readerText.parseLacViet(LAC_VIET_HAO))), [
+      { pinyin: 'hǎo', hanViet: 'HẢO', senses: ['1. tốt; lành; hay', '2. đẹp; ngon'] }
+    ]);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(readerText.parseLacViet(LAC_VIET_LIANG))), [
+      { pinyin: 'liáng', hanViet: 'LƯƠNG', senses: ['1. mát', '2. chán nản; nguội lạnh'] },
+      { pinyin: 'liàng', hanViet: 'LƯỢNG', senses: ['để nguội'] }
+    ], 'each ✚ is a separate reading; a definition can follow the Hán Việt on the same line');
+  });
+
+  await test('parseLacViet handles entries without a Hán Việt line or numbering', () => {
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(readerText.parseLacViet('✚[báiyúnshí] bạch vân thạch (khoáng vật)'))), [
+      { pinyin: 'báiyúnshí', hanViet: '', senses: ['bạch vân thạch (khoáng vật)'] }
+    ]);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(readerText.parseLacViet('✚[tǐngérzǒuxiǎn] Hán Việt: ĐĨNH NHI TẨU HIỂM bí quá hóa liều; chó cùng rứt giậu'))), [
+      { pinyin: 'tǐngérzǒuxiǎn', hanViet: 'ĐĨNH NHI TẨU HIỂM', senses: ['bí quá hóa liều; chó cùng rứt giậu'] }
+    ], 'a multi-syllable Hán Việt reading stops at the first lowercase word');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(readerText.parseLacViet('✚[xiǎn] Hán Việt: Hiểm\\n\\t1. hiểm (địa thế khó vượt qua)'))), [
+      { pinyin: 'xiǎn', hanViet: 'Hiểm', senses: ['1. hiểm (địa thế khó vượt qua)'] }
+    ], 'some entries write the reading in title case');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(readerText.parseLacViet('✚[xī] Hán Việt: HI, SI Họ Hi'))), [
+      { pinyin: 'xī', hanViet: 'HI, SI', senses: ['Họ Hi'] }
+    ], 'a capital reading stops before a capitalized definition');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(readerText.parseLacViet('✚[hóngguǎng] Hán Việt: HỒNG QUẢNG Khu Hồng Quảng'))), [
+      { pinyin: 'hóngguǎng', hanViet: 'HỒNG QUẢNG', senses: ['Khu Hồng Quảng'] }
+    ]);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(readerText.parseLacViet('✚[gǔwù] \\n\\t1. ngũ cốc\\n\\t2. lương thực'))), [
+      { pinyin: 'gǔwù', hanViet: '', senses: ['1. ngũ cốc', '2. lương thực'] }
+    ]);
+    assert.deepStrictEqual(readerText.parseLacViet(''), []);
+  });
+
+  await test('lookupDefinitions gives the phrase, then the dictionary words inside it, then each character', () => {
+    const dict = new Map([
+      ['修养', '✚[xiūyǎng] \\n\\t1. trình độ\\n\\t2. thái độ đúng mực'],
+      ['修', '✚[xiū] Hán Việt: TU\\n\\t1. sửa'],
+      ['养', '✚[yǎng] Hán Việt: DƯỠNG\\n\\t1. nuôi'],
+      ['好', LAC_VIET_HAO]
+    ]);
+    const plain = (v) => JSON.parse(JSON.stringify(v));
+    assert.deepStrictEqual(plain(readerText.lookupDefinitions(dict, '修养')).map((d) => d.source), ['修养', '修', '养']);
+    assert.deepStrictEqual(plain(readerText.lookupDefinitions(dict, '修养很好')).map((d) => d.source), ['修养', '修', '养', '好'], 'words inside a longer phrase, then its characters; unknown characters are skipped');
+    assert.strictEqual(plain(readerText.lookupDefinitions(dict, '好'))[0].entries[0].hanViet, 'HẢO');
+    assert.deepStrictEqual(plain(readerText.lookupDefinitions(dict, '很')), []);
+    assert.deepStrictEqual(plain(readerText.lookupDefinitions(null, '好')), []);
+    assert.deepStrictEqual(plain(readerText.lookupDefinitions(dict, '')), []);
+  });
+
+  await test('QtDictionaries loads LacViet.txt as raw definitions, first entry wins', async () => {
+    const urls = [];
+    const fetchEnv = loadEnv({
+      fetch: async (url) => {
+        urls.push(url);
+        return { ok: true, text: async () => '﻿好=✚[hǎo] a\n好=✚[hào] b\nbad line\nx=y=z\n' };
+      }
+    });
+    const dict = await fetchEnv.QtDictionaries.load('lacViet');
+    assert.deepStrictEqual(urls, ['../dict/LacViet.txt']);
+    assert.strictEqual(dict.get('好'), '✚[hǎo] a', 'the raw definition is kept for display');
+    assert.strictEqual(dict.size, 1, 'malformed lines are skipped like QT');
+    assert(fs.existsSync(path.join(repoRoot, 'src', 'dict', 'LacViet.txt')), 'LacViet.txt is bundled');
+  });
+
   await test('savePhraseEntry saves to the Locked Glossary, updating the same Chinese there', async () => {
     const calls = [];
     const lists = { locked: [{ id: 'l1', original: '平静', translation: 'old' }], namelist: [{ id: 'n1', original: '是很平静', translation: 'x' }] };
