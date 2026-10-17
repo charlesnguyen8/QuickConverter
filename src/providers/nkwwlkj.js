@@ -165,6 +165,29 @@ const NkwwlkjProvider = (() => {
     };
   }
 
+  function readCount(src, className) {
+    const match = src.match(new RegExp(`class=["']${className}["'][^>]*>\\s*([\\d,]+)\\s*<`));
+    return match ? Number(match[1].replace(/,/g, '')) : null;
+  }
+
+  function parseAccountBalance(html) {
+    const src = String(html || '');
+    const coins = readCount(src, 'J_HLB');
+    if (coins === null) return null;
+    return { coins, bonusCoins: readCount(src, 'J_GHLB') };
+  }
+
+  function accountPageUrl(novel) {
+    const list = novel && Array.isArray(novel.chapterList) ? novel.chapterList : [];
+    for (const chapter of list) {
+      try {
+        const url = new URL(chapter && chapter.url);
+        if (url.origin === ORIGIN && /^\/chapter\/book_chapter_detail\/\d+/.test(url.pathname)) return url.href;
+      } catch (e) {}
+    }
+    return `${ORIGIN}/index`;
+  }
+
   function loginUrl(redirect) {
     return `${ORIGIN}/signup/login?redirect=${encodeURIComponent(redirect || `${ORIGIN}/`)}`;
   }
@@ -295,13 +318,18 @@ const NkwwlkjProvider = (() => {
 
     parseLoginState,
 
+    parseAccountBalance,
+
     loginUrl,
 
-    async fetchLoginState() {
+    async fetchLoginState(novel) {
       try {
-        const resp = await fetch(`${ORIGIN}/index`, { credentials: 'include', cache: 'no-store' });
+        const resp = await fetch(accountPageUrl(novel), { credentials: 'include', cache: 'no-store' });
         if (!resp.ok) return null;
-        return parseLoginState(await resp.text());
+        const html = await resp.text();
+        const state = parseLoginState(html);
+        const balance = state ? parseAccountBalance(html) : null;
+        return balance ? { ...state, balance } : state;
       } catch (e) {
         console.warn('[nkwwlkj Provider] Could not check the login state:', e);
         return null;

@@ -500,6 +500,24 @@ function test(name, fn) {
     assert(!html.includes('id="provider-login-btn"'), 'no login link once logged in');
   });
 
+  test('ProviderLoginStatus shows the coin balance of a logged-in user', () => {
+    const html = render(h(ProviderLoginStatus, { state: { loggedIn: true, userId: '9', userName: '守玄', balance: { coins: 1250, bonusCoins: 88 } }, providerName: '独阅读', loginUrl: LOGIN_URL }));
+    const coins = html.match(/id="provider-coin-balance"[^>]*>([\s\S]*?)<\/span>/);
+    assert(coins, 'coin balance element');
+    assert(coins[1].includes('1,250') && /coins/i.test(coins[1]), 'shows the coin count');
+    assert(html.includes('88') && /bonus/i.test(html), 'shows the bonus coins');
+    const noBonus = render(h(ProviderLoginStatus, { state: { loggedIn: true, userId: '9', userName: '', balance: { coins: 0, bonusCoins: null } }, providerName: '独阅读', loginUrl: LOGIN_URL }));
+    assert(/id="provider-coin-balance"[^>]*>[^<]*0 coins/i.test(noBonus), 'a zero balance is still shown');
+    assert(!/bonus/i.test(noBonus), 'no bonus line when the site gives none');
+  });
+
+  test('ProviderLoginStatus hides the balance when it is unknown or the user is logged out', () => {
+    const unknown = render(h(ProviderLoginStatus, { state: { loggedIn: true, userId: '9', userName: '守玄' }, providerName: '独阅读', loginUrl: LOGIN_URL }));
+    assert(!unknown.includes('id="provider-coin-balance"'));
+    const out = render(h(ProviderLoginStatus, { state: { loggedIn: false, userId: null, userName: '', balance: { coins: 0, bonusCoins: 0 } }, providerName: '独阅读', loginUrl: LOGIN_URL }));
+    assert(!out.includes('id="provider-coin-balance"'), 'a logged-out page shows 0, which is not a real balance');
+  });
+
   test('ProviderLoginStatus renders nothing until the status is known', () => {
     assert.strictEqual(render(h(ProviderLoginStatus, { state: null, providerName: '独阅读', loginUrl: LOGIN_URL })), '');
   });

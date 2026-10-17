@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-export function watchLoginState({ provider, target, onState }) {
+export function watchLoginState({ provider, context, target, onState }) {
   if (!provider || typeof provider.fetchLoginState !== 'function') {
     return { stop() {}, recheck() {} };
   }
@@ -12,7 +12,7 @@ export function watchLoginState({ provider, target, onState }) {
     pending = true;
     let request;
     try {
-      request = Promise.resolve(provider.fetchLoginState());
+      request = Promise.resolve(provider.fetchLoginState(context));
     } catch (e) {
       request = Promise.resolve(null);
     }
@@ -48,6 +48,10 @@ export function watchLoginState({ provider, target, onState }) {
   };
 }
 
+function formatCount(value) {
+  return Number(value).toLocaleString('en-US');
+}
+
 function providerForNovel(novel) {
   const registry = typeof window !== 'undefined' ? window.ProviderRegistry : null;
   if (!novel || !registry || typeof registry.getProviderForNovel !== 'function') return null;
@@ -59,17 +63,24 @@ export function ProviderLoginStatus({ state, providerName, loginUrl, compact = f
   if (!state) return null;
 
   if (state.loggedIn) {
+    const balance = state.balance && typeof state.balance.coins === 'number' ? state.balance : null;
     return (
       <div
         id="provider-login-status"
-        className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-md text-xs font-medium text-emerald-300 bg-emerald-500/10 border border-emerald-500/30"
+        className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 self-start px-2.5 py-1 rounded-md text-xs font-medium text-emerald-300 bg-emerald-500/10 border border-emerald-500/30"
         role="status"
       >
-        <span aria-hidden="true">✓</span>
         <span>
+          <span aria-hidden="true">✓ </span>
           Logged in to {providerName}
           {state.userName ? ` as ${state.userName}` : ''}
         </span>
+        {balance ? (
+          <span id="provider-coin-balance" className="text-amber-200">
+            {formatCount(balance.coins)} coins
+            {typeof balance.bonusCoins === 'number' ? ` · ${formatCount(balance.bonusCoins)} bonus` : ''}
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -112,18 +123,22 @@ export function useProviderLogin(novel) {
   const [state, setState] = useState(null);
   const watcherRef = useRef(null);
 
+  const novelRef = useRef(novel);
+  novelRef.current = novel;
+  const novelKey = novel ? novel.id || novel.url || '' : '';
+
   useEffect(() => {
     if (!provider) {
       setState(null);
       return undefined;
     }
-    const watcher = watchLoginState({ provider, target: window, onState: setState });
+    const watcher = watchLoginState({ provider, context: novelRef.current, target: window, onState: setState });
     watcherRef.current = watcher;
     return () => {
       watcher.stop();
       watcherRef.current = null;
     };
-  }, [provider]);
+  }, [provider, novelKey]);
 
   return {
     provider,

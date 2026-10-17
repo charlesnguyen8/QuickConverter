@@ -390,6 +390,45 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     assert.strictEqual(await bad.NkwwlkjProvider.fetchLoginState(), null);
   });
 
+  const BALANCE_DIALOG = `<div id="tabs_reward">
+            <div>推荐票余额：<b class="J_Recommend">3</b></div>
+            <div>书币余额：<b class="J_HLB">1,250</b>
+                赠点余额：<b class="J_GHLB">88</b>
+            </div></div>`;
+
+  await test('parseAccountBalance reads the coin and bonus coin balances a chapter page shows', () => {
+    assert.deepStrictEqual(plain(P.parseAccountBalance(BALANCE_DIALOG)), { coins: 1250, bonusCoins: 88 });
+    const zero = '<div>书币余额：<b class="J_HLB">0</b> 赠点余额：<b class="J_GHLB">0</b></div>';
+    assert.deepStrictEqual(plain(P.parseAccountBalance(zero)), { coins: 0, bonusCoins: 0 });
+    assert.deepStrictEqual(plain(P.parseAccountBalance('<b class="J_HLB">5</b>')), { coins: 5, bonusCoins: null });
+  });
+
+  await test('parseAccountBalance returns null on pages without a balance', () => {
+    assert.strictEqual(P.parseAccountBalance(LOGGED_OUT_HEAD), null);
+    assert.strictEqual(P.parseAccountBalance(''), null);
+  });
+
+  await test('fetchLoginState reads the balance from a chapter page of the novel', async () => {
+    const calls = [];
+    const fetchEnv = loadEnv({
+      fetch: async (url) => {
+        calls.push(url);
+        return { ok: true, text: async () => LOGGED_IN_HEAD + BALANCE_DIALOG };
+      }
+    });
+    const novel = { url: BOOK_URL, chapterList: [{ chapterNumber: 1, url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043460' }] };
+    const state = await fetchEnv.NkwwlkjProvider.fetchLoginState(novel);
+    assert.deepStrictEqual(calls, ['https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043460'], 'one request to a chapter page');
+    assert.deepStrictEqual(plain(state), { loggedIn: true, userId: '327475', userName: '守玄', balance: { coins: 1250, bonusCoins: 88 } });
+  });
+
+  await test('fetchLoginState never asks a chapter page of another site', async () => {
+    const calls = [];
+    const fetchEnv = loadEnv({ fetch: async (url) => { calls.push(url); return { ok: true, text: async () => LOGGED_OUT_HEAD }; } });
+    await fetchEnv.NkwwlkjProvider.fetchLoginState({ chapterList: [{ url: 'https://evil.example/chapter/1' }] });
+    assert.strictEqual(new URL(calls[0]).hostname, 'www.nkwwlkj.cn');
+  });
+
   await test('registry resolves the provider of a novel by url or domain', () => {
     const R = env.ProviderRegistry;
     assert.strictEqual(R.getProviderForNovel({ url: BOOK_URL }).id, 'nkwwlkj');
@@ -433,6 +472,16 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
 
     watcher.stop();
     assert.strictEqual(win.count(), 0, 'stop removes the listeners');
+  });
+
+  await test('watchLoginState passes the novel to the provider check', async () => {
+    const seenArgs = [];
+    const provider = { fetchLoginState: async (novel) => { seenArgs.push(novel); return { loggedIn: false, userId: null, userName: '' }; } };
+    const novel = { id: 'n1', chapterList: [] };
+    const watcher = watchLoginState({ provider, context: novel, target: fakeWindow(), onState: () => {} });
+    await tick();
+    assert.strictEqual(seenArgs[0], novel);
+    watcher.stop();
   });
 
   await test('watchLoginState can be re-checked on demand and ignores answers after stop', async () => {
