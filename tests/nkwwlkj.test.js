@@ -342,6 +342,127 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     unsubscribe();
   });
 
+  function loadTracker() {
+    const trackerEnv = { console, URL, Promise };
+    trackerEnv.globalThis = trackerEnv;
+    vm.createContext(trackerEnv);
+    vm.runInContext(read('src', 'services', 'open-to-save.js'), trackerEnv);
+    return trackerEnv.OpenToSave;
+  }
+  function fakeTabs() {
+    const created = [];
+    const removed = [];
+    let next = 100;
+    return {
+      created,
+      removed,
+      api: {
+        create: async (props) => { const tab = { id: next++, ...props }; created.push(tab); return tab; },
+        remove: async (id) => { removed.push(id); }
+      }
+    };
+  }
+  function memoryStore() {
+    let ids = [];
+    return { get: async () => ids.slice(), set: async (list) => { ids = list.slice(); } };
+  }
+  const OPEN_URL = 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100374104';
+
+  const HAND_OFF = 'chrome-extension://abc/views/open-to-save.html';
+  const pageFor = (url) => `${HAND_OFF}?url=${encodeURIComponent(url)}`;
+
+  await test('Open to save opens the chapter in a background tab and closes it once the chapter is saved', async () => {
+    const tabs = fakeTabs();
+    const tracker = loadTracker().createTracker({ tabs: tabs.api, store: memoryStore(), pageFor });
+    const tab = await tracker.open(OPEN_URL);
+    assert.strictEqual(tabs.created.length, 1);
+    assert.strictEqual(tabs.created[0].url, pageFor(OPEN_URL), 'opens the hand-off page, which then loads the chapter like a clicked link');
+    assert.strictEqual(tabs.created[0].active, false, 'the new tab does not take focus');
+    assert.strictEqual(await tracker.done(tab.id), true);
+    assert.deepStrictEqual(tabs.removed, [tab.id], 'the tab is closed after the save');
+    assert.strictEqual(await tracker.done(tab.id), false, 'closed only once');
+  });
+
+  function runHandOff(search) {
+    const replaced = [];
+    const pageEnv = {
+      URL,
+      URLSearchParams,
+      location: { search, replace: (url) => replaced.push(url) },
+      document: { body: { textContent: '' } }
+    };
+    pageEnv.globalThis = pageEnv;
+    pageEnv.window = pageEnv;
+    vm.createContext(pageEnv);
+    vm.runInContext(read('src', 'scripts', 'open-to-save-page.js'), pageEnv);
+    return { replaced, body: pageEnv.document.body.textContent };
+  }
+
+  await test('the hand-off page replaces itself with the chapter page', () => {
+    const { replaced } = runHandOff(`?url=${encodeURIComponent(OPEN_URL)}`);
+    assert.deepStrictEqual(replaced, [OPEN_URL], 'location.replace, so the hand-off page leaves no history entry');
+  });
+
+  await test('the hand-off page only loads web pages', () => {
+    for (const bad of ['', '?url=', `?url=${encodeURIComponent('javascript:alert(1)')}`, `?url=${encodeURIComponent('chrome://settings')}`]) {
+      const { replaced, body } = runHandOff(bad);
+      assert.deepStrictEqual(replaced, [], bad);
+      assert(body.length > 0, 'says there is nothing to open');
+    }
+  });
+
+  await test('the hand-off page is built, sends no referrer and runs no inline script', () => {
+    const vite = read('vite.config.mjs');
+    assert(/'views\/open-to-save\.html'/.test(vite), 'vite builds views/open-to-save.html');
+    const html = read('src', 'views', 'open-to-save.html');
+    assert(/<meta[^>]*name="referrer"[^>]*content="no-referrer"/.test(html), 'no referrer, like the rel=noreferrer link');
+    assert(/<script src="\.\.\/scripts\/open-to-save-page\.js"><\/script>/.test(html), 'loads its script from the extension (CSP forbids inline scripts)');
+  });
+
+  await test('tabs the user opened are never closed', async () => {
+    const tabs = fakeTabs();
+    const tracker = loadTracker().createTracker({ tabs: tabs.api, store: memoryStore() });
+    assert.strictEqual(await tracker.done(55), false);
+    const tab = await tracker.open(OPEN_URL);
+    await tracker.forget(tab.id);
+    assert.strictEqual(await tracker.done(tab.id), false, 'a tab the user closed or reused is forgotten');
+    assert.deepStrictEqual(tabs.removed, []);
+  });
+
+  await test('opened tabs are remembered across a background restart', async () => {
+    const tabs = fakeTabs();
+    const store = memoryStore();
+    const OpenToSave = loadTracker();
+    const tab = await OpenToSave.createTracker({ tabs: tabs.api, store }).open(OPEN_URL);
+    const restarted = OpenToSave.createTracker({ tabs: tabs.api, store });
+    assert.strictEqual(await restarted.done(tab.id), true);
+    assert.deepStrictEqual(tabs.removed, [tab.id]);
+  });
+
+  await test('Open to save only opens web pages', async () => {
+    const tabs = fakeTabs();
+    const tracker = loadTracker().createTracker({ tabs: tabs.api, store: memoryStore() });
+    for (const url of ['javascript:alert(1)', 'chrome://settings', 'file:///C:/x', '', 'not a url']) {
+      await assert.rejects(() => tracker.open(url), /web page/i, url);
+    }
+    assert.strictEqual(tabs.created.length, 0);
+  });
+
+  await test('background opens Open to save tabs and closes them when the page reports the save', () => {
+    const bg = read('src', 'scripts', 'background.js');
+    assert(/importScripts\([^)]*'\.\.\/services\/open-to-save\.js'/.test(bg), 'the worker loads open-to-save.js');
+    const handler = (name) => {
+      const at = bg.indexOf(`message.action === '${name}'`);
+      assert(at >= 0, `handles ${name}`);
+      return bg.slice(at, bg.indexOf("message.action ===", at + 10));
+    };
+    assert(/openToSave\.open\(message\.url\)/.test(handler('OPEN_TO_SAVE')));
+    assert(/pageFor:[\s\S]{0,120}views\/open-to-save\.html/.test(bg), 'tabs open on the hand-off page');
+    assert(/openToSave\.done\(sender\.tab\.id\)/.test(handler('PAGE_CHAPTER_DONE')));
+    assert(/openToSave\.done\(sender\.tab\.id\)/.test(handler('SAVE_CHAPTER')), 'a text save closes its tab');
+    assert(/chrome\.tabs\.onRemoved\.addListener\([\s\S]{0,80}openToSave\.forget/.test(bg), 'closed tabs are forgotten');
+  });
+
   await test('background announces each chapter saved from an open page', () => {
     const bg = read('src', 'scripts', 'background.js');
     const saveHandler = bg.slice(bg.indexOf("message.action === 'SAVE_CHAPTER'"), bg.indexOf("message.action === 'UPDATE_NOVEL_METADATA'"));

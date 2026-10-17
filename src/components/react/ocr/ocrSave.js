@@ -2,7 +2,7 @@ function errorText(err) {
   return err && err.message ? err.message : String(err);
 }
 
-export async function saveImageChapter({ image, target, storage, recognize, getTranslation, sourceText = '', onStatus }) {
+export async function saveImageChapter({ image, target, storage, recognize, getTranslation, sourceText = '', onStatus, onSaved }) {
   let lastStatus = null;
   const report = (update) => {
     lastStatus = update.status;
@@ -66,6 +66,7 @@ export async function saveImageChapter({ image, target, storage, recognize, getT
     });
     translatedText = saved && saved.isTranslated ? saved.rawText : '';
     report({ status: 'saved', sourceText: text, translatedText });
+    if (typeof onSaved === 'function') onSaved(saved);
     return { ok: true, sourceText: text, translatedText, chapter: saved };
   } catch (err) {
     console.error('[QuickConverter OCR] Saving the chapter failed:', err);

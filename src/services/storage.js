@@ -729,6 +729,22 @@ const StorageService = {
     } catch (e) {}
   },
 
+  openChapterInBackground(url) {
+    if (!url || typeof chrome === 'undefined' || !chrome.runtime || typeof chrome.runtime.sendMessage !== 'function') return false;
+    const fallback = () => {
+      const scope = typeof window !== 'undefined' ? window : null;
+      if (scope && typeof scope.open === 'function') scope.open(url, '_blank');
+    };
+    try {
+      chrome.runtime.sendMessage({ action: 'OPEN_TO_SAVE', url }, (response) => {
+        if (chrome.runtime.lastError || !response || !response.ok) fallback();
+      });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
   subscribeChapterSaved(handler) {
     if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.onMessage) return () => {};
     const listener = (message) => {

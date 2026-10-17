@@ -1,6 +1,7 @@
 import React from 'react';
 import ReaderDeepseekCard from './ReaderDeepseekCard.jsx';
 import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
+import { handleOpenToSave } from '../shared/ManualChapterAction.jsx';
 
 export default function ReaderNotSaved({ downloading = false, failed = false, translating = false, model = 'deepseek-flash', onDownload, deepseekRef, manualChapter = null, novel = null }) {
   if (manualChapter) {
@@ -14,8 +15,8 @@ export default function ReaderNotSaved({ downloading = false, failed = false, tr
           <h2 className="text-lg font-bold text-slate-100">{locked ? 'Paid Chapter' : 'Chapter Not Saved Yet'}</h2>
           <p className="text-sm text-slate-400 max-w-md">
             {locked
-              ? 'Unlock this chapter with coins on the source site, then open the chapter page. Its image is read with OCR and saved automatically, then come back here.'
-              : "This site can't be downloaded in the background. Open the chapter page and it is saved automatically, then come back here."}
+              ? 'Unlock this chapter with coins on the source site, then open the chapter page. It opens in a background tab, its image is read with OCR and saved, the tab closes and the chapter shows up here.'
+              : "This site can't be downloaded directly. Open the chapter page: it opens in a background tab, is saved automatically, the tab closes and the chapter shows up here."}
           </p>
         </div>
         <ProviderLoginBanner novel={novel} compact />
@@ -24,6 +25,7 @@ export default function ReaderNotSaved({ downloading = false, failed = false, tr
           href={manualChapter.url || '#'}
           target="_blank"
           rel="noreferrer"
+          onClick={(e) => handleOpenToSave(e, manualChapter.url)}
           className="inline-flex items-center gap-2 px-6 py-2.5 min-h-10 rounded-lg text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
         >
           <span>Open chapter page</span>

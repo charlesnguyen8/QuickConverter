@@ -11,6 +11,10 @@
     return ProviderRegistry.getProviderForUrl(window.location.href);
   }
 
+  function reportChapterDone() {
+    chrome.runtime.sendMessage({ action: 'PAGE_CHAPTER_DONE' }, () => { void chrome.runtime.lastError; });
+  }
+
   async function checkAndSyncSeriesPage(provider, urlInfo) {
     const { slug } = urlInfo;
     if (!slug) return;
@@ -82,6 +86,7 @@
 
         if (response && response.isSaved) {
           console.log(`[QuickConverter] Chapter ${chapterNumber} is already saved in QuickConverterDB.`);
+          reportChapterDone();
           return;
         }
 
@@ -211,6 +216,8 @@
       const type = event.data && event.data.type;
       if (type === 'QC_OCR_READY' || type === 'QC_OCR_RETRY') {
         sendChapterImage(provider, frame, extOrigin);
+      } else if (type === 'QC_OCR_SAVED') {
+        reportChapterDone();
       } else if (type === 'QC_OCR_CLOSE') {
         window.removeEventListener('message', onMessage);
         frame.remove();
@@ -248,6 +255,7 @@
   async function handleImageChapter(provider, urlInfo) {
     mountImageChapterButton(provider, urlInfo);
     const check = await lookupChapter(urlInfo);
+    if (check && check.isManaged && check.isSaved) reportChapterDone();
     if (saveTargetOf(check)) {
       openImageChapterPanel(provider, urlInfo, check);
     }

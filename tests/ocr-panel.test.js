@@ -520,6 +520,70 @@ const TRANSLATION = { enabled: true, apiKey: 'sk-local', prompt: 'Translate to E
     assert(!appended.some((el) => el.tagName === 'IFRAME'), 'no OCR panel for text chapters');
   });
 
+  await test('content script: reports a chapter that is already saved, so a background tab can close', async () => {
+    const image = `<script>${SD}</script>${BREAD}<div class="article-title">第七章</div><div class="read-bd" id="J_ImgRead"><div id="J_BookImage"></div></div>`;
+    const text = `<script>${SD}</script>${BREAD}<div class="article-title">第七章</div><div class="read-bd" id="J_BookRead"><p class="chapter">正文。</p></div>`;
+    for (const html of [image, text]) {
+      const { sent } = runContentScript({ html, check: { isManaged: true, isSaved: true, chapterNumber: 7, novelId: 'novel-1' } });
+      await flush();
+      assert(sent.some((m) => m.action === 'PAGE_CHAPTER_DONE'), 'tells the background the chapter is done');
+    }
+    const { sent } = runContentScript({ html: text, check: { isManaged: false } });
+    await flush();
+    assert(!sent.some((m) => m.action === 'PAGE_CHAPTER_DONE'), 'an unmanaged novel is not reported');
+  });
+
+  await test('content script: reports an OCR save from the panel, and ignores other frames', async () => {
+    const html = `<script>${SD}</script>${BREAD}<div class="article-title">第七章</div><div class="read-bd" id="J_ImgRead"><div id="J_BookImage"></div></div>`;
+    const { sent, appended, listeners } = runContentScript({ html, check: { isManaged: true, isSaved: false, chapterNumber: 7, novelId: 'novel-1' } });
+    await flush();
+    const frame = appended.find((el) => el.tagName === 'IFRAME');
+    listeners.message({ source: frame.contentWindow, origin: 'https://evil.example', data: { type: 'QC_OCR_SAVED' } });
+    assert(!sent.some((m) => m.action === 'PAGE_CHAPTER_DONE'), 'messages from other origins are ignored');
+    listeners.message({ source: frame.contentWindow, origin: new URL(frame.src).origin, data: { type: 'QC_OCR_SAVED' } });
+    assert(sent.some((m) => m.action === 'PAGE_CHAPTER_DONE'), 'the panel\'s saved message is passed on');
+  });
+
+  await test('StorageService.openChapterInBackground asks the background to open the page', async () => {
+    const { env, S } = makeStorageEnv();
+    assert.strictEqual(S.openChapterInBackground(PAGE_URL), false, 'without the extension runtime the link opens normally');
+    const sent = [];
+    env.chrome = { runtime: { sendMessage: (msg, cb) => { sent.push(msg); cb({ ok: true }); } } };
+    assert.strictEqual(S.openChapterInBackground(PAGE_URL), true);
+    assert.deepStrictEqual(plain(sent), [{ action: 'OPEN_TO_SAVE', url: PAGE_URL }]);
+    assert.strictEqual(S.openChapterInBackground(''), false, 'nothing to open');
+  });
+
+  await test('StorageService.openChapterInBackground falls back to a normal new tab if the background cannot', async () => {
+    const { env, S } = makeStorageEnv();
+    const opened = [];
+    env.open = (url, target) => opened.push([url, target]);
+    env.chrome = { runtime: { lastError: undefined, sendMessage: (msg, cb) => cb({ ok: false, error: 'no' }) } };
+    assert.strictEqual(S.openChapterInBackground(PAGE_URL), true);
+    assert.deepStrictEqual(opened, [[PAGE_URL, '_blank']]);
+  });
+
+  await test('saveImageChapter calls onSaved once, only after the chapter is stored', async () => {
+    const { S, stores } = makeStorageEnv();
+    await seedCatalogNovel(S, stores);
+    const saved = [];
+    await saveImageChapter({
+      image: IMAGE, target: TARGET, storage: S,
+      recognize: async () => OCR_TEXT,
+      getTranslation: () => ({ ...TRANSLATION, enabled: false }),
+      onSaved: () => saved.push(!!stores.chapters['novel-1_ch7'])
+    });
+    assert.deepStrictEqual(saved, [true]);
+    const failed = [];
+    await saveImageChapter({
+      image: IMAGE, target: TARGET, storage: S,
+      recognize: async () => '',
+      getTranslation: () => ({ ...TRANSLATION, enabled: false }),
+      onSaved: () => failed.push(true)
+    });
+    assert.deepStrictEqual(failed, [], 'not called when nothing was saved');
+  });
+
   const ocrText = await loadComponent('components/react/ocr/ocrText.js');
   const line = (text, x, y, h = 24) => [{ text, box: { x, y, width: 700, height: h }, confidence: 0.99 }];
 

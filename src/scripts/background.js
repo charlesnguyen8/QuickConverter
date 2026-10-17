@@ -1,7 +1,28 @@
 // QuickConverter Background Service Worker
 // Coordinates tab listeners, automated popup triggering via providers, and IndexedDB message bus.
 
-importScripts('../providers/wetriedtls.js', '../providers/nkwwlkj.js', '../providers/registry.js', '../services/custom-api.js', '../services/deepseek.js', '../services/ai-service.js', '../services/name-matcher.js', '../services/longest-matcher.js', '../services/qt-numbers.js', '../services/luat-nhan.js', '../services/text-processors.js', '../services/han-viet.js', '../services/qt-dictionaries.js', '../services/storage.js', '../services/download-queue.js');
+importScripts('../providers/wetriedtls.js', '../providers/nkwwlkj.js', '../providers/registry.js', '../services/custom-api.js', '../services/deepseek.js', '../services/ai-service.js', '../services/name-matcher.js', '../services/longest-matcher.js', '../services/qt-numbers.js', '../services/luat-nhan.js', '../services/text-processors.js', '../services/han-viet.js', '../services/qt-dictionaries.js', '../services/storage.js', '../services/download-queue.js', '../services/open-to-save.js');
+
+const OPEN_TO_SAVE_KEY = 'qcOpenToSaveTabs';
+const openToSave = OpenToSave.createTracker({
+  pageFor: (url) => `${chrome.runtime.getURL('views/open-to-save.html')}?url=${encodeURIComponent(url)}`,
+  tabs: {
+    create: (props) => chrome.tabs.create(props),
+    remove: (tabId) => chrome.tabs.remove(tabId)
+  },
+  store: {
+    get: async () => {
+      if (!chrome.storage || !chrome.storage.session) return [];
+      const saved = await chrome.storage.session.get(OPEN_TO_SAVE_KEY);
+      return (saved && saved[OPEN_TO_SAVE_KEY]) || [];
+    },
+    set: async (ids) => {
+      if (chrome.storage && chrome.storage.session) await chrome.storage.session.set({ [OPEN_TO_SAVE_KEY]: ids });
+    }
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => { openToSave.forget(tabId); });
 
 function shouldOpenPopup(urlStr) {
   if (!urlStr) return false;
@@ -89,6 +110,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         if (result.success) {
           console.log(`[QuickConverter] Saved Chapter ${chapterNumber} for ${result.novelTitle} (${(rawText || '').length} chars)`);
+          if (sender.tab) openToSave.done(sender.tab.id);
         } else {
           console.log(`[QuickConverter] Cannot save chapter for unmanaged novel: ${slug}`);
         }
@@ -100,6 +122,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true; // Keep channel open for async response
+  }
+
+  if (message.action === 'OPEN_TO_SAVE') {
+    openToSave.open(message.url)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (message.action === 'PAGE_CHAPTER_DONE') {
+    if (sender.tab) openToSave.done(sender.tab.id);
+    return false;
   }
 
   if (message.action === 'UPDATE_NOVEL_METADATA') {

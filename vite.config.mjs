@@ -37,7 +37,8 @@ export default defineConfig({
         reader: 'views/reader.html',
         settings: 'views/settings.html',
         popup: 'views/popup.html',
-        ocr: 'views/ocr-panel.html'
+        ocr: 'views/ocr-panel.html',
+        opentosave: 'views/open-to-save.html'
       }
     }
   }

@@ -571,6 +571,38 @@ function test(name, fn) {
     assert.strictEqual(render(h(ProviderLoginBanner, { novel: null })), '');
   });
 
+  const { handleOpenToSave } = await loadComponent('components/react/shared/ManualChapterAction.jsx');
+  const fakeClick = (extra = {}) => {
+    const calls = [];
+    return { calls, event: { button: 0, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...extra, preventDefault: () => calls.push('prevent'), stopPropagation: () => calls.push('stop') } };
+  };
+
+  test('Open to save opens the chapter in the background instead of switching tabs', () => {
+    const opened = [];
+    const storage = { openChapterInBackground: (url) => { opened.push(url); return true; } };
+    const { calls, event } = fakeClick();
+    handleOpenToSave(event, manualChapter.url, storage);
+    assert.deepStrictEqual(opened, [manualChapter.url]);
+    assert(calls.includes('prevent'), 'the normal new-tab link is cancelled');
+    assert(calls.includes('stop'), 'the row behind the link is not clicked');
+  });
+
+  test('Open to save falls back to the plain link when it cannot open in the background', () => {
+    const declined = fakeClick();
+    handleOpenToSave(declined.event, manualChapter.url, { openChapterInBackground: () => false });
+    assert(!declined.calls.includes('prevent'), 'the link opens normally');
+    const noService = fakeClick();
+    handleOpenToSave(noService.event, manualChapter.url, null);
+    assert(!noService.calls.includes('prevent'));
+    const opened = [];
+    for (const extra of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { button: 1 }]) {
+      const modified = fakeClick(extra);
+      handleOpenToSave(modified.event, manualChapter.url, { openChapterInBackground: (url) => { opened.push(url); return true; } });
+      assert(!modified.calls.includes('prevent'), `a ${Object.keys(extra)[0]} click keeps the browser's own behavior`);
+    }
+    assert.deepStrictEqual(opened, []);
+  });
+
   test('ManualChapterAction links free and paid chapters to the page to save them', () => {
     const open = render(h(ManualChapterAction, { chapter: manualChapter }));
     assert(open.includes('Open to save'), 'unlocked chapter offers Open to save');
