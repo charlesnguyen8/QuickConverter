@@ -141,6 +141,10 @@ Rough ranges for focused work. The real bottleneck is testing on a phone/emulato
 - Measure dictionary load time and memory on the owner's phone (risk 1); decide on the compact format.
 - **Done when:** library, reader, converter, phrase panel, AI translation, backup export/import all
   work offline on the phone with already-saved chapters.
+- **Progress (2026-10-18):** Capacitor 8.5.3 added (`capacitor.config.json`: app id
+  `com.quickconverter.app`, `webDir: dist-app`, CapacitorHttp + CapacitorCookies on); `android/`
+  generated; debug APK (33 MB) builds with JDK 23 and runs on the owner's Galaxy S23 (installed by
+  the owner from the APK file; no adb). Next: on-screen dictionary load timing, then the rest above.
 
 ### Phase 2 — Sources (≈1–1.5 weeks)
 

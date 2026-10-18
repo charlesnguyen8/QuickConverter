@@ -1,0 +1,13 @@
+{
+  "appId": "com.quickconverter.app",
+  "appName": "QuickConverter",
+  "webDir": "dist-app",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
+    "CapacitorCookies": {
+      "enabled": true
+    }
+  }
+}

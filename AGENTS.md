@@ -23,6 +23,13 @@ build, so the repo root is no longer a loadable target. `npm run dev` is for UI 
 `rules/`) and are copied into `dist/`; `build-targets.mjs` lists what each build contains.
 Services and components reach `chrome.*` only through `src/services/platform.js` (a test enforces it).
 
+**Android app (Capacitor 8):** `npm run build:app`, then `npx cap sync android`, then build the
+APK with `android\gradlew assembleDebug` with `JAVA_HOME` set to a JDK 21–24 (Gradle 8.14 cannot
+run on Java 25, which Android Studio bundles; this machine uses `C:\Program Files\Java\jdk-23`).
+The APK lands in `android/app/build/outputs/apk/debug/app-debug.apk`. The owner installs and tests
+it on their phone; never connect to the phone (adb, remote WebView debugging) yourself.
+`capacitor.config.json` turns on CapacitorHttp/CapacitorCookies (native HTTP, no CORS).
+
 **CSS gotcha:** Tailwind is compiled and committed. After editing any markup/JS that
 introduces new utility classes, run `npm run build:css` (or the `watch` script). Missing
 classes silently break layout (e.g. a missing `justify-end` makes the drawer anchor left)
