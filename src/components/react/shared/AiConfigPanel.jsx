@@ -106,7 +106,8 @@ function setStored(key, val) {
   }
   try {
     if (typeof localStorage !== 'undefined') localStorage.setItem(key, String(val));
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) chrome.storage.local.set({ [key]: String(val) });
+    const area = typeof window !== 'undefined' && window.Platform ? window.Platform.storage.area('local') : null;
+    if (area) area.set({ [key]: String(val) });
   } catch (e) {}
 }
 

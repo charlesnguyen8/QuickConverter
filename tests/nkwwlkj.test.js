@@ -294,6 +294,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
 
   await test('StorageService.getCatalogChapterNumber maps a chapter id to its catalog number', () => {
     const storageEnv = loadEnv({ indexedDB: { open() { throw new Error('not used'); } } });
+    vm.runInContext(read('src', 'services', 'platform.js'), storageEnv);
     vm.runInContext(read('src', 'services', 'storage.js'), storageEnv);
     const S = storageEnv.StorageService || storageEnv.window.StorageService;
     const novel = { chapterList: P.parseChapterListHtml(DETAIL_HTML) };
@@ -317,6 +318,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
       }
     };
     const storageEnv = loadEnv({ chrome: fakeChrome, indexedDB: { open() { throw new Error('not used'); } } });
+    vm.runInContext(read('src', 'services', 'platform.js'), storageEnv);
     vm.runInContext(read('src', 'services', 'storage.js'), storageEnv);
     const S = storageEnv.StorageService || storageEnv.window.StorageService;
 
@@ -334,6 +336,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
 
   await test('StorageService chapter-saved helpers are safe without the extension runtime', () => {
     const storageEnv = loadEnv({ indexedDB: { open() { throw new Error('not used'); } } });
+    vm.runInContext(read('src', 'services', 'platform.js'), storageEnv);
     vm.runInContext(read('src', 'services', 'storage.js'), storageEnv);
     const S = storageEnv.StorageService || storageEnv.window.StorageService;
     S.notifyChapterSaved('novel-9', 3);

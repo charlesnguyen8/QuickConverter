@@ -38,6 +38,7 @@ function loadEnv({ withStorage = false } = {}) {
   vm.runInContext(read('src', 'services', 'name-matcher.js'), env);
   vm.runInContext(read('src', 'services', 'longest-matcher.js'), env);
   vm.runInContext(read('src', 'services', 'text-processors.js'), env);
+  if (withStorage) vm.runInContext(read('src', 'services', 'platform.js'), env);
   if (withStorage) vm.runInContext(read('src', 'services', 'storage.js'), env);
   return env;
 }

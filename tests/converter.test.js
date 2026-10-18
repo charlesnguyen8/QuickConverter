@@ -548,6 +548,7 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
         }
       }
     });
+    vm.runInContext(read('src', 'services', 'platform.js'), env);
     vm.runInContext(read('src', 'services', 'storage.js'), env);
     const S = env.StorageService;
     return { env, S, fetched, saved };

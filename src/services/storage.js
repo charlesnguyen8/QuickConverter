@@ -195,6 +195,20 @@ function hasChineseText(text) {
   return typeof text === 'string' && /[㐀-鿿豈-﫿]/.test(text);
 }
 
+function storagePlatform() {
+  const scope = typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : null);
+  if (scope && scope.Platform) return scope.Platform;
+  if (typeof module !== 'undefined' && typeof require === 'function') {
+    try { return require('./platform.js'); } catch (e) {}
+  }
+  return null;
+}
+
+function storageArea(name) {
+  const platform = storagePlatform();
+  return platform && platform.storage ? platform.storage.area(name) : null;
+}
+
 const StorageService = {
   async _titleConverter(novel) {
     if (!novel || !novel.conversionMode) return null;
@@ -263,12 +277,10 @@ const StorageService = {
   },
 
   async _isDbInitialized() {
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      return new Promise((resolve) => {
-        chrome.storage.local.get(['quickconverter_db_initialized'], (r) => {
-          resolve(!!(r && r.quickconverter_db_initialized));
-        });
-      });
+    const local = storageArea('local');
+    if (local) {
+      const r = await local.get(['quickconverter_db_initialized']);
+      return !!(r && r.quickconverter_db_initialized);
     }
     if (typeof localStorage !== 'undefined') {
       return !!localStorage.getItem('quickconverter_db_initialized');
@@ -277,9 +289,8 @@ const StorageService = {
   },
 
   async _setDbInitialized() {
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ quickconverter_db_initialized: true });
-    }
+    const local = storageArea('local');
+    if (local) local.set({ quickconverter_db_initialized: true });
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('quickconverter_db_initialized', 'true');
     }
@@ -342,12 +353,10 @@ const StorageService = {
 
   async _seedInitialNovels() {
     let previous = null;
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      previous = await new Promise((res) => {
-        chrome.storage.local.get(['quickconverter_managed_novels'], (r) => {
-          res(r && r.quickconverter_managed_novels);
-        });
-      });
+    const local = storageArea('local');
+    if (local) {
+      const r = await local.get(['quickconverter_managed_novels']);
+      previous = r && r.quickconverter_managed_novels;
     }
 
     const seeds = (Array.isArray(previous) && previous.length > 0)
@@ -721,37 +730,29 @@ const StorageService = {
   },
 
   notifyChapterSaved(novelId, chapterNumber) {
-    if (typeof chrome === 'undefined' || !chrome.runtime || typeof chrome.runtime.sendMessage !== 'function') return;
-    try {
-      chrome.runtime.sendMessage({ action: 'CHAPTER_SAVED', novelId, chapterNumber }, () => {
-        void chrome.runtime.lastError;
-      });
-    } catch (e) {}
+    const platform = storagePlatform();
+    if (!platform) return;
+    platform.messaging.send({ action: 'CHAPTER_SAVED', novelId, chapterNumber }).catch(() => {});
   },
 
   openChapterInBackground(url) {
-    if (!url || typeof chrome === 'undefined' || !chrome.runtime || typeof chrome.runtime.sendMessage !== 'function') return false;
+    const platform = storagePlatform();
+    if (!url || !platform || !platform.messaging.isNative()) return false;
     const fallback = () => {
       const scope = typeof window !== 'undefined' ? window : null;
       if (scope && typeof scope.open === 'function') scope.open(url, '_blank');
     };
-    try {
-      chrome.runtime.sendMessage({ action: 'OPEN_TO_SAVE', url }, (response) => {
-        if (chrome.runtime.lastError || !response || !response.ok) fallback();
-      });
-      return true;
-    } catch (e) {
-      return false;
-    }
+    platform.messaging.send({ action: 'OPEN_TO_SAVE', url })
+      .then((response) => { if (!response || !response.ok) fallback(); }, fallback);
+    return true;
   },
 
   subscribeChapterSaved(handler) {
-    if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.onMessage) return () => {};
-    const listener = (message) => {
+    const platform = storagePlatform();
+    if (!platform) return () => {};
+    return platform.messaging.subscribe((message) => {
       if (message && message.action === 'CHAPTER_SAVED') handler(message);
-    };
-    chrome.runtime.onMessage.addListener(listener);
-    return () => chrome.runtime.onMessage.removeListener(listener);
+    });
   },
 
   getCatalogChapterNumber(novel, chapterSlug) {
@@ -930,13 +931,14 @@ const StorageService = {
     await this._setDbInitialized();
 
     // 4. Update legacy storage cache if present
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(['quickconverter_managed_novels'], (r) => {
+    const local = storageArea('local');
+    if (local) {
+      local.get(['quickconverter_managed_novels']).then((r) => {
         if (r && Array.isArray(r.quickconverter_managed_novels)) {
           const remaining = r.quickconverter_managed_novels.filter(
             (n) => !targetIds.has(n.id) && !targetSlugs.has(n.slug)
           );
-          chrome.storage.local.set({ quickconverter_managed_novels: remaining });
+          local.set({ quickconverter_managed_novels: remaining });
         }
       });
     }
@@ -1591,7 +1593,7 @@ const StorageService = {
   },
 
   /**
-   * Stores a lightweight user preference across localStorage and chrome.storage.local (if available).
+   * Stores a lightweight user preference across localStorage and the platform's local storage area (if any).
    * @param {string} key
    * @param {any} val
    */
@@ -1600,9 +1602,8 @@ const StorageService = {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(key, String(val));
       }
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        chrome.storage.local.set({ [key]: String(val) });
-      }
+      const local = storageArea('local');
+      if (local) local.set({ [key]: String(val) });
     } catch (e) {}
   },
 
@@ -1632,9 +1633,10 @@ const StorageService = {
       });
 
     const preferences = {};
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    const local = storageArea('local');
+    if (local) {
       try {
-        const stored = await new Promise((resolve) => chrome.storage.local.get(null, (r) => resolve(r || {})));
+        const stored = await local.get(null);
         Object.keys(stored).forEach((key) => {
           if (key.indexOf('quickconverter_') !== 0) return;
           if (BACKUP_EXCLUDED_KEYS.indexOf(key) !== -1) return;
@@ -1717,8 +1719,9 @@ const StorageService = {
       const value = preferences[key];
       if (typeof value === 'string') {
         this.setPreference(key, value);
-      } else if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        try { chrome.storage.local.set({ [key]: value }); } catch (e) {}
+      } else {
+        const local = storageArea('local');
+        if (local) local.set({ [key]: value });
       }
     });
 

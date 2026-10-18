@@ -10,41 +10,30 @@
     return global.StorageService || null;
   }
 
-  function getIdentity() {
-    return (typeof chrome !== 'undefined' && chrome.identity) ? chrome.identity : null;
+  function resolvePlatform() {
+    if (typeof global !== 'undefined' && global.Platform) return global.Platform;
+    if (typeof module !== 'undefined' && typeof require === 'function') {
+      try { return require('./platform.js'); } catch (e) {}
+    }
+    return null;
   }
 
-  function getLastError() {
-    return (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.lastError)
-      ? chrome.runtime.lastError
-      : null;
+  function getIdentity() {
+    const platform = resolvePlatform();
+    return platform ? platform.identity : null;
   }
 
   function getToken(interactive) {
     const identity = getIdentity();
-    if (!identity || typeof identity.getAuthToken !== 'function') {
+    if (!identity) {
       return Promise.reject(new Error('Google sign-in is only available in the Chrome extension'));
     }
-    return new Promise((resolve, reject) => {
-      identity.getAuthToken({ interactive: !!interactive, scopes: [SCOPE] }, (token) => {
-        const lastError = getLastError();
-        if (lastError) {
-          reject(new Error(lastError.message || 'Google sign-in failed'));
-          return;
-        }
-        if (!token) {
-          reject(new Error('No Google auth token returned'));
-          return;
-        }
-        resolve(token);
-      });
-    });
+    return identity.getAuthToken({ interactive: !!interactive, scopes: [SCOPE] });
   }
 
   function removeCachedToken(token) {
     const identity = getIdentity();
-    if (!identity || typeof identity.removeCachedAuthToken !== 'function') return Promise.resolve();
-    return new Promise((resolve) => identity.removeCachedAuthToken({ token }, () => resolve()));
+    return identity ? identity.removeCachedAuthToken(token) : Promise.resolve();
   }
 
   async function authFetch(url, options = {}, retried) {
@@ -74,9 +63,7 @@
 
   async function signOut() {
     const identity = getIdentity();
-    if (identity && typeof identity.clearAllCachedAuthTokens === 'function') {
-      await new Promise((resolve) => identity.clearAllCachedAuthTokens(() => resolve()));
-    }
+    if (identity) await identity.clearAllCachedAuthTokens();
     return { connected: false };
   }
 

@@ -15,11 +15,47 @@
     return null;
   }
 
-  // In Chrome extension, chrome.runtime.id is present.
-  // UI views have window and document; background service worker has neither.
-  // In Android (Capacitor/WebView) or Electron standalone, chrome.runtime.id is not present.
-  // In Node.js testing, window and document are undefined.
-  const isExtension = typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
+  function resolvePlatform() {
+    if (typeof global !== 'undefined' && global.Platform) return global.Platform;
+    if (typeof module !== 'undefined' && typeof require === 'function') {
+      try { return require('./platform.js'); } catch (e) {}
+    }
+    return null;
+  }
+
+  function nativeMessaging() {
+    const platform = resolvePlatform();
+    return platform && platform.messaging.isNative() ? platform.messaging : null;
+  }
+
+  // Asks the extension service worker; resolves null when it cannot answer.
+  function askWorker(message) {
+    const messaging = nativeMessaging();
+    if (!messaging) return Promise.resolve(null);
+    return messaging.send(message).then((response) => response || null, () => null);
+  }
+
+  // Fire-and-forget broadcast to the other extension pages (harmless when none are open).
+  function tellWorker(message) {
+    const messaging = nativeMessaging();
+    if (messaging) messaging.send(message).catch(() => {});
+  }
+
+  function localArea() {
+    const platform = resolvePlatform();
+    return platform ? platform.storage.area('local') : null;
+  }
+
+  function nativeAlarms() {
+    const platform = resolvePlatform();
+    return platform && platform.alarms.isNative() ? platform.alarms : null;
+  }
+
+  // In the Chrome extension the runtime has an id; UI views have window and document,
+  // the background service worker has neither. In Android (Capacitor/WebView), Electron
+  // or Node.js tests there is no extension runtime.
+  const platformAtLoad = resolvePlatform();
+  const isExtension = !!(platformAtLoad && platformAtLoad.runtime.isExtension());
   const isBackgroundWorker = typeof window === 'undefined' && typeof document === 'undefined';
   // Execution owner is the entity responsible for actively executing tasks in-memory:
   // In Chrome extension: strictly the background service worker.
@@ -28,16 +64,11 @@
 
   let keepAliveInterval = null;
   function updateKeepAlive(isWorking) {
-    if (typeof chrome === 'undefined' || !chrome.runtime) return;
+    const platform = resolvePlatform();
+    if (!platform || !platform.runtime.isExtension()) return;
     if (isWorking) {
       if (!keepAliveInterval) {
-        keepAliveInterval = setInterval(() => {
-          try {
-            if (chrome.runtime && chrome.runtime.getPlatformInfo) {
-              chrome.runtime.getPlatformInfo(() => {});
-            }
-          } catch (e) {}
-        }, 15000);
+        keepAliveInterval = setInterval(() => { platform.runtime.ping(); }, 15000);
       }
     } else {
       if (keepAliveInterval) {
@@ -74,8 +105,8 @@
       this._initialized = true;
 
       // 1. Listen for runtime broadcasts across extension views (UI views in extension only)
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-        chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
+        nativeMessaging().subscribe((msg) => {
           if (msg && msg.action === 'QUEUE_STATE_CHANGED' && msg.state) {
             // Update local state in view from broadcast
             this.activeTask = msg.state.activeTask;
@@ -104,8 +135,8 @@
       }
 
       // 2. Listen to storage changes so views navigating across pages immediately sync (UI views in extension only)
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
-        chrome.storage.onChanged.addListener((changes, area) => {
+      if (isExtension && !isBackgroundWorker && platformAtLoad) {
+        platformAtLoad.storage.onChanged((changes, area) => {
           if (area === 'local' && changes[STORAGE_KEY] && changes[STORAGE_KEY].newValue) {
             const saved = changes[STORAGE_KEY].newValue;
             this.activeTask = saved.activeTask || null;
@@ -118,18 +149,17 @@
         });
       }
 
-      // 3. Load initial state from storage (chrome.storage or localStorage)
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        try {
-          chrome.storage.local.get([STORAGE_KEY, 'quickconverter_queue_cooldown'], (res) => {
-            if (res && res[STORAGE_KEY]) {
-              this._restoreState(res[STORAGE_KEY]);
-            }
-            if (res && res.quickconverter_queue_cooldown) {
-              this.setCooldownConfig(res.quickconverter_queue_cooldown);
-            }
-          });
-        } catch (e) {}
+      // 3. Load initial state from storage (the platform's local area or localStorage)
+      const local = localArea();
+      if (local) {
+        local.get([STORAGE_KEY, 'quickconverter_queue_cooldown']).then((res) => {
+          if (res && res[STORAGE_KEY]) {
+            this._restoreState(res[STORAGE_KEY]);
+          }
+          if (res && res.quickconverter_queue_cooldown) {
+            this.setCooldownConfig(res.quickconverter_queue_cooldown);
+          }
+        });
       } else if (typeof localStorage !== 'undefined') {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
@@ -144,10 +174,10 @@
       }
 
       // 4. In extension UI views, query background worker directly for live authoritative state
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          chrome.runtime.sendMessage({ action: 'QUEUE_GET_STATE' }, (resp) => {
-            if (chrome.runtime.lastError || !resp) return;
+          askWorker({ action: 'QUEUE_GET_STATE' }).then((resp) => {
+            if (!resp) return;
             this.activeTask = resp.activeTask || null;
             this.queue = resp.queue || [];
             this.isPaused = !!resp.isPaused;
@@ -264,9 +294,10 @@
 
       // Persist to storage and broadcast ONLY from execution owner
       if (isExecutionOwner) {
-        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        const local = localArea();
+        if (local) {
           try {
-            chrome.storage.local.set({
+            local.set({
               [STORAGE_KEY]: {
                 activeTask: state.activeTask,
                 queue: state.queue,
@@ -289,14 +320,8 @@
         }
 
         // Broadcast to other open extension tabs if running in extension
-        if (isExtension && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-          try {
-            chrome.runtime.sendMessage({ action: 'QUEUE_STATE_CHANGED', state }, () => {
-              if (chrome.runtime.lastError) {
-                // Ignore harmless "Receiving end does not exist" when no tabs are open
-              }
-            });
-          } catch (e) {}
+        if (isExtension) {
+          tellWorker({ action: 'QUEUE_STATE_CHANGED', state });
         }
       }
 
@@ -399,14 +424,9 @@
       };
 
       // If running inside extension view, delegate to background service worker
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          const resp = await new Promise((resolve) => {
-            chrome.runtime.sendMessage({ action: 'QUEUE_ENQUEUE', task: this._serializeTask(task) }, (r) => {
-              if (chrome.runtime.lastError || !r) resolve(null);
-              else resolve(r);
-            });
-          });
+          const resp = await askWorker({ action: 'QUEUE_ENQUEUE', task: this._serializeTask(task) });
           if (resp) {
             if (resp.state) {
               this.activeTask = resp.state.activeTask || null;
@@ -440,15 +460,10 @@
       }
 
       // If running inside extension view, delegate to background service worker
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
           const serializedTasks = tasks.map((t) => this._serializeTask(t)).filter(Boolean);
-          const resp = await new Promise((resolve) => {
-            chrome.runtime.sendMessage({ action: 'QUEUE_ENQUEUE_BATCH', tasks: serializedTasks }, (r) => {
-              if (chrome.runtime.lastError || !r) resolve(null);
-              else resolve(r);
-            });
-          });
+          const resp = await askWorker({ action: 'QUEUE_ENQUEUE_BATCH', tasks: serializedTasks });
           if (resp) {
             if (resp.state) {
               this.activeTask = resp.state.activeTask || null;
@@ -504,14 +519,9 @@
       if (!taskId) return false;
 
       // In extension UI views, delegate to background service worker
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          const resp = await new Promise((resolve) => {
-            chrome.runtime.sendMessage({ action: 'QUEUE_REMOVE', taskId }, (r) => {
-              if (chrome.runtime.lastError || !r) resolve(null);
-              else resolve(r);
-            });
-          });
+          const resp = await askWorker({ action: 'QUEUE_REMOVE', taskId });
           if (resp) {
             if (resp.state) {
               this.activeTask = resp.state.activeTask || null;
@@ -577,9 +587,9 @@
         this._clearCooldownTimers();
         this.cooldown = null;
       }
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          chrome.runtime.sendMessage({ action: 'QUEUE_PAUSE' }, (resp) => {
+          askWorker({ action: 'QUEUE_PAUSE' }).then((resp) => {
             if (resp && resp.state) {
               this.activeTask = resp.state.activeTask || null;
               this.queue = resp.state.queue || [];
@@ -601,9 +611,9 @@
     resume() {
       this.isPaused = false;
       this.pauseError = null;
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          chrome.runtime.sendMessage({ action: 'QUEUE_RESUME' }, (resp) => {
+          askWorker({ action: 'QUEUE_RESUME' }).then((resp) => {
             if (resp && resp.state) {
               this.activeTask = resp.state.activeTask || null;
               this.queue = resp.state.queue || [];
@@ -637,9 +647,9 @@
       this.activeTask = null;
       this.isProcessing = false;
 
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          chrome.runtime.sendMessage({ action: 'QUEUE_CLEAR_ALL' }, (resp) => {
+          askWorker({ action: 'QUEUE_CLEAR_ALL' }).then((resp) => {
             this._isClearing = false;
             if (resp && resp.state) {
               this.activeTask = resp.state.activeTask || null;
@@ -671,9 +681,9 @@
      * Bypasses the cooldown wait immediately and starts the next chapter in queue.
      */
     skipCooldown() {
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          chrome.runtime.sendMessage({ action: 'QUEUE_SKIP_COOLDOWN' }, (resp) => {
+          askWorker({ action: 'QUEUE_SKIP_COOLDOWN' }).then((resp) => {
             if (resp && resp.state) {
               this.activeTask = resp.state.activeTask || null;
               this.queue = resp.state.queue || [];
@@ -699,9 +709,9 @@
      * Bypasses the retry cooldown wait immediately and retries the head chapter right away.
      */
     retryNow() {
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          chrome.runtime.sendMessage({ action: 'QUEUE_RETRY_NOW' }, (resp) => {
+          askWorker({ action: 'QUEUE_RETRY_NOW' }).then((resp) => {
             if (resp && resp.state) {
               this.activeTask = resp.state.activeTask || null;
               this.queue = resp.state.queue || [];
@@ -722,9 +732,9 @@
      * and proceeds immediately to the remaining chapters.
      */
     skipFailedChapter() {
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          chrome.runtime.sendMessage({ action: 'QUEUE_SKIP_FAILED_CHAPTER' }, (resp) => {
+          askWorker({ action: 'QUEUE_SKIP_FAILED_CHAPTER' }).then((resp) => {
             if (resp && resp.state) {
               this.activeTask = resp.state.activeTask || null;
               this.queue = resp.state.queue || [];
@@ -782,21 +792,15 @@
         maxRetries: this.maxRetries
       };
 
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        try { chrome.storage.local.set({ quickconverter_queue_cooldown: toSave }); } catch (e) {}
+      const local = localArea();
+      if (local) {
+        local.set({ quickconverter_queue_cooldown: toSave });
       } else if (typeof localStorage !== 'undefined') {
         try { localStorage.setItem('quickconverter_queue_cooldown', JSON.stringify(toSave)); } catch (e) {}
       }
 
-      if (isExtension && !isBackgroundWorker && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-        try {
-          chrome.runtime.sendMessage({
-            action: 'QUEUE_SET_COOLDOWN_CONFIG',
-            config: toSave
-          }, () => {
-            if (chrome.runtime.lastError) {}
-          });
-        } catch (e) {}
+      if (isExtension && !isBackgroundWorker) {
+        tellWorker({ action: 'QUEUE_SET_COOLDOWN_CONFIG', config: toSave });
       }
     }
 
@@ -805,9 +809,8 @@
         clearInterval(this._cooldownTickInterval);
         this._cooldownTickInterval = null;
       }
-      if (typeof chrome !== 'undefined' && chrome.alarms && typeof chrome.alarms.clear === 'function') {
-        try { chrome.alarms.clear('QUEUE_COOLDOWN_ALARM'); } catch (e) {}
-      }
+      const alarms = nativeAlarms();
+      if (alarms) alarms.clear('QUEUE_COOLDOWN_ALARM');
     }
 
     _startCooldown(forcedDurationSec) {
@@ -866,11 +869,8 @@
         nextChapterTitle: nextTask?.chapterTitle || (nextTask?.chapterNumber ? `Chapter ${nextTask.chapterNumber}` : '')
       };
 
-      if (typeof chrome !== 'undefined' && chrome.alarms && typeof chrome.alarms.create === 'function') {
-        try {
-          chrome.alarms.create('QUEUE_COOLDOWN_ALARM', { when: retryAt });
-        } catch (e) {}
-      }
+      const alarms = nativeAlarms();
+      if (alarms) alarms.create('QUEUE_COOLDOWN_ALARM', { when: retryAt });
 
       updateKeepAlive(true);
       this._sync();
@@ -896,15 +896,8 @@
         }
 
         this._notifySubscribers();
-        if (isExtension && isExecutionOwner && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-          try {
-            chrome.runtime.sendMessage({
-              action: 'QUEUE_COOLDOWN_TICK',
-              cooldown: this.cooldown
-            }, () => {
-              if (chrome.runtime.lastError) {}
-            });
-          } catch (e) {}
+        if (isExtension && isExecutionOwner) {
+          tellWorker({ action: 'QUEUE_COOLDOWN_TICK', cooldown: this.cooldown });
         }
       }, 1000);
     }
@@ -942,11 +935,8 @@
         nextChapterTitle: task.chapterTitle || (task.chapterNumber ? `Chapter ${task.chapterNumber}` : '')
       };
 
-      if (typeof chrome !== 'undefined' && chrome.alarms && typeof chrome.alarms.create === 'function') {
-        try {
-          chrome.alarms.create('QUEUE_COOLDOWN_ALARM', { when: retryAt });
-        } catch (e) {}
-      }
+      const alarms = nativeAlarms();
+      if (alarms) alarms.create('QUEUE_COOLDOWN_ALARM', { when: retryAt });
 
       updateKeepAlive(true);
       this._sync();
@@ -972,15 +962,8 @@
         }
 
         this._notifySubscribers();
-        if (isExtension && isExecutionOwner && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-          try {
-            chrome.runtime.sendMessage({
-              action: 'QUEUE_COOLDOWN_TICK',
-              cooldown: this.cooldown
-            }, () => {
-              if (chrome.runtime.lastError) {}
-            });
-          } catch (e) {}
+        if (isExtension && isExecutionOwner) {
+          tellWorker({ action: 'QUEUE_COOLDOWN_TICK', cooldown: this.cooldown });
         }
       }, 1000);
     }
@@ -1010,15 +993,8 @@
         }
 
         this._notifySubscribers();
-        if (isExtension && isExecutionOwner && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-          try {
-            chrome.runtime.sendMessage({
-              action: 'QUEUE_COOLDOWN_TICK',
-              cooldown: this.cooldown
-            }, () => {
-              if (chrome.runtime.lastError) {}
-            });
-          } catch (e) {}
+        if (isExtension && isExecutionOwner) {
+          tellWorker({ action: 'QUEUE_COOLDOWN_TICK', cooldown: this.cooldown });
         }
       }, 1000);
     }
@@ -1093,19 +1069,8 @@
               this._notifySubscribers();
 
               // 2. In Chrome extension, broadcast lightweight progress IPC message without storage disk churn
-              if (isExtension && isExecutionOwner && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-                try {
-                  chrome.runtime.sendMessage({
-                    action: 'QUEUE_PROGRESS',
-                    taskId: task.id,
-                    chapterNumber: task.chapterNumber,
-                    progress: task.progress
-                  }, () => {
-                    if (chrome.runtime.lastError) {
-                      // Harmless when no UI views are open
-                    }
-                  });
-                } catch (e) {}
+              if (isExtension && isExecutionOwner) {
+                tellWorker({ action: 'QUEUE_PROGRESS', taskId: task.id, chapterNumber: task.chapterNumber, progress: task.progress });
               }
             }
           },

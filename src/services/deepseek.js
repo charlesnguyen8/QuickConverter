@@ -12,6 +12,19 @@
   let _balanceCache = null;
   const BALANCE_CACHE_TTL_MS = 15000;
 
+  function resolvePlatform() {
+    if (typeof global !== 'undefined' && global.Platform) return global.Platform;
+    if (typeof module !== 'undefined' && typeof require === 'function') {
+      try { return require('./platform.js'); } catch (e) {}
+    }
+    return null;
+  }
+
+  function nativeArea(name) {
+    const platform = resolvePlatform();
+    return platform && platform.storage ? platform.storage.area(name) : null;
+  }
+
   function resolveAIService() {
     if (typeof global !== 'undefined' && global.AIService) return global.AIService;
     if (typeof window !== 'undefined' && window.AIService) return window.AIService;
@@ -638,40 +651,37 @@
     },
 
     /**
-     * Retrieves the API key and remember-preference from chrome.storage.session
-     * or chrome.storage.local (with fallback to window.sessionStorage/localStorage).
+     * Retrieves the API key and remember-preference from the platform's session or local
+     * storage area (with fallback to window.sessionStorage/localStorage).
      * @returns {Promise<{ apiKey: string, remembered: boolean }>}
      */
     async getApiKey() {
-      // 1. Try chrome.storage.session (RAM only, active browser session)
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
+      const session = nativeArea('session');
+      const local = nativeArea('local');
+
+      // 1. Try the platform's session area (RAM only, active browser session)
+      if (session) {
         try {
-          const res = await new Promise((resolve) => {
-            chrome.storage.session.get(['quickconverter_deepseek_key'], (r) => resolve(r || {}));
-          });
+          const res = await session.get(['quickconverter_deepseek_key']);
           if (res && res.quickconverter_deepseek_key) {
-            const localRes = await new Promise((resolve) => {
-              chrome.storage.local.get(['quickconverter_deepseek_remember'], (r) => resolve(r || {}));
-            });
+            const localRes = local ? await local.get(['quickconverter_deepseek_remember']) : {};
             return {
               apiKey: res.quickconverter_deepseek_key,
               remembered: !!(localRes && localRes.quickconverter_deepseek_remember)
             };
           }
         } catch (e) {
-          console.warn('[DeepSeekService] error reading chrome.storage.session:', e);
+          console.warn('[DeepSeekService] error reading the session storage area:', e);
         }
       }
 
-      // 2. Try chrome.storage.local if remembered on device
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      // 2. Try the platform's local area if remembered on device
+      if (local) {
         try {
-          const localRes = await new Promise((resolve) => {
-            chrome.storage.local.get(['quickconverter_deepseek_key', 'quickconverter_deepseek_remember'], (r) => resolve(r || {}));
-          });
+          const localRes = await local.get(['quickconverter_deepseek_key', 'quickconverter_deepseek_remember']);
           if (localRes && localRes.quickconverter_deepseek_remember && localRes.quickconverter_deepseek_key) {
-            if (chrome.storage.session) {
-              chrome.storage.session.set({ quickconverter_deepseek_key: localRes.quickconverter_deepseek_key });
+            if (session) {
+              session.set({ quickconverter_deepseek_key: localRes.quickconverter_deepseek_key });
             }
             return {
               apiKey: localRes.quickconverter_deepseek_key,
@@ -679,7 +689,7 @@
             };
           }
         } catch (e) {
-          console.warn('[DeepSeekService] error reading chrome.storage.local:', e);
+          console.warn('[DeepSeekService] error reading the local storage area:', e);
         }
       }
 
@@ -714,26 +724,23 @@
         return this.clearApiKey();
       }
 
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
-        await new Promise((resolve) => {
-          chrome.storage.session.set({ quickconverter_deepseek_key: cleanKey }, () => resolve());
-        });
+      const session = nativeArea('session');
+      const local = nativeArea('local');
+
+      if (session) {
+        await session.set({ quickconverter_deepseek_key: cleanKey });
       } else if (typeof sessionStorage !== 'undefined') {
         sessionStorage.setItem('quickconverter_deepseek_key', cleanKey);
       }
 
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      if (local) {
         if (rememberOnDevice) {
-          await new Promise((resolve) => {
-            chrome.storage.local.set({
-              quickconverter_deepseek_key: cleanKey,
-              quickconverter_deepseek_remember: true
-            }, () => resolve());
+          await local.set({
+            quickconverter_deepseek_key: cleanKey,
+            quickconverter_deepseek_remember: true
           });
         } else {
-          await new Promise((resolve) => {
-            chrome.storage.local.remove(['quickconverter_deepseek_key', 'quickconverter_deepseek_remember'], () => resolve());
-          });
+          await local.remove(['quickconverter_deepseek_key', 'quickconverter_deepseek_remember']);
         }
       } else if (typeof localStorage !== 'undefined') {
         if (rememberOnDevice) {
@@ -750,13 +757,13 @@
      * Clears the API key completely from session and local storage.
      */
     async clearApiKey() {
-      if (typeof chrome !== 'undefined' && chrome.storage) {
-        if (chrome.storage.session) {
-          await new Promise((resolve) => chrome.storage.session.remove(['quickconverter_deepseek_key', 'quickconverter_deepseek_balance_cache'], () => resolve()));
-        }
-        if (chrome.storage.local) {
-          await new Promise((resolve) => chrome.storage.local.remove(['quickconverter_deepseek_key', 'quickconverter_deepseek_remember'], () => resolve()));
-        }
+      const session = nativeArea('session');
+      const local = nativeArea('local');
+      if (session) {
+        await session.remove(['quickconverter_deepseek_key', 'quickconverter_deepseek_balance_cache']);
+      }
+      if (local) {
+        await local.remove(['quickconverter_deepseek_key', 'quickconverter_deepseek_remember']);
       }
       _balanceCache = null;
       if (typeof sessionStorage !== 'undefined') {

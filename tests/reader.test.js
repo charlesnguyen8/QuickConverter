@@ -77,6 +77,7 @@ const mockDatabase = {
   };
 
 vm.createContext(testEnv);
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'src', 'services', 'platform.js'), 'utf8'), testEnv);
 vm.runInContext(storageCode, testEnv);
 const StorageService = testEnv.StorageService || testEnv.window.StorageService;
 

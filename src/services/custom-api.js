@@ -8,6 +8,19 @@
   const INACTIVITY_TIMEOUT_MS = 60000; // 60s idle reset on streaming
   const DEFAULT_MODEL = 'deepseek-chat';
 
+  function resolvePlatform() {
+    if (typeof global !== 'undefined' && global.Platform) return global.Platform;
+    if (typeof module !== 'undefined' && typeof require === 'function') {
+      try { return require('./platform.js'); } catch (e) {}
+    }
+    return null;
+  }
+
+  function nativeArea(name) {
+    const platform = resolvePlatform();
+    return platform && platform.storage ? platform.storage.area(name) : null;
+  }
+
   const CustomApiService = {
     DEFAULT_BASE_URL,
     DEFAULT_KEY,
@@ -34,14 +47,10 @@
       let customUrl = DEFAULT_BASE_URL;
       let customApiKey = '';
 
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      const local = nativeArea('local');
+      if (local) {
         try {
-          const r = await new Promise((resolve) => {
-            chrome.storage.local.get(
-              ['quickconverter_ai_custom_url', 'quickconverter_ai_bridge_url', 'quickconverter_custom_api_key'],
-              (res) => resolve(res || {})
-            );
-          });
+          const r = await local.get(['quickconverter_ai_custom_url', 'quickconverter_ai_bridge_url', 'quickconverter_custom_api_key']);
           if (r.quickconverter_ai_custom_url) customUrl = r.quickconverter_ai_custom_url;
           else if (r.quickconverter_ai_bridge_url) customUrl = r.quickconverter_ai_bridge_url;
           if (r.quickconverter_custom_api_key) customApiKey = r.quickconverter_custom_api_key;
@@ -92,8 +101,9 @@
         }
       }
 
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local && Object.keys(updates).length > 0) {
-        await new Promise((resolve) => chrome.storage.local.set(updates, () => resolve()));
+      const local = nativeArea('local');
+      if (local && Object.keys(updates).length > 0) {
+        await local.set(updates);
       }
 
       return this.getConfig();

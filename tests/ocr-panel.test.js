@@ -93,6 +93,7 @@ function makeStorageEnv() {
   vm.runInContext(read('src', 'services', 'name-matcher.js'), env);
   vm.runInContext(read('src', 'services', 'longest-matcher.js'), env);
   vm.runInContext(read('src', 'services', 'text-processors.js'), env);
+  vm.runInContext(read('src', 'services', 'platform.js'), env);
   vm.runInContext(read('src', 'services', 'storage.js'), env);
   const S = env.StorageService || env.window.StorageService;
   return { env, S, stores, aiCalls };
@@ -560,7 +561,13 @@ const TRANSLATION = { enabled: true, apiKey: 'sk-local', prompt: 'Translate to E
     env.open = (url, target) => opened.push([url, target]);
     env.chrome = { runtime: { lastError: undefined, sendMessage: (msg, cb) => cb({ ok: false, error: 'no' }) } };
     assert.strictEqual(S.openChapterInBackground(PAGE_URL), true);
+    await new Promise((r) => setTimeout(r, 0));
     assert.deepStrictEqual(opened, [[PAGE_URL, '_blank']]);
+    env.chrome = { runtime: { get lastError() { return { message: 'Receiving end does not exist.' }; }, sendMessage: (msg, cb) => cb(undefined) } };
+    opened.length = 0;
+    S.openChapterInBackground(PAGE_URL);
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepStrictEqual(opened, [[PAGE_URL, '_blank']], 'also when no background worker answers');
   });
 
   await test('saveImageChapter calls onSaved once, only after the chapter is stored', async () => {

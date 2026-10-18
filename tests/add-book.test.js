@@ -91,6 +91,7 @@ testEnv.globalThis = testEnv;
 vm.createContext(testEnv);
 vm.runInContext(wetriedtlsCode, testEnv);
 vm.runInContext(registryCode, testEnv);
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'src', 'services', 'platform.js'), 'utf8'), testEnv);
 vm.runInContext(storageCode, testEnv);
 
 const WetriedtlsProvider = testEnv.WetriedtlsProvider;

@@ -10,6 +10,19 @@
   const OFFICIAL_BASE_URL = 'https://api.deepseek.com';
   const CUSTOM_DEFAULT_URL = 'http://127.0.0.1:8000/v1';
 
+  function resolvePlatform() {
+    if (typeof global !== 'undefined' && global.Platform) return global.Platform;
+    if (typeof module !== 'undefined' && typeof require === 'function') {
+      try { return require('./platform.js'); } catch (e) {}
+    }
+    return null;
+  }
+
+  function nativeArea(name) {
+    const platform = resolvePlatform();
+    return platform && platform.storage ? platform.storage.area(name) : null;
+  }
+
   function resolveDeepSeek() {
     if (typeof global !== 'undefined' && global.DeepSeekService) return global.DeepSeekService;
     if (typeof window !== 'undefined' && window.DeepSeekService) return window.DeepSeekService;
@@ -44,11 +57,10 @@
       const customClient = resolveCustomApi();
       const customCfg = customClient ? await customClient.getConfig() : { customUrl: CUSTOM_DEFAULT_URL, customApiKey: '', isLocal: true };
 
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      const local = nativeArea('local');
+      if (local) {
         try {
-          const r = await new Promise((resolve) => {
-            chrome.storage.local.get(['quickconverter_ai_provider'], (res) => resolve(res || {}));
-          });
+          const r = await local.get(['quickconverter_ai_provider']);
           if (r.quickconverter_ai_provider) provider = r.quickconverter_ai_provider;
         } catch (e) {}
       }
@@ -96,8 +108,9 @@
         }
       }
 
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local && Object.keys(updates).length > 0) {
-        await new Promise((resolve) => chrome.storage.local.set(updates, () => resolve()));
+      const local = nativeArea('local');
+      if (local && Object.keys(updates).length > 0) {
+        await local.set(updates);
       }
 
       const customClient = resolveCustomApi();
