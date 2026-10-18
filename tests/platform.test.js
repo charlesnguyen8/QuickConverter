@@ -171,6 +171,46 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   assert.strictEqual(late.Platform.runtime.isExtension(), true);
   console.log('✓ Platform detects chrome per call');
 
+  // Google sign-in in the Android app goes through the app's native GoogleAuth plugin.
+  const nativeCalls = [];
+  const capacitor = {
+    PluginHeaders: [{ name: 'GoogleAuth', methods: [] }],
+    nativePromise: async (plugin, method, options) => {
+      nativeCalls.push(JSON.parse(JSON.stringify([plugin, method, options])));
+      if (method === 'getAccessToken') {
+        if (!options.interactive) throw new Error('Not signed in to Google');
+        return { accessToken: 'app-tok' };
+      }
+      return {};
+    }
+  };
+  const nativeEnv = { console, setTimeout, clearTimeout, Capacitor: capacitor };
+  nativeEnv.globalThis = nativeEnv;
+  vm.createContext(nativeEnv);
+  vm.runInContext(platformCode, nativeEnv);
+  const appIdentity = nativeEnv.Platform.identity;
+  assert.ok(appIdentity, 'the app has Google sign-in when its GoogleAuth plugin is present');
+  assert.strictEqual(await appIdentity.getAuthToken({ interactive: true, scopes: ['drive.appdata'] }), 'app-tok');
+  await assert.rejects(() => appIdentity.getAuthToken({ interactive: false, scopes: ['drive.appdata'] }), /Not signed in/);
+  await appIdentity.removeCachedAuthToken('app-tok');
+  await appIdentity.clearAllCachedAuthTokens();
+  assert.deepStrictEqual(nativeCalls, [
+    ['GoogleAuth', 'getAccessToken', { interactive: true, scopes: ['drive.appdata'] }],
+    ['GoogleAuth', 'getAccessToken', { interactive: false, scopes: ['drive.appdata'] }],
+    ['GoogleAuth', 'clearToken', { token: 'app-tok' }],
+    ['GoogleAuth', 'signOut', {}]
+  ]);
+  capacitor.nativePromise = async () => ({});
+  await assert.rejects(() => appIdentity.getAuthToken({ interactive: true, scopes: ['s'] }), /No Google auth token/);
+  const noPlugin = { console, setTimeout, clearTimeout, Capacitor: { PluginHeaders: [], nativePromise: async () => ({}) } };
+  noPlugin.globalThis = noPlugin;
+  vm.createContext(noPlugin);
+  vm.runInContext(platformCode, noPlugin);
+  assert.strictEqual(noPlugin.Platform.identity, null, 'no plugin, no sign-in');
+  nativeEnv.chrome = fakeChrome().chrome;
+  assert.notStrictEqual(nativeEnv.Platform.identity, appIdentity, 'the extension keeps chrome.identity');
+  console.log('✓ App mode: identity goes through the native GoogleAuth plugin');
+
   // Persistent storage: the app asks Android not to evict its library; the extension already has unlimitedStorage.
   const persistCalls = [];
   const appEnv = { console, setTimeout, clearTimeout, navigator: { storage: { persist: async () => { persistCalls.push('persist'); return true; } } } };

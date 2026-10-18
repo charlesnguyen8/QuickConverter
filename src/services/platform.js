@@ -285,6 +285,27 @@
     }
   };
 
+  // The Android app's own GoogleAuth plugin (android/app/.../GoogleAuthPlugin.java).
+  function nativePlugin(name) {
+    const cap = global.Capacitor;
+    if (!cap || typeof cap.nativePromise !== 'function' || !Array.isArray(cap.PluginHeaders)) return null;
+    return cap.PluginHeaders.some((header) => header && header.name === name) ? cap : null;
+  }
+
+  const appIdentity = {
+    async getAuthToken({ interactive = false, scopes = [] } = {}) {
+      const result = await nativePlugin('GoogleAuth').nativePromise('GoogleAuth', 'getAccessToken', { interactive: !!interactive, scopes });
+      if (!result || !result.accessToken) throw new Error('No Google auth token returned');
+      return result.accessToken;
+    },
+    async removeCachedAuthToken(token) {
+      await nativePlugin('GoogleAuth').nativePromise('GoogleAuth', 'clearToken', { token });
+    },
+    async clearAllCachedAuthTokens() {
+      await nativePlugin('GoogleAuth').nativePromise('GoogleAuth', 'signOut', {});
+    }
+  };
+
   // --- Runtime -------------------------------------------------------------------------
 
   const runtime = {
@@ -349,7 +370,8 @@
     },
     get identity() {
       const c = chromeApi();
-      return c && c.identity && typeof c.identity.getAuthToken === 'function' ? chromeIdentity : null;
+      if (c && c.identity && typeof c.identity.getAuthToken === 'function') return chromeIdentity;
+      return nativePlugin('GoogleAuth') ? appIdentity : null;
     },
     storage,
     messaging,

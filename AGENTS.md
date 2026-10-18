@@ -29,6 +29,10 @@ run on Java 25, which Android Studio bundles; this machine uses `C:\Program File
 The APK lands in `android/app/build/outputs/apk/debug/app-debug.apk`. The owner installs and tests
 it on their phone; never connect to the phone (adb, remote WebView debugging) yourself.
 `capacitor.config.json` turns on CapacitorHttp/CapacitorCookies (native HTTP, no CORS).
+Drive sync in the app uses the app's own `GoogleAuth` plugin (`android/app/src/main/java/com/quickconverter/app/GoogleAuthPlugin.java`,
+Google's AuthorizationClient), reached through `Platform.identity`. It needs an "Android" OAuth
+client in the same Google Cloud project as the extension (package `com.quickconverter.app` + the
+SHA-1 of the signing key).
 
 **CSS gotcha:** Tailwind is compiled and committed. After editing any markup/JS that
 introduces new utility classes, run `npm run build:css` (or the `watch` script). Missing
