@@ -192,10 +192,24 @@ const NkwwlkjProvider = (() => {
     return `${ORIGIN}/signup/login?redirect=${encodeURIComponent(redirect || `${ORIGIN}/`)}`;
   }
 
-  async function fetchBookHtml(slug, seriesUrl) {
-    const resp = await fetch(seriesUrl || bookUrl(slug), { credentials: 'omit' });
+  function nativeHttp() {
+    const platform = typeof Platform !== 'undefined' ? Platform : null;
+    return platform && platform.http ? platform.http : null;
+  }
+
+  async function fetchPageHtml(url, init) {
+    const http = nativeHttp();
+    if (http) {
+      const reply = await http.getText(url);
+      return reply.ok ? reply.text : null;
+    }
+    const resp = await fetch(url, init);
     if (!resp.ok) return null;
     return resp.text();
+  }
+
+  async function fetchBookHtml(slug, seriesUrl) {
+    return fetchPageHtml(seriesUrl || bookUrl(slug), { credentials: 'omit' });
   }
 
   return {
@@ -327,9 +341,8 @@ const NkwwlkjProvider = (() => {
 
     async fetchLoginState(novel) {
       try {
-        const resp = await fetch(accountPageUrl(novel), { credentials: 'include', cache: 'no-store' });
-        if (!resp.ok) return null;
-        const html = await resp.text();
+        const html = await fetchPageHtml(accountPageUrl(novel), { credentials: 'include', cache: 'no-store' });
+        if (html === null) return null;
         const state = parseLoginState(html);
         const balance = state ? parseAccountBalance(html) : null;
         return balance ? { ...state, balance } : state;

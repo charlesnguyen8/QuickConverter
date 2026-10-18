@@ -329,13 +329,21 @@
     }
   };
 
+  // Sites send any Android user agent to their mobile pages (nkwwlkj -> m.cddaoyue.cn), which the
+  // providers do not read, so the app's site requests and SiteBrowser present as desktop Chrome.
+  function desktopUserAgent() {
+    const nav = global.navigator;
+    const found = nav && typeof nav.userAgent === 'string' ? nav.userAgent.match(/Chrome\/([\d.]+)/) : null;
+    return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${found ? found[1] : '130.0.0.0'} Safari/537.36`;
+  }
+
   const appHttp = {
     // A native GET (Capacitor's CapacitorHttp), for headers fetch() may not set such as Referer.
     async getText(url, { headers = {} } = {}) {
       const reply = await nativePlugin('CapacitorHttp').nativePromise('CapacitorHttp', 'request', {
         url,
         method: 'GET',
-        headers,
+        headers: { 'User-Agent': desktopUserAgent(), ...headers },
         responseType: 'text'
       });
       const status = Number(reply && reply.status) || 0;
@@ -350,7 +358,7 @@
   // when the user must log in or pass a check.
   const appSiteBrowser = {
     open(url, { script = '', visible = false } = {}) {
-      return nativePlugin('SiteBrowser').nativePromise('SiteBrowser', 'open', { url, script, visible: !!visible });
+      return nativePlugin('SiteBrowser').nativePromise('SiteBrowser', 'open', { url, script, visible: !!visible, userAgent: desktopUserAgent() });
     },
     show() {
       return nativePlugin('SiteBrowser').nativePromise('SiteBrowser', 'show', {});
@@ -474,6 +482,7 @@
       if (isExtension()) return null;
       return nativePlugin('SiteBrowser') ? appSiteBrowser : null;
     },
+    desktopUserAgent,
     storage,
     messaging,
     alarms,

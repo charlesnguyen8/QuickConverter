@@ -212,6 +212,10 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   console.log('✓ App mode: identity goes through the native GoogleAuth plugin');
 
   // Native GET with headers fetch() may not set (Referer) goes through CapacitorHttp in the app.
+  // Sites redirect any Android user agent to their mobile pages (nkwwlkj -> m.cddaoyue.cn), which the
+  // providers do not read, so the app asks as desktop Chrome with the WebView's Chrome version.
+  const PHONE_UA = 'Mozilla/5.0 (Linux; Android 14; SM-S911B Build/UP1A.231005.007; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.6723.102 Mobile Safari/537.36';
+  const DESKTOP_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.102 Safari/537.36';
   const httpCalls = [];
   const httpReplies = [
     { status: 200, data: '{"code":1}', headers: {} },
@@ -220,6 +224,7 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   ];
   const httpEnv = {
     console,
+    navigator: { userAgent: PHONE_UA },
     setTimeout,
     clearTimeout,
     Capacitor: {
@@ -237,7 +242,8 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   assert.ok(http, 'the app has native HTTP');
   const listUrl = 'https://sangtacviet.com/index.php?ngmar=chapterlist&h=uukanshu&bookid=1&sajax=getchapterlist';
   assert.deepStrictEqual(JSON.parse(JSON.stringify(await http.getText(listUrl, { headers: { Referer: 'https://sangtacviet.com/' } }))), { ok: true, status: 200, text: '{"code":1}' });
-  assert.deepStrictEqual(httpCalls[0], ['CapacitorHttp', 'request', { url: listUrl, method: 'GET', headers: { Referer: 'https://sangtacviet.com/' }, responseType: 'text' }]);
+  assert.deepStrictEqual(httpCalls[0], ['CapacitorHttp', 'request', { url: listUrl, method: 'GET', headers: { 'User-Agent': DESKTOP_UA, Referer: 'https://sangtacviet.com/' }, responseType: 'text' }]);
+  assert.strictEqual(httpEnv.Platform.desktopUserAgent(), DESKTOP_UA, "desktop Chrome with the WebView's version");
   assert.strictEqual((await http.getText(listUrl)).text, '{"code":1}', 'a JSON reply parsed natively comes back as its text');
   assert.strictEqual((await http.getText(listUrl)).ok, false, 'an error status is not ok');
   const noHttp = { console, setTimeout, clearTimeout, Capacitor: { PluginHeaders: [], nativePromise: async () => ({}) } };
@@ -254,6 +260,7 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   const siteListeners = {};
   const siteEnv = {
     console,
+    navigator: { userAgent: PHONE_UA },
     setTimeout,
     clearTimeout,
     Capacitor: {
@@ -286,7 +293,7 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   stopSite();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(seen)), [{ type: 'chapter', rawText: 'x' }, { type: 'closed' }], 'messages arrive parsed; garbage is dropped');
   assert.deepStrictEqual(siteCalls, [
-    ['SiteBrowser', 'open', { url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/1', script: 'S', visible: false }],
+    ['SiteBrowser', 'open', { url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/1', script: 'S', visible: false, userAgent: DESKTOP_UA }],
     ['SiteBrowser', 'show', {}],
     ['SiteBrowser', 'hide', {}],
     ['SiteBrowser', 'close', {}],

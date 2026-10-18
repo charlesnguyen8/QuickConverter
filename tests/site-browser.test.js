@@ -358,6 +358,7 @@ const CHAPTER_MSG = {
     }
     assert(/addJavascriptInterface\(new \w+\(\), "QCSiteBrowser"\)/.test(plugin),'exposes the QCSiteBrowser bridge to the page script');
     assert(/setAcceptThirdPartyCookies/.test(plugin), 'shares cookies with native HTTP');
+    assert(/call\.getString\("userAgent"/.test(plugin) && /setUserAgentString\(userAgent\)/.test(plugin), 'loads pages with the user agent the app asks for (desktop, like native HTTP)');
   });
 
   console.log(`--- Site Browser Test Suite: ${passed}/${passed + failed} passed ---`);

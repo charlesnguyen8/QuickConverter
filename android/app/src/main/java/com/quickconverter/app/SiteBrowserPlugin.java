@@ -55,8 +55,10 @@ public class SiteBrowserPlugin extends Plugin {
         }
         String nextScript = call.getString("script", "");
         boolean visible = Boolean.TRUE.equals(call.getBoolean("visible", false));
+        String userAgent = call.getString("userAgent", "");
         getActivity().runOnUiThread(() -> {
             ensureViews();
+            if (userAgent != null && !userAgent.isEmpty()) site.getSettings().setUserAgentString(userAgent);
             script = nextScript == null ? "" : nextScript;
             titleView.setText(Uri.parse(url).getHost());
             site.loadUrl(url);

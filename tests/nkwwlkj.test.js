@@ -520,6 +520,33 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     assert.strictEqual(calls[0][1].cache, 'no-store', 'never answers from cache');
   });
 
+  await test('in the app, book pages and the login check are native desktop requests (a phone user agent is sent to the mobile site)', async () => {
+    const fetched = [];
+    const native = [];
+    const pages = { [BOOK_URL]: DETAIL_HTML };
+    const appEnv = loadEnv({
+      fetch: async (url) => { fetched.push(url); throw new Error('fetch would send the phone user agent'); },
+      Platform: {
+        http: {
+          async getText(url, init) {
+            native.push([url, init]);
+            return { ok: true, status: 200, text: pages[url] || LOGGED_IN_HEAD };
+          }
+        }
+      }
+    });
+    const AP = appEnv.NkwwlkjProvider;
+    assert.strictEqual((await AP.fetchSeriesMetadata('100181750')).title, '门户');
+    assert.strictEqual((await AP.fetchChapterList('100181750')).length, 5);
+    assert.deepStrictEqual(plain(await AP.fetchLoginState()), { loggedIn: true, userId: '327475', userName: '守玄' });
+    assert.deepStrictEqual(fetched, [], 'never through fetch()');
+    assert.deepStrictEqual(native.map(([url]) => new URL(url).hostname), ['www.nkwwlkj.cn', 'www.nkwwlkj.cn', 'www.nkwwlkj.cn']);
+
+    const down = loadEnv({ Platform: { http: { async getText() { return { ok: false, status: 502, text: '' }; } } } });
+    assert.strictEqual(await down.NkwwlkjProvider.fetchLoginState(), null);
+    assert.deepStrictEqual(plain(await down.NkwwlkjProvider.fetchChapterList('100181750')), []);
+  });
+
   await test('fetchLoginState returns null when the site cannot be reached', async () => {
     const down = loadEnv({ fetch: async () => { throw new Error('offline'); } });
     assert.strictEqual(await down.NkwwlkjProvider.fetchLoginState(), null);
