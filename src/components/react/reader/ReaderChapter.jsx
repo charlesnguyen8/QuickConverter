@@ -18,10 +18,14 @@ import {
 import ReaderPhraseText from './ReaderPhraseText.jsx';
 import ReaderPhrasePopover from './ReaderPhrasePopover.jsx';
 import { useReaderSearch } from './readerLocation.js';
+import { recordChapterOpened, restoreParagraph, topParagraphIndex } from '../shared/lastRead.jsx';
+
+const HEADER_OFFSET = 80;
+const SAVE_POSITION_DELAY_MS = 800;
 
 function getParams(search) {
   const params = new URLSearchParams(search || '');
-  return { id: params.get('id'), ch: parseInt(params.get('ch'), 10) || 0 };
+  return { id: params.get('id'), ch: parseInt(params.get('ch'), 10) || 0, p: Math.max(0, parseInt(params.get('p'), 10) || 0) };
 }
 
 function resolveFontFamilyCss(fontKey) {
@@ -284,6 +288,51 @@ export default function ReaderChapter() {
     .split('\n\n')
     .map((p) => p.trim())
     .filter((p) => p.length > 0 && p !== '&nbsp;'), [text]);
+
+  const restoredKey = useRef(null);
+  const savedParagraph = useRef(-1);
+  const chapterKey = `${params.id}:${params.ch}`;
+  const contentReady = !!chapter && paragraphs.length > 0 && (!conversionMode || !!detailed);
+
+  useEffect(() => {
+    if (!contentReady || restoredKey.current === chapterKey) return;
+    restoredKey.current = chapterKey;
+    const lastRead = novel && novel.lastRead && Number(novel.lastRead.chapterNumber) === params.ch ? novel.lastRead : null;
+    const savedCount = lastRead && Number(lastRead.paragraph) === params.p ? lastRead.count : 0;
+    const target = params.p > 0 ? restoreParagraph({ paragraph: params.p, count: savedCount }, paragraphs.length) : 0;
+    savedParagraph.current = target;
+    const el = target > 0 ? paragraphRefs.current[target] : null;
+    if (el && typeof window !== 'undefined') {
+      window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - HEADER_OFFSET });
+    }
+    recordChapterOpened(typeof window !== 'undefined' ? window.StorageService : null, params.id, chapter, params.ch, target, paragraphs.length);
+  }, [contentReady, chapterKey, novel, chapter, params.id, params.ch, params.p, paragraphs.length]);
+
+  useEffect(() => {
+    if (!contentReady || restoredKey.current !== chapterKey || typeof window === 'undefined') return undefined;
+    const storage = window.StorageService;
+    if (!storage || typeof storage.setLastRead !== 'function') return undefined;
+    let timer = null;
+    const save = () => {
+      timer = null;
+      const rects = paragraphRefs.current.slice(0, paragraphs.length)
+        .map((el) => (el ? el.getBoundingClientRect() : { top: Infinity, bottom: Infinity }));
+      const index = topParagraphIndex(rects, HEADER_OFFSET);
+      if (index === savedParagraph.current) return;
+      savedParagraph.current = index;
+      storage.setLastRead(params.id, { chapterNumber: params.ch, paragraph: index, count: paragraphs.length, title: chapter.title || '' })
+        .catch((e) => console.warn('[Reader] Could not save the reading position:', e));
+    };
+    const onScroll = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(save, SAVE_POSITION_DELAY_MS);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (timer) clearTimeout(timer);
+    };
+  }, [contentReady, chapterKey, chapter, params.id, params.ch, paragraphs.length]);
 
   const charCount = text.length;
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;

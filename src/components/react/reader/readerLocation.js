@@ -6,8 +6,9 @@ function defaultWindow() {
   return typeof window !== 'undefined' ? window : null;
 }
 
-export function readerChapterHref(id, ch) {
-  return `reader.html?id=${encodeURIComponent(id)}&ch=${encodeURIComponent(ch)}`;
+export function readerChapterHref(id, ch, paragraph) {
+  const href = `reader.html?id=${encodeURIComponent(id)}&ch=${encodeURIComponent(ch)}`;
+  return paragraph > 0 ? `${href}&p=${encodeURIComponent(paragraph)}` : href;
 }
 
 function currentSearch(win) {

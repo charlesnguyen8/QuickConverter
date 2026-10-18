@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProgressRing } from '../shared/QueueDock.jsx';
 import ManualChapterAction, { ChapterAccessBadge, canBulkDownload } from '../shared/ManualChapterAction.jsx';
+import { LastReadBadge } from '../shared/lastRead.jsx';
 import ReaderDeepseekCard from './ReaderDeepseekCard.jsx';
 import { navigateToChapter, useReaderSearch } from './readerLocation.js';
 
@@ -121,6 +122,7 @@ export function ReaderChapterRow({ novel, chapter, chNum, downloadedChapter, que
         <span className="flex items-center gap-1.5">
           <span className="text-[10px] font-mono text-slate-500">Ch. {chNum}</span>
           <ChapterAccessBadge chapter={chapter} compact />
+          <LastReadBadge novel={novel} chapterNumber={chNum} compact />
         </span>
       </div>
       <div className="flex items-center gap-1 flex-shrink-0 pt-0.5">{action}</div>

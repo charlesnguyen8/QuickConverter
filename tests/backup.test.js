@@ -163,6 +163,20 @@ const StorageService = testEnv.StorageService || testEnv.window.StorageService;
   assert.strictEqual((await StorageService.getNameList('novel-1', 'soft'))[0].translation, 'Trưởng lão', 'soft glossary restored');
   console.log('✓ exportAll/importAll round-trips locked and soft glossaries');
 
+  await StorageService.setLastRead('novel-1', { chapterNumber: 2, paragraph: 7, count: 30, title: 'Chapter two' });
+  const withProgress = await StorageService.exportAll();
+  const progressNovel = withProgress.novels.find((n) => n.id === 'novel-1');
+  assert(progressNovel.lastRead && progressNovel.lastRead.chapterNumber === 2 && progressNovel.lastRead.paragraph === 7, 'export carries the last read chapter and paragraph');
+  await StorageService.importAll({ format: 'quickconverter-backup', version: 1, novels: [], chapters: [], preferences: {} }, { replace: true });
+  await StorageService.importAll(withProgress, { replace: true });
+  const restored = await StorageService.getNovelById('novel-1');
+  assert.deepStrictEqual(
+    { chapterNumber: restored.lastRead.chapterNumber, paragraph: restored.lastRead.paragraph, count: restored.lastRead.count },
+    { chapterNumber: 2, paragraph: 7, count: 30 },
+    'import (and so Drive sync) restores it'
+  );
+  console.log('✓ exportAll/importAll round-trips the last read position');
+
   console.log('🎉 Cloud Backup Export / Import Test Suite: ALL TESTS PASSED!');
 })().catch((err) => {
   console.error('✗ Backup test failed:', err.message);

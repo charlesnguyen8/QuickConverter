@@ -2,6 +2,7 @@ import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import PopupDeepseekCard from './PopupDeepseekCard.jsx';
 import ManualChapterAction, { ChapterAccessBadge, canBulkDownload } from '../shared/ManualChapterAction.jsx';
 import { coverSrc, showDefaultCover } from '../shared/novelCover.js';
+import { ContinueReadingButton, LastReadBadge } from '../shared/lastRead.jsx';
 import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
 
 const storage = () => (typeof window !== 'undefined' ? window.StorageService : null);
@@ -82,6 +83,7 @@ export const ChapterRow = memo(function ChapterRow({ novel, chapter, downloadedC
           {chapter.title || `Chapter ${chNum}`}
         </span>
         <ChapterAccessBadge chapter={chapter} compact />
+        <LastReadBadge novel={novel} chapterNumber={chNum} compact />
       </div>
 
       <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -318,6 +320,8 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
           </div>
         </div>
       ) : null}
+
+      <ContinueReadingButton novel={novel} id="popup-continue-btn" compact target="_blank" />
 
       <ProviderLoginBanner novel={novel} compact />
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { coverSrc, showDefaultCover } from '../shared/novelCover.js';
+import { ContinueReadingButton } from '../shared/lastRead.jsx';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -76,6 +77,9 @@ export default function NovelHero() {
           <h1 id="novel-title" className="text-2xl sm:text-3xl font-extrabold text-slate-100 leading-tight">
             {title}
           </h1>
+          <div className="mt-3">
+            <ContinueReadingButton novel={novel} id="novel-continue-btn" />
+          </div>
         </div>
 
         <div className="bg-slate-900/80 rounded-lg p-4 border border-slate-700/60 flex flex-col gap-2 mt-auto">

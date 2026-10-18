@@ -553,6 +553,64 @@ function test(name, fn) {
     assert(render(h(NovelHero)).includes('src="../icons/default-cover.png"'));
   });
 
+  const lastReadMod = await loadComponent('components/react/shared/lastRead.jsx');
+  const readNovel = { id: 'n 1', title: 'N', totalChapters: 40, lastRead: { chapterNumber: 12, paragraph: 4, count: 40, title: 'Chương 12: Tuyết', updatedAt: 1 } };
+  test('the Continue link opens the last read chapter at its paragraph', () => {
+    assert.strictEqual(lastReadMod.continueHref(readNovel), 'reader.html?id=n%201&ch=12&p=4');
+    assert.strictEqual(lastReadMod.continueHref({ ...readNovel, lastRead: { chapterNumber: 2 } }), 'reader.html?id=n%201&ch=2');
+    assert.strictEqual(lastReadMod.continueHref({ id: 'n1' }), null, 'nothing read yet');
+    assert.strictEqual(lastReadMod.lastReadLabel(readNovel), 'Ch. 12');
+    assert.strictEqual(lastReadMod.isLastRead(readNovel, 12), true);
+    assert.strictEqual(lastReadMod.isLastRead(readNovel, '12'), true);
+    assert.strictEqual(lastReadMod.isLastRead(readNovel, 11), false);
+    assert.strictEqual(lastReadMod.isLastRead(null, 12), false);
+  });
+
+  test('the reading position is the first paragraph still on screen below the header', () => {
+    const rects = [{ top: -900, bottom: -300 }, { top: -280, bottom: 40 }, { top: 60, bottom: 400 }, { top: 420, bottom: 800 }];
+    assert.strictEqual(lastReadMod.topParagraphIndex(rects, 64), 2, 'paragraph 1 ends under the header, so 2 is where you are');
+    assert.strictEqual(lastReadMod.topParagraphIndex(rects, 0), 1);
+    assert.strictEqual(lastReadMod.topParagraphIndex([], 64), 0);
+    assert.strictEqual(lastReadMod.topParagraphIndex([{ top: -900, bottom: -10 }], 64), 0, 'past the end keeps the last paragraph');
+  });
+
+  test('a saved position scales when the chapter now has a different number of paragraphs', () => {
+    assert.strictEqual(lastReadMod.restoreParagraph({ paragraph: 4, count: 40 }, 40), 4);
+    assert.strictEqual(lastReadMod.restoreParagraph({ paragraph: 20, count: 40 }, 20), 10, 'saved text vs converted text');
+    assert.strictEqual(lastReadMod.restoreParagraph({ paragraph: 50, count: 0 }, 10), 9, 'clamped to the last paragraph');
+    assert.strictEqual(lastReadMod.restoreParagraph({ paragraph: 3 }, 10), 3, 'no saved count: use the index');
+    assert.strictEqual(lastReadMod.restoreParagraph(null, 10), 0);
+    assert.strictEqual(lastReadMod.restoreParagraph({ paragraph: 3, count: 10 }, 0), 0);
+  });
+
+  test('opening a saved chapter in the reader records it as last read', async () => {
+    const calls = [];
+    const storage = { setLastRead: async (...args) => { calls.push(args); return {}; } };
+    await lastReadMod.recordChapterOpened(storage, 'n1', { chapterNumber: 7, title: 'Ch 7' }, 7, 3, 40);
+    assert.deepStrictEqual(calls, [['n1', { chapterNumber: 7, paragraph: 3, count: 40, title: 'Ch 7' }]]);
+    await lastReadMod.recordChapterOpened(storage, 'n1', null, 8, 0);
+    assert.strictEqual(calls.length, 1, 'a chapter that is not saved is not recorded');
+    await lastReadMod.recordChapterOpened(null, 'n1', { chapterNumber: 7 }, 7, 0);
+  });
+
+  test('ContinueReadingButton links to the last read chapter and hides when nothing was read', () => {
+    const { ContinueReadingButton } = lastReadMod;
+    const html = render(h(ContinueReadingButton, { novel: readNovel, id: 'novel-continue-btn' }));
+    assert(/<a[^>]*id="novel-continue-btn"[^>]*href="reader\.html\?id=n%201&amp;ch=12&amp;p=4"/.test(html), 'links to the chapter and paragraph');
+    assert(html.includes('Continue reading') && html.includes('Ch. 12') && html.includes('Chương 12: Tuyết'));
+    assert(/min-h-10/.test(html), 'touch-friendly');
+    assert.strictEqual(render(h(ContinueReadingButton, { novel: { id: 'n1' } })), '');
+    assert(/target="_blank"/.test(render(h(ContinueReadingButton, { novel: readNovel, target: '_blank' }))), 'the popup opens the reader in a tab');
+    assert(!/target=/.test(html), 'pages open the reader in place');
+  });
+
+  test('library cards show the last read chapter with a Continue link', () => {
+    const html = render(h(NovelCard, { novel: readNovel, stats: {} }));
+    assert(html.includes('Last read') && html.includes('Ch. 12'));
+    assert(/<a[^>]*data-continue-reading[^>]*href="reader\.html\?id=n%201&amp;ch=12&amp;p=4"/.test(html) || /<a[^>]*href="reader\.html\?id=n%201&amp;ch=12&amp;p=4"[^>]*data-continue-reading/.test(html), 'continue link');
+    assert(!render(h(NovelCard, { novel: { id: 'n2', title: 'M', totalChapters: 3 }, stats: {} })).includes('Last read'), 'nothing for an unread novel');
+  });
+
   const providerLoginMod = await loadComponent('components/react/shared/ProviderLogin.jsx');
   const { ProviderLoginStatus } = providerLoginMod;
   const ProviderLoginBanner = providerLoginMod.default;
@@ -662,6 +720,21 @@ function test(name, fn) {
     assert(paid.text.includes('Paid'), 'paid label');
     assert.strictEqual(render(h(ChapterAccessBadge, { chapter: manualChapter })), '', 'no badge when the site has no free/paid split');
     assert.strictEqual(render(h(ChapterAccessBadge, { chapter: null })), '');
+  });
+
+  test('every chapter list marks the last read chapter', () => {
+    const novelWithProgress = { ...rowNovel, lastRead: { chapterNumber: 3, paragraph: 0 } };
+    const rows = [
+      ['novel', (props) => render(h(NovelChapterRow, { novel: novelWithProgress, chNum: props.chapter.chapterNumber, onDelete() {}, ...props }))],
+      ['reader', (props) => render(h(ReaderChapterRow, { novel: novelWithProgress, chNum: props.chapter.chapterNumber, ...props }))],
+      ['popup', (props) => render(h(PopupChapterRow, { novel: novelWithProgress, onOpen() {}, onDelete() {}, onDownload() {}, ...props }))]
+    ];
+    for (const [name, renderRow] of rows) {
+      const last = renderRow({ chapter: manualChapter });
+      assert(/data-last-read="true"/.test(last) && last.includes('Last read'), `${name} row marks the last read chapter`);
+      const other = renderRow({ chapter: lockedChapter });
+      assert(!/data-last-read="true"/.test(other), `${name} row leaves other chapters alone`);
+    }
   });
 
   test('every chapter list shows whether each chapter is free or paid', () => {

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import AddBookButton from '../shared/AddBookButton.jsx';
 import { coverSrc, showDefaultCover } from '../shared/novelCover.js';
+import { continueHref, lastReadLabel } from '../shared/lastRead.jsx';
 
 function SettingsLink() {
   return (
@@ -25,6 +26,7 @@ export function NovelCard({ novel, stats }) {
   const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
   const formattedSize = stats.formattedSize || '0 B';
   const thumbnailSrc = coverSrc(novel.thumbnail);
+  const continueLink = continueHref(novel);
 
   return (
     <div
@@ -53,6 +55,18 @@ export function NovelCard({ novel, stats }) {
           <h3 className="font-bold text-sm text-slate-100 group-hover:text-indigo-300 transition line-clamp-2 leading-snug">
             {novel.title}
           </h3>
+          {continueLink ? (
+            <a
+              href={continueLink}
+              data-continue-reading="true"
+              onClick={(e) => e.stopPropagation()}
+              title={novel.lastRead.title ? `Continue: ${novel.lastRead.title}` : 'Continue reading'}
+              className="mt-2 inline-flex items-center gap-1.5 min-h-10 px-3 rounded-lg text-xs font-semibold text-indigo-200 bg-indigo-500/15 border border-indigo-500/30 hover:bg-indigo-500/25 transition max-w-full"
+            >
+              <span aria-hidden="true">▶</span>
+              <span className="truncate">Last read: {lastReadLabel(novel)}</span>
+            </a>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-700/50">

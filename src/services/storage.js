@@ -1430,6 +1430,37 @@ const StorageService = {
     }
   },
 
+  async setLastRead(novelId, { chapterNumber, paragraph = 0, count = 0, title = '' } = {}) {
+    const number = Number(chapterNumber);
+    if (!novelId || !Number.isFinite(number)) return null;
+    const whole = (value) => Math.max(0, Math.floor(Number(value) || 0));
+    const lastRead = {
+      chapterNumber: number,
+      paragraph: whole(paragraph),
+      count: whole(count),
+      title: String(title || ''),
+      updatedAt: Date.now()
+    };
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('novels', 'readwrite');
+      const store = tx.objectStore('novels');
+      const request = store.get(novelId);
+      request.onsuccess = () => {
+        const novel = request.result;
+        if (!novel) {
+          resolve(null);
+          return;
+        }
+        const updated = { ...novel, lastRead };
+        store.put(updated);
+        resolve(updated);
+      };
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
   async saveOpenedChapter({ slug, chapterNumber, title, url, rawText, domain } = {}) {
     const novel = await this.getNovelBySlug(slug);
     if (!novel) {

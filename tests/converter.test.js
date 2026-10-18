@@ -455,6 +455,8 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
   await test('readerChapterHref encodes the novel id and chapter', () => {
     assert.strictEqual(readerLocation.readerChapterHref('n 1&x', 3), 'reader.html?id=n%201%26x&ch=3');
     assert.strictEqual(readerLocation.readerChapterHref('n1', 2.5), 'reader.html?id=n1&ch=2.5');
+    assert.strictEqual(readerLocation.readerChapterHref('n1', 3, 7), 'reader.html?id=n1&ch=3&p=7', 'a paragraph to continue from');
+    assert.strictEqual(readerLocation.readerChapterHref('n1', 3, 0), 'reader.html?id=n1&ch=3', 'the top needs no paragraph');
   });
 
   await test('switching chapters updates the URL in place so loaded dictionaries survive', () => {

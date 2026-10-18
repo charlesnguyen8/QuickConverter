@@ -149,6 +149,29 @@ async function runTests() {
   assert.strictEqual(testEnv.chrome.storage.local.data['quickconverter_deepseek_model'], 'deepseek-chat');
   console.log('✓ StorageService preference methods (getPreference, setPreference) verified');
 
+  // Test 6: last read chapter and paragraph are kept on the novel
+  mockDbStore.novel_cultivation = { id: 'novel_cultivation', title: 'Cultivation', slug: 'cultivation' };
+  const before = Date.now();
+  const marked = await StorageService.setLastRead('novel_cultivation', { chapterNumber: 12, paragraph: 4, count: 40, title: 'Chapter 12: Snow' });
+  const lastRead = mockDbStore.novel_cultivation.lastRead;
+  assert(marked && lastRead, 'saved on the novel record');
+  assert.strictEqual(lastRead.chapterNumber, 12);
+  assert.strictEqual(lastRead.paragraph, 4);
+  assert.strictEqual(lastRead.count, 40);
+  assert.strictEqual(lastRead.title, 'Chapter 12: Snow');
+  assert(lastRead.updatedAt >= before, 'timestamped');
+  assert.strictEqual(mockDbStore.novel_cultivation.title, 'Cultivation', 'the rest of the novel is untouched');
+
+  await StorageService.setLastRead('novel_cultivation', { chapterNumber: 3, paragraph: -2 });
+  assert.strictEqual(mockDbStore.novel_cultivation.lastRead.chapterNumber, 3, 'an earlier chapter opened later becomes the last read');
+  assert.strictEqual(mockDbStore.novel_cultivation.lastRead.paragraph, 0, 'paragraph is never negative');
+  assert.strictEqual(mockDbStore.novel_cultivation.lastRead.count, 0);
+
+  assert.strictEqual(await StorageService.setLastRead('novel_cultivation', { chapterNumber: Number.NaN }), null, 'needs a chapter number');
+  assert.strictEqual(await StorageService.setLastRead('', { chapterNumber: 2 }), null, 'needs a novel');
+  assert.strictEqual(mockDbStore.novel_cultivation.lastRead.chapterNumber, 3, 'invalid calls change nothing');
+  console.log('✓ setLastRead keeps the last opened chapter and paragraph on the novel');
+
   console.log('🎉 Reader & Storage Flow Test Suite: ALL TESTS PASSED!\n');
 }
 
