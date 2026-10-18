@@ -56,7 +56,13 @@ wetriedtls, nkwwlkj and sangtacviet. Parent plan: `overall_plan.md` §3, §6 Pha
   `chapter` with `saveOpenedChapter` (syncing the catalog once for a new chapter), shows the page for
   anything else or after 45 s, one page at a time. `openChapterInBackground` uses it in the app, and
   the login banner's Log in opens the site in it and re-checks the login when closed.
-- **Not yet:** nkwwlkj image (paid) chapters only show the page; OCR in the app is the next piece.
+- v1.1.4: nkwwlkj sends any Android user agent to its mobile site (m.cddaoyue.cn), so the app's
+  native requests and the SiteBrowser present as desktop Chrome (`Platform.desktopUserAgent`).
+- Image (paid) chapters: the page script captures the image (`captureChapterImage`, retried until
+  the site has drawn it) and posts it as base64; SiteSave closes the site, runs OCR in the app page
+  (`window.QCOcr`, installed by the novel and reader entries, lazy-loads `ocrEngine.js`) and saves
+  with `saveRecognizedChapter` (untranslated, marked paid). A bottom message reports reading /
+  saving / saved / errors. OCR loads from the app build in a desktop browser; phone speed unmeasured.
   "Save next N" does not exist in the extension either; it stays a later idea.
 
 **Done when:** for all three sites the owner can add a book, sync its catalog and save chapters on

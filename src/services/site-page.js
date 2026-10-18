@@ -18,6 +18,22 @@
     return info;
   }
 
+  function toBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return global.btoa(binary);
+  }
+
+  async function captureImage(provider, doc, win) {
+    if (typeof provider.captureChapterImage !== 'function') return null;
+    const image = await provider.captureChapterImage(doc, win);
+    if (!image || !image.bytes) return null;
+    return { base64: toBase64(image.bytes), mimeType: image.mimeType, width: image.width, height: image.height };
+  }
+
   async function run({ window: win, document: doc, post, waitMs, intervalMs = 500 } = {}) {
     const href = win && win.location ? win.location.href : '';
     const registry = global.ProviderRegistry;
@@ -44,11 +60,24 @@
       domain: provider.domains ? provider.domains[0] : null
     });
 
+    let captureError = null;
     for (;;) {
       if (!info.slug) info = chapterTarget(provider, href, doc) || info;
       if (typeof provider.isImageChapter === 'function' && provider.isImageChapter(doc)) {
-        post({ type: 'image', ...base() });
-        return;
+        const image = await captureImage(provider, doc, win).catch((err) => {
+          captureError = err && err.message ? err.message : String(err);
+          return null;
+        });
+        if (image) {
+          post({ type: 'image', ...base(), image });
+          return;
+        }
+        if (Date.now() - started >= limit) {
+          post({ type: 'image', ...base(), error: captureError || 'The chapter image was not found on this page.' });
+          return;
+        }
+        await wait(intervalMs);
+        continue;
       }
       const chapter = info.slug ? provider.extractChapterInfo(doc, info.chapterNumber) : null;
       if (chapter && chapter.rawText) {

@@ -55,6 +55,7 @@ function loadPage(href, html) {
     URLSearchParams,
     setTimeout,
     clearTimeout,
+    btoa,
     document
   };
   env.window = env;
@@ -70,6 +71,7 @@ function loadPage(href, html) {
 
 async function runPage(href, html, options = {}) {
   const env = loadPage(href, html);
+  if (options.before) options.before(env);
   const posted = [];
   const run = env.QCSitePage.run({ window: env, document: env.document, post: (m) => posted.push(plain(m)), waitMs: 60, intervalMs: 10, ...options });
   if (options.during) options.during(env);
@@ -110,12 +112,13 @@ function fakeStorage({ catalog = [{ chapterNumber: 1, slug: '100043460' }], save
       return { ...novel, chapterList: [...catalog, { chapterNumber: 2, slug: '100043461' }] };
     },
     async isChapterSaved(id, number) { return saved.includes(number); },
-    async saveOpenedChapter(data) { calls.push(['saveOpenedChapter', plain(data)]); return { success: true, novelId: 'novel-1' }; }
+    async saveOpenedChapter(data) { calls.push(['saveOpenedChapter', plain(data)]); return { success: true, novelId: 'novel-1' }; },
+    async saveRecognizedChapter(id, number, options) { calls.push(['saveRecognizedChapter', id, number, plain(options)]); return { id: `${id}-${number}` }; }
   };
 }
 
 function loadSiteSave() {
-  const env = { console: { log() {}, warn() {}, error() {} }, setTimeout, clearTimeout, URL };
+  const env = { console: { log() {}, warn() {}, error() {} }, setTimeout, clearTimeout, URL, atob };
   env.window = env;
   env.self = env;
   env.globalThis = env;
@@ -136,6 +139,14 @@ const CHAPTER_MSG = {
   novelTitle: '门户',
   rawText: 'First line of the chapter.\n\nSecond line.'
 };
+
+let finished = false;
+process.on('beforeExit', () => {
+  if (!finished) {
+    console.error('Site Browser suite stopped before its last test (a promise never settled)');
+    process.exitCode = 1;
+  }
+});
 
 (async () => {
   // --- The page script (runs inside the site page in the app's SiteBrowser) ---
@@ -179,6 +190,36 @@ const CHAPTER_MSG = {
     assert.deepStrictEqual(posted, [{ type: 'other', url: 'https://www.nkwwlkj.cn/signup/login', provider: 'nkwwlkj' }]);
     const unknown = await runPage('https://example.com/', '<html></html>');
     assert.deepStrictEqual(unknown, [{ type: 'other', url: 'https://example.com/' }]);
+  });
+
+  const IMAGE = { bytes: new Uint8Array([1, 2, 3]).buffer, mimeType: 'image/png', width: 939, height: 4200 };
+
+  await test('page script captures an image chapter and sends the picture to the app', async () => {
+    const posted = await runPage(NK_CHAPTER_URL, NK_IMAGE, {
+      before: (env) => { env.NkwwlkjProvider.captureChapterImage = async (doc, win) => (doc === env.document && win === env ? IMAGE : null); }
+    });
+    assert.strictEqual(posted.length, 1);
+    assert.strictEqual(posted[0].type, 'image');
+    assert.strictEqual(posted[0].chapterSlug, '100043460');
+    assert.deepStrictEqual(posted[0].image, { base64: 'AQID', mimeType: 'image/png', width: 939, height: 4200 });
+  });
+
+  await test('page script retries the capture until the site has drawn the image', async () => {
+    let attempts = 0;
+    const posted = await runPage(NK_CHAPTER_URL, NK_IMAGE, {
+      waitMs: 500,
+      before: (env) => { env.NkwwlkjProvider.captureChapterImage = async () => (++attempts < 3 ? null : IMAGE); }
+    });
+    assert.strictEqual(attempts, 3);
+    assert.strictEqual(posted[0].image.base64, 'AQID');
+  });
+
+  await test('page script still reports the image chapter when the picture cannot be captured', async () => {
+    const posted = await runPage(NK_CHAPTER_URL, NK_IMAGE, {
+      before: (env) => { env.NkwwlkjProvider.captureChapterImage = async () => { throw new Error('tainted canvas'); }; }
+    });
+    assert.deepStrictEqual(posted.map((m) => [m.type, m.image]), [['image', undefined]]);
+    assert(/tainted canvas/.test(posted[0].error), 'says why');
   });
 
   // --- SiteSave: the app-side Open to save on top of Platform.siteBrowser ---
@@ -254,6 +295,84 @@ const CHAPTER_MSG = {
       assert.strictEqual((await done).status, 'saved', `${type}: saved after the user's step`);
       assert.deepStrictEqual(browser.calls.slice(-1), [['close']]);
     }
+  });
+
+  const IMAGE_MSG = (() => {
+    const { rawText, title, novelTitle, ...rest } = CHAPTER_MSG;
+    return { ...rest, type: 'image', image: { base64: 'AQID', mimeType: 'image/png', width: 939, height: 4200 } };
+  })();
+
+  await test('Open to save reads an image chapter with OCR in the app and saves it as a paid chapter', async () => {
+    const { createSiteSave } = loadSiteSave().SiteSave;
+    const browser = fakeBrowser();
+    const storage = fakeStorage();
+    const recognized = [];
+    const save = createSiteSave({
+      browser,
+      storage,
+      loadScript: async () => '',
+      recognize: async (bytes, mimeType) => {
+        recognized.push([Array.from(new Uint8Array(bytes)), mimeType, browser.calls.some((c) => c[0] === 'close')]);
+        return '第一章 张角\n\n正文';
+      }
+    });
+    const statuses = [];
+    save.onStatus((s) => statuses.push(plain(s)));
+    const done = save.open(NK_CHAPTER_URL);
+    await tick(); await tick();
+    await browser.emit(IMAGE_MSG);
+    const result = plain(await done);
+    assert.strictEqual(result.status, 'saved');
+    assert.strictEqual(result.chapterNumber, 1);
+    assert.deepStrictEqual(recognized, [[[1, 2, 3], 'image/png', true]], 'the image bytes are read after the site window closed');
+    const saveCall = storage.calls.find((c) => c[0] === 'saveRecognizedChapter');
+    assert.deepStrictEqual(saveCall, ['saveRecognizedChapter', 'novel-1', 1, { text: '第一章 张角\n\n正文', url: NK_CHAPTER_URL }]);
+    assert(!browser.calls.some((c) => c[0] === 'show'), 'never shown');
+    assert.deepStrictEqual(statuses.map((s) => s.status), ['reading', 'saving', 'saved']);
+    assert.strictEqual(statuses[0].chapterNumber, 1);
+  });
+
+  await test('Open to save does not OCR a chapter that is already saved', async () => {
+    const { createSiteSave } = loadSiteSave().SiteSave;
+    const browser = fakeBrowser();
+    let read = 0;
+    const done = createSiteSave({ browser, storage: fakeStorage({ saved: [1] }), loadScript: async () => '', recognize: async () => { read++; return 'x'; } }).open(NK_CHAPTER_URL);
+    await tick(); await tick();
+    await browser.emit(IMAGE_MSG);
+    assert.strictEqual((await done).status, 'already-saved');
+    assert.strictEqual(read, 0);
+  });
+
+  await test('Open to save reports OCR that finds nothing or fails, and saves nothing', async () => {
+    const { createSiteSave } = loadSiteSave().SiteSave;
+    for (const recognize of [async () => '   ', async () => { throw new Error('model failed to load'); }, null]) {
+      const browser = fakeBrowser();
+      const storage = fakeStorage();
+      const save = createSiteSave({ browser, storage, loadScript: async () => '', recognize });
+      const statuses = [];
+      save.onStatus((s) => statuses.push(plain(s)));
+      const done = save.open(NK_CHAPTER_URL);
+      await tick(); await tick();
+      await browser.emit(IMAGE_MSG);
+      const result = plain(await done);
+      assert.strictEqual(result.status, 'error');
+      assert(result.error, 'says why');
+      assert(!storage.calls.some((c) => c[0] === 'saveRecognizedChapter'), 'nothing saved');
+      assert.strictEqual(statuses[statuses.length - 1].status, 'error');
+    }
+  });
+
+  await test('Open to save reports a saved text chapter too', async () => {
+    const { createSiteSave } = loadSiteSave().SiteSave;
+    const browser = fakeBrowser();
+    const save = createSiteSave({ browser, storage: fakeStorage(), loadScript: async () => '' });
+    const statuses = [];
+    save.onStatus((s) => statuses.push(plain(s)));
+    const done = save.open(NK_CHAPTER_URL);
+    await tick(); await tick();
+    await browser.emit(CHAPTER_MSG);
+    await done;
+    assert.deepStrictEqual(statuses.map((s) => [s.status, s.chapterNumber]), [['saved', 1]]);
   });
 
   await test('Open to save shows the page if nothing arrives in time, and ends when the user closes it', async () => {
@@ -367,4 +486,5 @@ const CHAPTER_MSG = {
     process.exit(1);
   }
   console.log('Site Browser Test Suite: ALL TESTS PASSED!');
+  finished = true;
 })();

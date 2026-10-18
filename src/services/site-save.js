@@ -41,8 +41,28 @@
     return cachedScript;
   }
 
-  function createSiteSave({ browser, storage, loadScript = loadPageScript, hiddenWaitMs = 45000 }) {
+  function fromBase64(text) {
+    const binary = global.atob(text);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  function errorText(err) {
+    return err && err.message ? err.message : String(err);
+  }
+
+  function createSiteSave({ browser, storage, loadScript = loadPageScript, hiddenWaitMs = 45000, recognize = null }) {
     let chain = Promise.resolve();
+    const statusListeners = new Set();
+
+    function report(update) {
+      statusListeners.forEach((handler) => {
+        try {
+          handler(update);
+        } catch (e) {}
+      });
+    }
 
     async function chapterNumberOf(novel, message) {
       if (message.chapterNumber !== null && message.chapterNumber !== undefined) {
@@ -56,14 +76,45 @@
       return { novel, number };
     }
 
-    async function saveChapter(message) {
+    async function targetOf(message) {
       const managed = await storage.getNovelBySlug(message.slug);
-      if (!managed) return { status: 'not-managed' };
+      if (!managed) return { outcome: { status: 'not-managed' } };
       const { novel, number } = await chapterNumberOf(managed, message);
-      if (number === null || Number.isNaN(number)) return { status: 'not-in-catalog', novelId: novel.id };
+      if (number === null || Number.isNaN(number)) return { outcome: { status: 'not-in-catalog', novelId: novel.id } };
       if (await storage.isChapterSaved(novel.id, number)) {
-        return { status: 'already-saved', novelId: novel.id, chapterNumber: number };
+        return { outcome: { status: 'already-saved', novelId: novel.id, chapterNumber: number } };
       }
+      return { novel, number };
+    }
+
+    async function saveImageChapter(message, novel, number) {
+      const where = { novelId: novel.id, chapterNumber: number };
+      const fail = (error) => {
+        report({ status: 'error', ...where, error });
+        return { status: 'error', ...where, error };
+      };
+      if (typeof recognize !== 'function') return fail('Reading chapter images is not available on this page.');
+      report({ status: 'reading', ...where });
+      let text;
+      try {
+        text = String((await recognize(fromBase64(message.image.base64), message.image.mimeType)) || '').trim();
+      } catch (e) {
+        return fail(`Could not read the chapter image: ${errorText(e)}`);
+      }
+      if (!text) return fail('No text was found in the chapter image.');
+      report({ status: 'saving', ...where });
+      try {
+        await storage.saveRecognizedChapter(novel.id, number, { text, url: message.url });
+      } catch (e) {
+        return fail(`Could not save the chapter: ${errorText(e)}`);
+      }
+      report({ status: 'saved', ...where });
+      return { status: 'saved', ...where, ocr: true };
+    }
+
+    async function saveChapter(message) {
+      const { novel, number, outcome } = await targetOf(message);
+      if (outcome) return outcome;
       const result = await storage.saveOpenedChapter({
         slug: message.slug,
         chapterNumber: number,
@@ -72,12 +123,10 @@
         rawText: message.rawText,
         domain: message.domain
       });
-      return {
-        status: result && result.success ? 'saved' : 'error',
-        novelId: novel.id,
-        chapterNumber: number,
-        error: result && !result.success ? result.error : undefined
-      };
+      const saved = { status: result && result.success ? 'saved' : 'error', novelId: novel.id, chapterNumber: number };
+      if (result && !result.success) saved.error = result.error;
+      report(saved);
+      return saved;
     }
 
     function session(url, { login = false } = {}) {
@@ -86,12 +135,12 @@
         let timer = null;
         let unsubscribe = () => {};
 
-        const finish = async (outcome) => {
+        const finish = async (outcome, { alreadyClosed = false } = {}) => {
           if (finished) return;
           finished = true;
           clearTimeout(timer);
           unsubscribe();
-          if (outcome.status !== 'cancelled' && outcome.status !== 'closed') {
+          if (!alreadyClosed && outcome.status !== 'cancelled' && outcome.status !== 'closed') {
             try {
               await browser.close();
             } catch (e) {}
@@ -116,6 +165,21 @@
               finish(await saveChapter(message));
             } catch (e) {
               finish({ status: 'error', error: e && e.message ? e.message : String(e) });
+            }
+          } else if (message.type === 'image' && message.image && message.image.base64) {
+            clearTimeout(timer);
+            try {
+              const { novel, number, outcome } = await targetOf(message);
+              if (outcome) {
+                finish(outcome);
+                return;
+              }
+              try {
+                await browser.close();
+              } catch (e) {}
+              finish(await saveImageChapter(message, novel, number), { alreadyClosed: true });
+            } catch (e) {
+              finish({ status: 'error', error: errorText(e) });
             }
           } else if (message.type === 'empty' || message.type === 'other' || message.type === 'image') {
             reveal();
@@ -146,6 +210,10 @@
       },
       openLogin(url) {
         return enqueue(url, { login: true });
+      },
+      onStatus(handler) {
+        statusListeners.add(handler);
+        return () => statusListeners.delete(handler);
       }
     };
   }
@@ -157,7 +225,17 @@
     const browser = platform && platform.siteBrowser;
     const storage = global.StorageService;
     if (!browser || !storage) return null;
-    if (!shared) shared = createSiteSave({ browser, storage });
+    if (!shared) {
+      shared = createSiteSave({
+        browser,
+        storage,
+        recognize: (bytes, mimeType) => {
+          const ocr = global.QCOcr;
+          if (!ocr || typeof ocr.recognize !== 'function') throw new Error('Reading chapter images is not available on this page.');
+          return ocr.recognize(bytes, mimeType);
+        }
+      });
+    }
     return shared;
   }
 
@@ -175,6 +253,10 @@
     openLogin(url) {
       const saver = sharedSiteSave();
       return saver ? saver.openLogin(url) : Promise.resolve({ status: 'unavailable' });
+    },
+    onStatus(handler) {
+      const saver = sharedSiteSave();
+      return saver ? saver.onStatus(handler) : () => {};
     }
   };
 

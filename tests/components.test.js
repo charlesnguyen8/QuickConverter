@@ -807,6 +807,30 @@ async function testAsync(name, fn) {
   const { ProviderLoginStatus } = providerLoginMod;
   const ProviderLoginBanner = providerLoginMod.default;
   const LOGIN_URL = 'https://www.nkwwlkj.cn/signup/login?redirect=https%3A%2F%2Fwww.nkwwlkj.cn%2F';
+  const { SiteSaveStatusView } = await loadComponent('components/react/shared/SiteSaveStatus.jsx');
+  test('the Open to save message says what the app is doing with the chapter', () => {
+    assert.strictEqual(render(h(SiteSaveStatusView, { status: null })), '');
+    const reading = render(h(SiteSaveStatusView, { status: { status: 'reading', chapterNumber: 7 } }));
+    assert(/role="status"/.test(reading), 'announced');
+    assert(reading.includes('Reading the image of chapter 7'), reading);
+    assert(render(h(SiteSaveStatusView, { status: { status: 'saving', chapterNumber: 7 } })).includes('Saving chapter 7'));
+    assert(render(h(SiteSaveStatusView, { status: { status: 'saved', chapterNumber: 7 } })).includes('Saved chapter 7'));
+    const failed = render(h(SiteSaveStatusView, { status: { status: 'error', chapterNumber: 7, error: 'No text was found.' } }));
+    assert(failed.includes('Chapter 7 was not saved') && failed.includes('No text was found.'), failed);
+  });
+
+  const { installAppOcr } = await loadComponent('components/react/shared/appOcr.js');
+  test('the novel and reader pages give Open to save an OCR reader', () => {
+    const win = {};
+    installAppOcr(win);
+    assert.strictEqual(typeof win.QCOcr.recognize, 'function');
+    for (const entry of ['novel/novel-entry.jsx', 'reader/reader-entry.jsx']) {
+      const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'components', 'react', ...entry.split('/')), 'utf8');
+      assert(/installAppOcr\(/.test(src), `${entry} installs the OCR reader`);
+      assert(/SiteSaveStatus/.test(src), `${entry} shows the Open to save message`);
+    }
+  });
+
   await testAsync('in the app, Log in opens the site inside the app and checks the login again when it closes', async () => {
     const { handleLoginLink } = providerLoginMod;
     const opened = [];
