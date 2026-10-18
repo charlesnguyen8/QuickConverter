@@ -29,7 +29,7 @@ wetriedtls, nkwwlkj and sangtacviet. Parent plan: `overall_plan.md` §3, §6 Pha
    - **Built (2026-10-18):** `StorageService.syncNovel` (metadata, then catalog); the novel page's
      Sync Catalog uses it and the hero shows the refreshed book live (it used to load the book once).
      A sync takes ~15 s because the wetriedtls chapter API takes ~11 s for 889 entries even from a
-     plain HTTP client. Waiting on the owner's phone check.
+     plain HTTP client. Released as v1.1.2; the owner confirmed it works on the phone.
 2. **sangtacviet catalog.** `Platform.http.get(url, { headers })`: in the app it calls the native
    `CapacitorHttp.request` (which may set `Referer`); in the extension it is plain `fetch` (the
    existing DNR rule adds the header). The provider's chapter-list request goes through it.
