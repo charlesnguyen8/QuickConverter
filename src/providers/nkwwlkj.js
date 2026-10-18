@@ -255,8 +255,11 @@ const NkwwlkjProvider = (() => {
       if (!match) return null;
 
       const img = new win.Image();
-      img.src = match[1];
-      await img.decode();
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('The chapter image could not be loaded.'));
+        img.src = match[1];
+      });
       const canvas = doc.createElement('canvas');
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;

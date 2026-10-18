@@ -115,6 +115,14 @@ async function seedNovel(S, stores) {
 
 const TRANSLATION = { enabled: true, apiKey: 'sk-local', prompt: 'Translate to English.', model: 'm1', provider: 'custom', baseUrl: 'http://127.0.0.1:8000/v1' };
 
+let finished = false;
+process.on('beforeExit', () => {
+  if (!finished) {
+    console.error('OCR Reading Panel suite stopped before its last test (a promise never settled)');
+    process.exitCode = 1;
+  }
+});
+
 (async () => {
   await test('characterization: downloadChapter tokenizes names, pre-translates locked terms and restores the result', async () => {
     const { S, stores, aiCalls } = makeStorageEnv();
@@ -704,9 +712,12 @@ const TRANSLATION = { enabled: true, apiKey: 'sk-local', prompt: 'Translate to E
     const loaded = [];
     let fetched = false;
     class FakeImage {
-      set src(v) { this._src = v; loaded.push(v); }
+      set src(v) {
+        this._src = v;
+        loaded.push(v);
+        setTimeout(() => { this.naturalWidth = 939; this.naturalHeight = 4200; if (this.onload) this.onload(); }, 0);
+      }
       get src() { return this._src; }
-      async decode() { this.naturalWidth = 939; this.naturalHeight = 4200; }
     }
     const drawn = [];
     const fakeDoc = {
@@ -736,6 +747,61 @@ const TRANSLATION = { enabled: true, apiKey: 'sk-local', prompt: 'Translate to E
     assert.strictEqual(result.height, 4200);
     assert.strictEqual(result.mimeType, 'image/png');
     assert.strictEqual(result.bytes.byteLength, 16, 'returns the PNG bytes from the canvas');
+  });
+
+  await test('captureChapterImage works in a background tab, where img.decode() waits until the tab is shown', async () => {
+    const env = { console, URL };
+    env.globalThis = env;
+    vm.createContext(env);
+    vm.runInContext(read('src', 'providers', 'nkwwlkj.js'), env);
+    const imageUrl = 'https://www.nkwwlkj.cn/chapter/book_chapter_image?chapter_id=2&image_code=bg';
+    class BackgroundTabImage {
+      set src(v) {
+        this._src = v;
+        setTimeout(() => {
+          this.naturalWidth = 939;
+          this.naturalHeight = 4200;
+          this.complete = true;
+          if (this.onload) this.onload();
+        }, 5);
+      }
+      get src() { return this._src; }
+      decode() { return new Promise(() => {}); }
+    }
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () => ({ fillStyle: '', fillRect() {}, drawImage() {} }),
+      toBlob: (cb, type) => cb({ type, arrayBuffer: async () => new ArrayBuffer(8) })
+    };
+    const capture = env.NkwwlkjProvider.captureChapterImage(
+      { getElementById: (id) => (id === 'J_BookImage' ? { id } : null), createElement: () => canvas },
+      { Image: BackgroundTabImage, getComputedStyle: () => ({ backgroundImage: `url("${imageUrl}")` }) }
+    );
+    const result = await Promise.race([capture, new Promise((r) => setTimeout(() => r('stalled'), 500))]);
+    assert.notStrictEqual(result, 'stalled', 'the capture finishes without the tab being shown');
+    assert.strictEqual(result.width, 939);
+    assert.strictEqual(result.height, 4200);
+    assert.strictEqual(result.bytes.byteLength, 8);
+  });
+
+  await test('captureChapterImage reports an image that fails to load', async () => {
+    const env = { console, URL };
+    env.globalThis = env;
+    vm.createContext(env);
+    vm.runInContext(read('src', 'providers', 'nkwwlkj.js'), env);
+    class BrokenImage {
+      set src(v) { this._src = v; setTimeout(() => { if (this.onerror) this.onerror(new Error('404')); }, 5); }
+      get src() { return this._src; }
+      decode() { return new Promise(() => {}); }
+    }
+    await assert.rejects(
+      () => env.NkwwlkjProvider.captureChapterImage(
+        { getElementById: () => ({}), createElement: () => ({}) },
+        { Image: BrokenImage, getComputedStyle: () => ({ backgroundImage: 'url("https://www.nkwwlkj.cn/x.png")' }) }
+      ),
+      /chapter image could not be loaded/i
+    );
   });
 
   await test('captureChapterImage returns null when the page shows no chapter image', async () => {
@@ -778,4 +844,5 @@ const TRANSLATION = { enabled: true, apiKey: 'sk-local', prompt: 'Translate to E
   console.log(`--- OCR Reading Panel Test Suite: ${passed}/${passed + failed} passed ---`);
   if (failed > 0) process.exit(1);
   console.log('OCR Reading Panel Test Suite: ALL TESTS PASSED!');
+  finished = true;
 })();
