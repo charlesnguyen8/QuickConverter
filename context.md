@@ -10,7 +10,7 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 
 ### Current Implementation Stack
 - **Interface**: React 19 + Vite for the view layer (built to `dist/`; load unpacked from there), with the classic global-script services as the data layer. Tailwind CSS (compiled via CLI).
-- **View apps**: Popup (`PopupApp`), Settings (`SettingsView`), Reader (`ReaderApp`) and Novel (`NovelApp`) are fully React; each HTML file is a shell mounting one `src/components/react/<view>/<view>-entry.jsx` into `#<view>-root` (see `current_plan.md`).
+- **View apps**: Popup (`PopupApp`), Settings (`SettingsView`), Reader (`ReaderApp`) and Novel (`NovelApp`) are fully React; each HTML file is a shell mounting one `src/components/react/<view>/<view>-entry.jsx` into `#<view>-root`.
 - **Persistent Storage**: W3C **IndexedDB** (`src/services/storage.js`) for novel metadata and chapter texts.
 - **Queue & Background**: Centralized sequential FIFO queue (`src/services/download-queue.js`) with concurrency control (strictly 1 task at a time), pause/resume, individual item cancellation, and live circular progress.
 - **Dock UI**: Reusable solid, opaque floating dock React component (`src/components/react/shared/QueueDock.jsx`) with expanded/collapsed modes, mounted via `src/components/react/shared/queue-dock-entry.jsx`.

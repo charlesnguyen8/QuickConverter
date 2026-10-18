@@ -78,5 +78,9 @@ nodes, so the helper's `render` strips `<!-- -->`).
 ## View rewrite status
 
 Popup, Settings, Reader and Novel are fully React (no `src/views/*.js` logic scripts remain).
-`current_plan.md` tracks the milestones (M1–M8 complete). Shells are `src/views/<view>.html` +
-`src/components/react/<view>/<view>-entry.jsx`.
+Shells are `src/views/<view>.html` + `src/components/react/<view>/<view>-entry.jsx`.
+
+## Plans
+
+Active plans live under `current_plan/` (one folder per effort, e.g.
+`current_plan/android/overall_plan.md` for the Android app). Optional ideas go in `nice_to_have_plan.md`.

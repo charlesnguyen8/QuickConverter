@@ -1,9 +1,9 @@
 # nice_to_have_plan.md
 
-Items that are **not required** and only worth doing if a real need shows up. Moved out of
-`current_plan.md` so the active plan stays focused.
+Items that are **not required** and only worth doing if a real need shows up. Kept apart from
+the active plans so they stay focused.
 
-Reference: `current_plan.md` (active NL items).
+Reference: `current_plan/` (active plans).
 
 ---
 
