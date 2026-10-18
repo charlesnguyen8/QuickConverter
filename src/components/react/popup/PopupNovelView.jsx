@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import PopupDeepseekCard from './PopupDeepseekCard.jsx';
 import ManualChapterAction, { ChapterAccessBadge, canBulkDownload } from '../shared/ManualChapterAction.jsx';
+import { coverSrc, showDefaultCover } from '../shared/novelCover.js';
 import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
 
 const storage = () => (typeof window !== 'undefined' ? window.StorageService : null);
@@ -306,7 +307,7 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
       {novel ? (
         <div className="flex items-center gap-3 p-3 rounded-md bg-slate-800 border border-slate-700 shadow-sm">
           <div className="w-14 aspect-[3/4] rounded overflow-hidden bg-slate-900 border border-slate-700/80 flex-shrink-0 shadow-sm">
-            <img id="popup-novel-thumb" src={novel.thumbnail || 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp'} alt={novel.title} className="w-full h-full object-cover" />
+            <img id="popup-novel-thumb" src={coverSrc(novel.thumbnail)} alt={novel.title} className="w-full h-full object-cover" onError={showDefaultCover} />
           </div>
           <div className="flex flex-col gap-1 overflow-hidden flex-1 min-w-0">
             <h2 id="popup-novel-title" className="text-sm font-bold text-slate-100 truncate">{novel.title}</h2>

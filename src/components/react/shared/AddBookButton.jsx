@@ -11,7 +11,7 @@ function supportedDomains() {
     .filter(Boolean);
   return domains.length > 0 ? Array.from(new Set(domains)) : DEFAULT_SUPPORTED_DOMAINS;
 }
-const FALLBACK_THUMB = 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp';
+import { coverSrc, showDefaultCover } from './novelCover.js';
 
 function providerFor(url) {
   if (typeof window === 'undefined') return null;
@@ -126,7 +126,7 @@ export default function AddBookButton({ compact = false, buttonClass = '' }) {
       }
 
       const title = (metadata && metadata.title) || slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-      const thumbnail = (metadata && metadata.thumbnail) || FALLBACK_THUMB;
+      const thumbnail = (metadata && metadata.thumbnail) || '';
       const status = (metadata && metadata.status) || 'Active';
 
       const data = {
@@ -307,7 +307,7 @@ export default function AddBookButton({ compact = false, buttonClass = '' }) {
               {state && state.type === 'already_managed' ? (
                 <div className="p-3.5 rounded-lg bg-blue-500/10 border border-blue-500/25 text-blue-300 text-xs flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <img src={state.novel.thumbnail || ''} alt={state.novel.title} className="w-10 h-14 object-cover rounded border border-blue-500/30 flex-shrink-0 bg-slate-800" />
+                    <img src={coverSrc(state.novel.thumbnail)} onError={showDefaultCover} alt={state.novel.title} className="w-10 h-14 object-cover rounded border border-blue-500/30 flex-shrink-0 bg-slate-800" />
                     <div className="flex flex-col min-w-0">
                       <span className="font-semibold text-slate-100 truncate">{state.novel.title}</span>
                       <span className="text-[11px] text-blue-300/80">Already in your library ({state.novel.totalChapters || 0} chapters)</span>
@@ -335,10 +335,10 @@ export default function AddBookButton({ compact = false, buttonClass = '' }) {
                 <div className="flex gap-3.5 p-3 rounded-lg bg-slate-800/80 border border-slate-700/80 items-center">
                   <div className="w-14 h-20 rounded-md overflow-hidden bg-slate-900 border border-slate-700 flex-shrink-0">
                     <img
-                      src={state.preview.thumbnail}
+                      src={coverSrc(state.preview.thumbnail)}
                       alt={state.preview.title}
                       className="w-full h-full object-cover"
-                      onError={(e) => { e.currentTarget.src = FALLBACK_THUMB; }}
+                      onError={showDefaultCover}
                     />
                   </div>
                   <div className="flex flex-col gap-1 min-w-0 flex-1">

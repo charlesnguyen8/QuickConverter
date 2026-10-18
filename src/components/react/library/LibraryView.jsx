@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import AddBookButton from '../shared/AddBookButton.jsx';
-
-const FALLBACK_THUMB = 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp';
+import { coverSrc, showDefaultCover } from '../shared/novelCover.js';
 
 function SettingsLink() {
   return (
@@ -20,12 +19,12 @@ function SettingsLink() {
   );
 }
 
-function NovelCard({ novel, stats }) {
+export function NovelCard({ novel, stats }) {
   const downloaded = stats.downloadedCount || 0;
   const total = novel.totalChapters || stats.totalChapters || 100;
   const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
   const formattedSize = stats.formattedSize || '0 B';
-  const thumbnailSrc = novel.thumbnail || FALLBACK_THUMB;
+  const thumbnailSrc = coverSrc(novel.thumbnail);
 
   return (
     <div
@@ -38,7 +37,7 @@ function NovelCard({ novel, stats }) {
           src={thumbnailSrc}
           alt={novel.title}
           className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
-          onError={(e) => { e.currentTarget.src = FALLBACK_THUMB; }}
+          onError={showDefaultCover}
         />
         <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-900/80 backdrop-blur border border-slate-700/60 text-slate-200 shadow">
           {total} Chs

@@ -314,7 +314,7 @@ const StorageService = {
           const defaultRef = INITIAL_NOVELS.find((init) => init.slug === novel.slug);
           const updatedNovel = {
             ...novel,
-            thumbnail: novel.thumbnail || (defaultRef ? defaultRef.thumbnail : 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp'),
+            thumbnail: novel.thumbnail || (defaultRef ? defaultRef.thumbnail : ''),
             totalChapters: novel.totalChapters || (defaultRef ? defaultRef.totalChapters : 100)
           };
 
@@ -355,7 +355,7 @@ const StorageService = {
           const match = INITIAL_NOVELS.find((init) => init.slug === p.slug);
           return {
             ...p,
-            thumbnail: p.thumbnail || (match ? match.thumbnail : 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp'),
+            thumbnail: p.thumbnail || (match ? match.thumbnail : ''),
             totalChapters: p.totalChapters || (match ? match.totalChapters : 100)
           };
         })
@@ -440,7 +440,7 @@ const StorageService = {
       slug: novel.slug || '',
       url: novel.url || '',
       domain: defaultDomain,
-      thumbnail: novel.thumbnail || 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp',
+      thumbnail: novel.thumbnail || '',
       totalChapters: novel.totalChapters || 100,
       chapterList: Array.isArray(novel.chapterList) ? novel.chapterList : [],
       icon: novel.icon || '📚',

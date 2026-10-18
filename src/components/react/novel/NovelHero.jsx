@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-const FALLBACK_THUMB = 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp';
+import { coverSrc, showDefaultCover } from '../shared/novelCover.js';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -42,7 +42,7 @@ export default function NovelHero() {
   }, []);
 
   const title = notFound ? 'Novel Not Found' : (novel ? novel.title : 'Loading Novel...');
-  const artwork = novel && novel.thumbnail ? novel.thumbnail : FALLBACK_THUMB;
+  const artwork = coverSrc(novel && novel.thumbnail);
   const domain = (novel && novel.domain) || 'wetriedtls.com';
   const status = (novel && novel.status) || 'Active';
   const total = stats.total || (novel && novel.totalChapters) || 0;
@@ -56,7 +56,7 @@ export default function NovelHero() {
           src={artwork}
           alt={title}
           className="w-full h-full object-cover"
-          onError={(e) => { e.currentTarget.src = FALLBACK_THUMB; }}
+          onError={showDefaultCover}
         />
       </div>
 

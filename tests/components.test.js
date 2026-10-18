@@ -522,6 +522,37 @@ function test(name, fn) {
   const ManualChapterAction = (await loadComponent('components/react/shared/ManualChapterAction.jsx')).default;
   const manualChapter = { chapterNumber: 3, title: 'Ch 3', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043460' };
   const lockedChapter = { chapterNumber: 5, title: 'Ch 5', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100659849', locked: true };
+  const cover = await loadComponent('components/react/shared/novelCover.js');
+  const LEGACY_PLACEHOLDER = 'https://media.reaperscans.net/file/7BSHk1m/yj1teaon5c2jweqry01yo9t4.webp';
+  test('novels without a cover get the bundled default cover', () => {
+    assert.strictEqual(cover.DEFAULT_COVER, '../icons/default-cover.png', 'a relative path that works from every view');
+    assert(require('fs').existsSync(require('path').join(__dirname, '..', 'src', 'icons', 'default-cover.png')), 'the image is bundled');
+    for (const missing of ['', null, undefined, '   ', LEGACY_PLACEHOLDER]) {
+      assert.strictEqual(cover.coverSrc(missing), cover.DEFAULT_COVER, `${JSON.stringify(missing)} shows the default`);
+    }
+    assert.strictEqual(cover.coverSrc('https://img.uukanshu.com/fengmian/a.jpg'), 'https://img.uukanshu.com/fengmian/a.jpg', 'a real cover is kept');
+  });
+
+  test('a cover that fails to load falls back to the default once', () => {
+    const img = { src: 'https://img.example/broken.jpg', getAttribute() { return this.src; } };
+    cover.showDefaultCover({ currentTarget: img });
+    assert.strictEqual(img.src, cover.DEFAULT_COVER);
+    const looping = { src: cover.DEFAULT_COVER, getAttribute() { return cover.DEFAULT_COVER; }, set onerror(v) {} };
+    cover.showDefaultCover({ currentTarget: looping });
+    assert.strictEqual(looping.src, cover.DEFAULT_COVER, 'no error loop when the default itself fails');
+  });
+
+  const { NovelCard } = await loadComponent('components/react/library/LibraryView.jsx');
+  const NovelHero = (await loadComponent('components/react/novel/NovelHero.jsx')).default;
+  test('library cards and the novel page show the default cover when a novel has none', () => {
+    const card = (thumbnail) => render(h(NovelCard, { novel: { id: 'n1', title: 'N', totalChapters: 3, thumbnail }, stats: {} }));
+    assert(card('').includes('src="../icons/default-cover.png"'), 'no cover');
+    assert(card(LEGACY_PLACEHOLDER).includes('src="../icons/default-cover.png"'), 'old placeholder');
+    assert(card('https://img.example/c.jpg').includes('src="https://img.example/c.jpg"'), 'real cover');
+    assert(!render(h(NovelHero)).includes('reaperscans'), 'the novel page no longer uses the old placeholder');
+    assert(render(h(NovelHero)).includes('src="../icons/default-cover.png"'));
+  });
+
   const providerLoginMod = await loadComponent('components/react/shared/ProviderLogin.jsx');
   const { ProviderLoginStatus } = providerLoginMod;
   const ProviderLoginBanner = providerLoginMod.default;
