@@ -3,7 +3,7 @@
 **Goal:** ship QuickConverter as an Android app (Capacitor) while the Chrome extension keeps working.
 One repository, one shared web app, two thin platform shells.
 
-**Status (2026-10-18):** analysis done, nothing started. Next step: Phase 0.
+**Status (2026-10-18):** Phase 0 done (platform layer, `extension/` split, `build:app`). Next: Phase 1.
 
 **Rule of engagement:** same as the extension — `npm test` green (test-first where behavior changes),
 `npm run build:css` when new utility classes appear, `npm run build:ext` must keep producing a working
@@ -120,6 +120,16 @@ Rough ranges for focused work. The real bottleneck is testing on a phone/emulato
   `extension/`; keep `content.js` extraction logic shareable.
 - Add a second Vite build target (`build:app` → `dist-app/`) that excludes extension-only files.
 - **Done when:** all tests green, `build:ext` extension works exactly as before, `build:app` builds.
+- **Result (2026-10-18):** done.
+  - `platform.js` checks Chrome per call; services, components and providers use it (enforced by a
+    test). Outside the extension, chapter-saved notices travel an in-page bus.
+  - `extension/` holds `manifest.json`, `scripts/` (worker, content script, Open-to-save hand-off)
+    and `rules/`. The HTML shells stay in `src/views` because Vite builds them; the app build leaves
+    out `popup`, `ocr-panel` and `open-to-save`.
+  - `build-targets.mjs` describes both builds; `npm run build:app` → `dist-app/` with an
+    `index.html` that opens the library. `dist/` layout unchanged.
+  - Checked in a plain browser (no `chrome`): library, novel, reader and settings load without
+    errors; the only failure is CORS on catalog fetches, which Phase 1's native HTTP fixes.
 
 ### Phase 1 — Capacitor app shell (≈3–5 days)
 

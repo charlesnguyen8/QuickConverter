@@ -60,7 +60,7 @@ for (const font of fonts) {
 console.log('✓ ReaderChapter.jsx & SettingsReaderTab.jsx: verified font CSS family resolution mapping');
 
 // 5. Inspect manifest.json
-const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'manifest.json'), 'utf8'));
+const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'extension', 'manifest.json'), 'utf8'));
 assert(manifest.web_accessible_resources, 'Missing web_accessible_resources in manifest.json');
 assert(manifest.web_accessible_resources[0].resources.includes('fonts/*'), 'Missing fonts/* in web_accessible_resources');
 

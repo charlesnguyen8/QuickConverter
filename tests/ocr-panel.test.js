@@ -478,7 +478,7 @@ const TRANSLATION = { enabled: true, apiKey: 'sk-local', prompt: 'Translate to E
     vm.createContext(env);
     vm.runInContext(read('src', 'providers', 'nkwwlkj.js'), env);
     vm.runInContext(read('src', 'providers', 'registry.js'), env);
-    vm.runInContext(read('src', 'scripts', 'content.js'), env);
+    vm.runInContext(read('extension', 'scripts', 'content.js'), env);
     return { sent, appended, listeners };
   }
 
@@ -752,8 +752,9 @@ const TRANSLATION = { enabled: true, apiKey: 'sk-local', prompt: 'Translate to E
 
   await test('the OCR panel is built as an extension page with bundled models and the wasm runtime', () => {
     const vite = read('vite.config.mjs');
-    assert(/ocr:\s*'views\/ocr-panel\.html'/.test(vite), 'vite builds views/ocr-panel.html');
-    assert(/'ocr'/.test(vite), 'vite copies src/ocr into dist');
+    const targets = read('build-targets.mjs');
+    assert(/ocr:\s*'views\/ocr-panel\.html'/.test(targets), 'the extension build includes views/ocr-panel.html');
+    assert(/'ocr'/.test(targets), 'the build copies src/ocr into dist');
     assert(vite.includes('ort-wasm-simd-threaded.wasm'), 'vite copies the ONNX Runtime wasm binary');
     assert(vite.includes('ort-wasm-simd-threaded.mjs'), 'vite copies the ONNX Runtime wasm loader');
     assert(/onnxruntime-web\/wasm/.test(vite), 'onnxruntime-web is aliased to its wasm-only build');
@@ -767,7 +768,7 @@ const TRANSLATION = { enabled: true, apiKey: 'sk-local', prompt: 'Translate to E
   });
 
   await test('the manifest allows WebAssembly on extension pages and exposes the panel to the site', () => {
-    const manifest = JSON.parse(read('manifest.json'));
+    const manifest = JSON.parse(read('extension', 'manifest.json'));
     const csp = manifest.content_security_policy && manifest.content_security_policy.extension_pages;
     assert(csp && csp.includes("'wasm-unsafe-eval'") && csp.includes("script-src 'self'"), 'extension_pages CSP allows wasm');
     const war = manifest.web_accessible_resources.find((r) => r.resources.includes('views/*'));

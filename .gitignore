@@ -4,6 +4,7 @@ package-lock.json
 
 # Build output
 dist/
+dist-app/
 
 # Environment and editor files
 .env

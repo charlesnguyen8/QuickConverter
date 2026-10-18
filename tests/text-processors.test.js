@@ -160,7 +160,7 @@ test('every page and the worker that load storage.js load text-processors.js bef
     const matcher = html.indexOf('services/longest-matcher.js');
     assert(matcher >= 0 && matcher < processors, `${view} must load services/longest-matcher.js before text-processors.js`);
   }
-  const bg = read('src', 'scripts', 'background.js').match(/importScripts\(([^)]*)\)/)[1];
+  const bg = read('extension', 'scripts', 'background.js').match(/importScripts\(([^)]*)\)/)[1];
   assert(bg.includes('services/text-processors.js'), 'background.js must import text-processors.js');
   assert(bg.indexOf('services/text-processors.js') < bg.indexOf('services/storage.js'), 'worker imports text-processors.js before storage.js');
   assert(bg.includes('services/longest-matcher.js') && bg.indexOf('services/longest-matcher.js') < bg.indexOf('services/text-processors.js'), 'worker imports longest-matcher.js before text-processors.js');

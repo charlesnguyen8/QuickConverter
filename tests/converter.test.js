@@ -324,7 +324,7 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
         assert(at >= 0 && at < processors, `${view} loads ${service} before text-processors.js`);
       }
     }
-    const bg = read('src', 'scripts', 'background.js').match(/importScripts\(([^)]*)\)/)[1];
+    const bg = read('extension', 'scripts', 'background.js').match(/importScripts\(([^)]*)\)/)[1];
     for (const service of ['services/qt-numbers.js', 'services/luat-nhan.js']) {
       assert(bg.includes(service) && bg.indexOf(service) < bg.indexOf('services/text-processors.js'), `worker imports ${service}`);
     }
@@ -360,7 +360,7 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     const map = env.HanViet.parse(data);
     assert(map.size > 10000, `expected a full character list, got ${map.size}`);
     assert.strictEqual(map.get('林'), 'lâm');
-    assert(/'dict'/.test(read('vite.config.mjs')), 'vite copies src/dict into dist');
+    assert(/'dict'/.test(read('build-targets.mjs')), 'the build copies src/dict into dist');
     const reader = read('src', 'views', 'reader.html');
     const hv = reader.indexOf('services/han-viet.js');
     assert(hv >= 0 && hv < reader.indexOf('reader-entry.jsx'), 'reader loads han-viet.js');
@@ -650,7 +650,7 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
   });
 
   await test('the background worker and conversion-capable views load the dictionary services', () => {
-    const bg = read('src', 'scripts', 'background.js');
+    const bg = read('extension', 'scripts', 'background.js');
     for (const file of ['han-viet.js', 'qt-dictionaries.js']) {
       assert(bg.includes(`'../services/${file}'`), `background.js must import ${file}`);
     }

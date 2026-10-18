@@ -244,7 +244,7 @@ const EXPECTED_CHINESE = [
     vm.createContext(pageEnv);
     vm.runInContext(read('src', 'providers', 'sangtacviet.js'), pageEnv);
     vm.runInContext(read('src', 'providers', 'registry.js'), pageEnv);
-    vm.runInContext(read('src', 'scripts', 'content.js'), pageEnv);
+    vm.runInContext(read('extension', 'scripts', 'content.js'), pageEnv);
     await new Promise((r) => setTimeout(r, 30));
     const check = sent.find((m) => m.action === 'CHECK_CHAPTER');
     assert(check && check.slug === 'uukanshu-92019' && check.chapterSlug === '1122', 'looks the chapter up by book and chapter id');
@@ -256,7 +256,7 @@ const EXPECTED_CHINESE = [
   });
 
   await test('manifest grants the site and injects the content script on book and chapter pages', () => {
-    const manifest = JSON.parse(read('manifest.json'));
+    const manifest = JSON.parse(read('extension', 'manifest.json'));
     assert(manifest.host_permissions.includes('*://sangtacviet.com/*'));
     assert(manifest.host_permissions.includes('*://*.sangtacviet.com/*'));
     const cs = manifest.content_scripts.find((c) => c.matches.some((m) => m.includes('sangtacviet.com')));
@@ -266,12 +266,12 @@ const EXPECTED_CHINESE = [
   });
 
   await test('a Chrome request rule adds the Referer the chapter-list endpoint requires, for the extension only', async () => {
-    const manifest = JSON.parse(read('manifest.json'));
+    const manifest = JSON.parse(read('extension', 'manifest.json'));
     assert(manifest.permissions.includes('declarativeNetRequestWithHostAccess'), 'uses the host access the extension already has');
     const ruleset = ((manifest.declarative_net_request || {}).rule_resources || []).find((r) => r.id === 'sangtacviet');
     assert(ruleset && ruleset.enabled === true, 'the ruleset is enabled');
-    assert(/'rules'/.test(read('vite.config.mjs')), 'vite copies src/rules into dist');
-    const rules = JSON.parse(read('src', ruleset.path));
+    assert(/'extension\/rules'/.test(read('build-targets.mjs')), 'the extension build copies extension/rules into dist');
+    const rules = JSON.parse(read('extension', ruleset.path));
     assert.strictEqual(rules.length, 1, 'one rule, nothing else is touched');
     const [rule] = rules;
     assert.deepStrictEqual(rule.action, {
@@ -292,7 +292,7 @@ const EXPECTED_CHINESE = [
 
   await test('every view and the background worker load the provider before the registry', () => {
     const sources = ['library', 'novel', 'popup', 'reader', 'settings', 'ocr-panel'].map((v) => [`views/${v}.html`, read('src', 'views', `${v}.html`)]);
-    sources.push(['scripts/background.js', read('src', 'scripts', 'background.js')]);
+    sources.push(['scripts/background.js', read('extension', 'scripts', 'background.js')]);
     for (const [name, src] of sources) {
       const p = src.indexOf('providers/sangtacviet.js');
       const r = src.indexOf('providers/registry.js');

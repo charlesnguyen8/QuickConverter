@@ -25,20 +25,28 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 
 ```text
 QuickConverter/
-├── src/                 # All application source (Vite root; built to dist/)
+├── src/                 # Shared application source (Vite root), used by both builds
 │   ├── components/      # React view components: shared/ + <view>/ folders
 │   ├── dev/             # QueueDock dev harness (npm run dev)
+│   ├── dict/            # QT dictionaries, Lạc Việt, Jieba data
 │   ├── fonts/           # 11 offline web font binaries (Merriweather, Inter, etc.)
-│   ├── icons/           # Extension icons (16, 48, 128px)
+│   ├── icons/           # Extension icons (16, 48, 128px) and the default cover
+│   ├── ocr/             # OCR models (PaddleOCR) for image chapters
 │   ├── providers/       # Web scraping catalog & content extractors (wetriedtls.js, nkwwlkj.js, sangtacviet.js)
-│   ├── scripts/         # Chrome extension background service worker + content script
-│   ├── services/        # Core business logic (Storage, AI, Queue, Custom API, Cloud Sync)
+│   ├── services/        # Core business logic (Storage, AI, Queue, Custom API, Cloud Sync);
+│   │                    #   platform.js is the only place that touches chrome.*
 │   ├── styles/          # input.css and tailwind.css build output
-│   └── views/           # Application page shells (library, novel, reader, settings, popup)
+│   └── views/           # Page shells (library, novel, reader, settings; extension-only: popup,
+│                        #   ocr-panel, open-to-save)
+├── extension/           # Chrome-only files, copied into dist/ by build:ext
+│   ├── manifest.json    # MV3 manifest (paths match dist/)
+│   ├── scripts/         # background service worker, content script, Open-to-save hand-off
+│   └── rules/           # declarativeNetRequest rules (sangtacviet Referer)
 ├── tests/               # Automated unit & integration tests
-├── dist/                # Built extension (load unpacked from here)
-├── manifest.json        # Chrome Extension MV3 manifest (paths match dist/)
-├── vite.config.mjs      # root: src → outDir: dist
+├── dist/                # Built extension (npm run build:ext; load unpacked from here)
+├── dist-app/            # Built app for Capacitor/Android (npm run build:app)
+├── build-targets.mjs    # What each build contains (pages, copied folders)
+├── vite.config.mjs      # root: src → dist/ (extension) or dist-app/ (--mode app)
 ├── tailwind.config.js
 ├── API_DOC.md           # Backend AI API documentation
 └── context.md           # This document: architectural context & port rules
@@ -53,6 +61,10 @@ To ensure that 95%+ of the codebase can be wrapped directly into an Android app 
 ### Rule 1: Strict Platform API Isolation (No Direct `chrome.*` in Views or Components)
 - **Never call `chrome.storage`, `chrome.runtime`, or `chrome.tabs` directly inside `src/views/` or `src/components/`.**
 - All storage operations must go through `StorageService` (`src/services/storage.js`).
+- Services reach extension APIs only through `src/services/platform.js` (`Platform.storage.area`,
+  `messaging`, `alarms`, `identity`, `runtime`), which checks for Chrome per call and returns
+  `null`/a no-op elsewhere so each service keeps its web fallback. `tests/platform.test.js` fails if a
+  service, component or provider calls `chrome.*` directly.
 - If extension-specific APIs must be used (such as opening options pages or background message dispatching), always provide a fallback check:
   ```javascript
   // Good: Platform-safe navigation

@@ -397,7 +397,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     pageEnv.globalThis = pageEnv;
     pageEnv.window = pageEnv;
     vm.createContext(pageEnv);
-    vm.runInContext(read('src', 'scripts', 'open-to-save-page.js'), pageEnv);
+    vm.runInContext(read('extension', 'scripts', 'open-to-save-page.js'), pageEnv);
     return { replaced, body: pageEnv.document.body.textContent };
   }
 
@@ -415,8 +415,8 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
   });
 
   await test('the hand-off page is built, sends no referrer and runs no inline script', () => {
-    const vite = read('vite.config.mjs');
-    assert(/'views\/open-to-save\.html'/.test(vite), 'vite builds views/open-to-save.html');
+    const targets = read('build-targets.mjs');
+    assert(/'views\/open-to-save\.html'/.test(targets), 'the extension build includes views/open-to-save.html');
     const html = read('src', 'views', 'open-to-save.html');
     assert(/<meta[^>]*name="referrer"[^>]*content="no-referrer"/.test(html), 'no referrer, like the rel=noreferrer link');
     assert(/<script src="\.\.\/scripts\/open-to-save-page\.js"><\/script>/.test(html), 'loads its script from the extension (CSP forbids inline scripts)');
@@ -452,7 +452,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
   });
 
   await test('background opens Open to save tabs and closes them when the page reports the save', () => {
-    const bg = read('src', 'scripts', 'background.js');
+    const bg = read('extension', 'scripts', 'background.js');
     assert(/importScripts\([^)]*'\.\.\/services\/open-to-save\.js'/.test(bg), 'the worker loads open-to-save.js');
     const handler = (name) => {
       const at = bg.indexOf(`message.action === '${name}'`);
@@ -467,7 +467,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
   });
 
   await test('background announces each chapter saved from an open page', () => {
-    const bg = read('src', 'scripts', 'background.js');
+    const bg = read('extension', 'scripts', 'background.js');
     const saveHandler = bg.slice(bg.indexOf("message.action === 'SAVE_CHAPTER'"), bg.indexOf("message.action === 'UPDATE_NOVEL_METADATA'"));
     assert(/StorageService\.saveOpenedChapter\(/.test(saveHandler), 'SAVE_CHAPTER must save through StorageService.saveOpenedChapter, which announces the save (behavior covered in ocr-panel.test.js)');
   });
@@ -654,7 +654,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
   });
 
   await test('manifest grants the site and injects the content script on book and chapter pages', () => {
-    const manifest = JSON.parse(read('manifest.json'));
+    const manifest = JSON.parse(read('extension', 'manifest.json'));
     assert(manifest.host_permissions.includes('*://*.nkwwlkj.cn/*'));
     assert(manifest.host_permissions.includes('*://nkwwlkj.cn/*'));
     const cs = manifest.content_scripts.find((c) => c.matches.some((m) => m.includes('nkwwlkj.cn')));
@@ -666,7 +666,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
 
   await test('every view and the background worker load the provider before the registry', () => {
     const sources = ['library', 'novel', 'popup', 'reader', 'settings'].map((v) => [`views/${v}.html`, read('src', 'views', `${v}.html`)]);
-    sources.push(['scripts/background.js', read('src', 'scripts', 'background.js')]);
+    sources.push(['scripts/background.js', read('extension', 'scripts', 'background.js')]);
     for (const [name, src] of sources) {
       const p = src.indexOf('providers/nkwwlkj.js');
       const r = src.indexOf('providers/registry.js');

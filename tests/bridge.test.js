@@ -7,7 +7,7 @@ console.log('--- Running Local Web Bridge & Reasoner Test Suite ---');
 const repoRoot = path.resolve(__dirname, '..');
 
 // Test 1: Verify host_permissions in manifest.json for localhost bridge
-const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'manifest.json'), 'utf8'));
+const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'extension', 'manifest.json'), 'utf8'));
 assert(Array.isArray(manifest.host_permissions), 'manifest.json must have host_permissions');
 assert(manifest.host_permissions.includes('http://127.0.0.1:*/*'), 'manifest.json must grant http://127.0.0.1:*/* permission');
 assert(manifest.host_permissions.includes('http://localhost:*/*'), 'manifest.json must grant http://localhost:*/* permission');
@@ -83,7 +83,7 @@ assert(settingsHas('test-bridge-btn'), 'settings must have #test-bridge-btn');
 console.log('✓ views/settings.html contains AI provider radio choices, preset button, and test connection button');
 
 // Test 4b: name-matcher.js must be loaded wherever tokenization/highlighting can run.
-const backgroundSrc = fs.readFileSync(path.join(repoRoot, 'src', 'scripts', 'background.js'), 'utf8');
+const backgroundSrc = fs.readFileSync(path.join(repoRoot, 'extension', 'scripts', 'background.js'), 'utf8');
 for (const [name, html] of [['novel.html', novelHtml], ['popup.html', popupHtml], ['reader.html', readerHtml]]) {
   assert(html.includes('services/name-matcher.js'), `${name} must load services/name-matcher.js before storage.js`);
 }

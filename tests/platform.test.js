@@ -177,7 +177,7 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
     assert.strictEqual(services[0], 'platform.js', `${view}.html must load services/platform.js before any other service`);
     assert.strictEqual(services.filter((s) => s === 'platform.js').length, 1, `${view}.html loads platform.js once`);
   }
-  const worker = fs.readFileSync(path.join(repoRoot, 'src', 'scripts', 'background.js'), 'utf8').match(/importScripts\(([^)]*)\)/)[1];
+  const worker = fs.readFileSync(path.join(repoRoot, 'extension', 'scripts', 'background.js'), 'utf8').match(/importScripts\(([^)]*)\)/)[1];
   const workerServices = [...worker.matchAll(/'\.\.\/services\/([^']+)'/g)].map((m) => m[1]);
   assert.strictEqual(workerServices[0], 'platform.js', 'the service worker imports platform.js before any other service');
   console.log('✓ Every view and the worker load platform.js before the services');
@@ -203,6 +203,38 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   const bad = offenders.filter((o) => !allowed.some((a) => o.startsWith(a)));
   assert.deepStrictEqual(bad, [], `services, components and providers reach Chrome only through platform.js:\n${bad.join('\n')}`);
   console.log('✓ Services, components and providers use Chrome only through platform.js');
+
+  // --- Build targets: the extension and the app share src/, extension-only files live in extension/ ---
+  const { pathToFileURL } = require('url');
+  const targets = await import(pathToFileURL(path.join(repoRoot, 'build-targets.mjs')).href);
+  const ext = targets.buildTarget('extension');
+  const app = targets.buildTarget('app');
+  assert.strictEqual(ext.outDir, '../dist');
+  assert.strictEqual(app.outDir, '../dist-app');
+  assert.deepStrictEqual(Object.keys(ext.inputs).sort(), ['library', 'novel', 'ocr', 'opentosave', 'popup', 'reader', 'settings']);
+  assert.deepStrictEqual(Object.keys(app.inputs).sort(), ['library', 'novel', 'reader', 'settings'], 'the app has no popup, site OCR panel or Open-to-save hand-off page');
+  const copiedTo = (target) => target.copies.map(([, to]) => to);
+  for (const dir of ['providers', 'services', 'styles', 'fonts', 'icons', 'ocr', 'dict']) {
+    assert(copiedTo(ext).includes(`dist/${dir}`), `the extension gets ${dir}`);
+    assert(copiedTo(app).includes(`dist-app/${dir}`), `the app gets ${dir}`);
+  }
+  assert.deepStrictEqual(
+    ext.copies.filter(([from]) => from.startsWith('extension/')).map((pair) => pair.join(' -> ')).sort(),
+    ['extension/manifest.json -> dist/manifest.json', 'extension/rules -> dist/rules', 'extension/scripts -> dist/scripts'],
+    'extension-only files land where the extension expects them'
+  );
+  assert(!app.copies.some(([from]) => from.startsWith('extension/')), 'nothing extension-only goes into the app');
+  assert(/url=views\/library\.html/.test(app.files['index.html'] || ''), 'the app starts on the library');
+  assert.deepStrictEqual(Object.keys(ext.files), [], 'the extension needs no generated start page');
+  assert.throws(() => targets.buildTarget('nope'), /unknown build target/i);
+  for (const moved of ['manifest.json', 'scripts/background.js', 'scripts/content.js', 'scripts/open-to-save-page.js', 'rules/sangtacviet.json']) {
+    assert(fs.existsSync(path.join(repoRoot, 'extension', moved)), `extension/${moved} exists`);
+  }
+  assert(!fs.existsSync(path.join(repoRoot, 'manifest' + '.json')) && !fs.existsSync(path.join(repoRoot, 'src', 'scripts')) && !fs.existsSync(path.join(repoRoot, 'src', 'rules')), 'no leftovers at the old places');
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  assert.strictEqual(pkg.scripts['build:app'], 'vite build --mode app');
+  assert(/buildTarget\(/.test(fs.readFileSync(path.join(repoRoot, 'vite.config.mjs'), 'utf8')), 'vite.config.mjs builds from build-targets.mjs');
+  console.log('✓ Build targets: extension -> dist/, app -> dist-app/ without extension-only files');
 
   console.log('🎉 Platform Test Suite: ALL TESTS PASSED!');
 })().catch((err) => {

@@ -7,7 +7,7 @@ console.log('--- Running Settings & Navigation Test Suite ---');
 const repoRoot = path.resolve(__dirname, '..');
 
 // Test 1: Manifest options_ui registration
-const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'manifest.json'), 'utf8'));
+const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'extension', 'manifest.json'), 'utf8'));
 assert(manifest.options_ui, 'manifest.json must contain options_ui');
 assert.strictEqual(manifest.options_ui.page, 'views/settings.html', 'options_ui.page must point to views/settings.html');
 assert.strictEqual(manifest.options_ui.open_in_tab, true, 'options_ui.open_in_tab must be true');

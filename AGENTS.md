@@ -11,10 +11,17 @@ for directory layout, porting rules, and feature checklists.
 - `npm test` — run the full Node test suite (22 suites) (`tests/run_all.js`). Must pass before finishing a task.
 - `npm run build:css` — rebuild `src/styles/tailwind.css` from `src/styles/input.css` + scanned content.
 - `npm run watch:css` — watch mode while developing UI.
+- `npm run build:ext` — build the Chrome extension into `dist/`.
+- `npm run build:app` — build the app (Capacitor, for Android) into `dist-app/`.
 
 **Loading the extension:** run `npm run build:ext`, then load unpacked from `dist/` in
 `chrome://extensions`. React pages (e.g. `novel.html`'s queue dock) only exist in the Vite
 build, so the repo root is no longer a loadable target. `npm run dev` is for UI iteration.
+
+**Two builds, one app:** `src/` is shared. Extension-only files live in `extension/`
+(`manifest.json`, `scripts/background.js`, `scripts/content.js`, `scripts/open-to-save-page.js`,
+`rules/`) and are copied into `dist/`; `build-targets.mjs` lists what each build contains.
+Services and components reach `chrome.*` only through `src/services/platform.js` (a test enforces it).
 
 **CSS gotcha:** Tailwind is compiled and committed. After editing any markup/JS that
 introduces new utility classes, run `npm run build:css` (or the `watch` script). Missing
