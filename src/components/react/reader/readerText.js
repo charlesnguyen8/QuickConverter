@@ -9,6 +9,36 @@ export function chapterDisplayText(chapter, { conversionMode = false, convert = 
   return chapter.convertedText || chapter.rawText || '';
 }
 
+function nowMs() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+}
+
+const LOAD_LABELS = {
+  hanViet: 'Hán Việt',
+  vietPhrase: 'VietPhrase',
+  qtNames: 'QT Names',
+  pronouns: 'Pronouns',
+  ignoredPhrases: 'Ignored phrases',
+  luatNhan: 'LuatNhan',
+  hoNguoi: 'HoNguoi',
+  hauTu: 'HauTu',
+  traditional: 'Traditional → Simplified',
+  build: 'building the converter'
+};
+
+function formatDuration(ms) {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`;
+}
+
+export function formatLoadTimings(timings) {
+  if (!timings || typeof timings.total !== 'number') return '';
+  const parts = Object.entries(timings.byName || {});
+  if (typeof timings.build === 'number') parts.push(['build', timings.build]);
+  const slowest = parts.sort((a, b) => b[1] - a[1])[0];
+  const summary = `Dictionaries loaded in ${formatDuration(timings.total)}`;
+  return slowest ? `${summary} · slowest: ${LOAD_LABELS[slowest[0]] || slowest[0]} ${formatDuration(slowest[1])}` : summary;
+}
+
 export async function buildReaderConverter(novel, services, { onError } = {}) {
   const { storage, hanViet, dictionaries, processors } = services;
   const report = (err) => {
@@ -16,18 +46,25 @@ export async function buildReaderConverter(novel, services, { onError } = {}) {
     return undefined;
   };
   const safe = (promise) => Promise.resolve(promise).catch(report);
+  const started = nowMs();
+  const byName = {};
+  const timed = (name, load) => {
+    const start = nowMs();
+    const done = () => { byName[name] = nowMs() - start; };
+    return Promise.resolve().then(load).then((value) => { done(); return value; }, (err) => { done(); throw err; });
+  };
   const [hanVietMap, locked, soft, vietPhrase, qtNames, pronouns, ignoredPhrases, luatNhan, hoNguoi, hauTu, traditional] = await Promise.all([
-    safe(hanViet.load()),
+    safe(timed('hanViet', () => hanViet.load())),
     safe(storage.getNameList(novel.id, 'locked')),
     safe(storage.getNameList(novel.id, 'soft')),
-    safe(dictionaries.load('vietPhrase')),
-    safe(dictionaries.load('qtNames')),
-    safe(dictionaries.load('pronouns')),
-    safe(dictionaries.load('ignoredPhrases')),
-    safe(dictionaries.load('luatNhan')),
-    safe(dictionaries.load('hoNguoi')),
-    safe(dictionaries.load('hauTu')),
-    safe(dictionaries.load('traditional'))
+    safe(timed('vietPhrase', () => dictionaries.load('vietPhrase'))),
+    safe(timed('qtNames', () => dictionaries.load('qtNames'))),
+    safe(timed('pronouns', () => dictionaries.load('pronouns'))),
+    safe(timed('ignoredPhrases', () => dictionaries.load('ignoredPhrases'))),
+    safe(timed('luatNhan', () => dictionaries.load('luatNhan'))),
+    safe(timed('hoNguoi', () => dictionaries.load('hoNguoi'))),
+    safe(timed('hauTu', () => dictionaries.load('hauTu'))),
+    safe(timed('traditional', () => dictionaries.load('traditional')))
   ]);
   const loaded = {};
   if (vietPhrase) loaded.vietPhrase = vietPhrase;
@@ -36,6 +73,7 @@ export async function buildReaderConverter(novel, services, { onError } = {}) {
   if (hoNguoi) loaded.hoNguoi = hoNguoi;
   if (hauTu) loaded.hauTu = hauTu;
   if (traditional) loaded.traditional = traditional;
+  const buildStart = nowMs();
   const converter = processors.createConverter({
     hanViet: hanVietMap || new Map(),
     names: Array.isArray(novel.nameList) ? novel.nameList : [],
@@ -55,7 +93,9 @@ export async function buildReaderConverter(novel, services, { onError } = {}) {
     return out;
   };
   const readingOf = (text) => Array.from(String(text || '')).map((ch) => (hanVietMap && hanVietMap.has(ch) ? hanVietMap.get(ch) : ch)).join(' ');
-  return { ...converter, meaningsOf, readingOf };
+  const finished = nowMs();
+  const loadTimings = { total: finished - started, build: finished - buildStart, byName };
+  return { ...converter, meaningsOf, readingOf, loadTimings };
 }
 
 export function paragraphsFromLines(lines) {

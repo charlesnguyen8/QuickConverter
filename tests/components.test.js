@@ -446,6 +446,17 @@ function test(name, fn) {
   });
 
   // --- ReaderNotSaved ---
+  const ReaderDictionaryStatus = (await loadComponent('components/react/reader/ReaderDictionaryStatus.jsx')).default;
+  test('ReaderDictionaryStatus shows dictionary loading and then how long it took, in conversion mode only', () => {
+    const loading = render(h(ReaderDictionaryStatus, { conversionMode: true, loading: true }));
+    assert(/id="reader-dict-timing"/.test(loading) && loading.includes('Loading dictionaries'), 'while loading');
+    const done = render(h(ReaderDictionaryStatus, { conversionMode: true, timings: { total: 2412, build: 300, byName: { vietPhrase: 1900 } } }));
+    assert(done.includes('Dictionaries loaded in 2.4 s') && done.includes('VietPhrase 1.9 s'), 'after loading');
+    assert(/role="status"/.test(done), 'announced politely');
+    assert.strictEqual(render(h(ReaderDictionaryStatus, { conversionMode: false, timings: { total: 1, build: 1, byName: {} } })), '', 'nothing outside conversion mode');
+    assert.strictEqual(render(h(ReaderDictionaryStatus, { conversionMode: true })), '', 'nothing before anything happened');
+  });
+
   const ReaderNotSaved = (await loadComponent('components/react/reader/ReaderNotSaved.jsx')).default;
 
   test('ReaderNotSaved shows the DeepSeek card and download button', () => {

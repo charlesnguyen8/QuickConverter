@@ -18,6 +18,7 @@ import {
 import ReaderPhraseText from './ReaderPhraseText.jsx';
 import ReaderPhrasePopover from './ReaderPhrasePopover.jsx';
 import ReaderNameText from './ReaderNameText.jsx';
+import ReaderDictionaryStatus from './ReaderDictionaryStatus.jsx';
 import { useReaderSearch } from './readerLocation.js';
 import { recordChapterOpened, restoreParagraph, topParagraphIndex } from '../shared/lastRead.jsx';
 
@@ -491,6 +492,11 @@ export default function ReaderChapter() {
           <span>&bull;</span>
           <span id="chapter-reading-time">~{mins} min read</span>
         </div>
+        <ReaderDictionaryStatus
+          conversionMode={conversionMode}
+          loading={conversionMode && !converter}
+          timings={converter && converter.loadTimings}
+        />
       </header>
 
       <div

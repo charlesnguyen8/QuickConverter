@@ -393,6 +393,34 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert.strictEqual(readerText.chapterDisplayText({ rawText: '林动' }, { conversionMode: true, convert: null }), '林动');
   });
 
+  await test('buildReaderConverter reports how long each dictionary and the converter build took', async () => {
+    const wait = (ms, value) => new Promise((r) => setTimeout(() => r(value), ms));
+    const services = {
+      storage: { getNameList: async () => [] },
+      hanViet: { load: () => wait(5, new Map()) },
+      dictionaries: { load: (name) => wait(name === 'vietPhrase' ? 40 : 1, name === 'luatNhan' || name === 'ignoredPhrases' ? [] : new Map()) },
+      processors: { createConverter: () => ({ convert: (t) => t }) }
+    };
+    const converter = await readerText.buildReaderConverter({ id: 'n1', nameList: [] }, services);
+    const t = converter.loadTimings;
+    assert(t && typeof t.total === 'number' && typeof t.build === 'number', 'total and build times');
+    assert.deepStrictEqual(Object.keys(t.byName).sort(), ['hanViet', 'hauTu', 'hoNguoi', 'ignoredPhrases', 'luatNhan', 'pronouns', 'qtNames', 'traditional', 'vietPhrase']);
+    assert(t.byName.vietPhrase >= 35, `the slow dictionary is measured (${t.byName.vietPhrase} ms)`);
+    assert.strictEqual(Object.entries(t.byName).sort((a, b) => b[1] - a[1])[0][0], 'vietPhrase', 'and comes out slowest');
+    assert(t.total >= t.byName.vietPhrase, 'the total covers the slowest load');
+    assert.strictEqual(typeof converter.convert, 'function', 'the converter itself is unchanged');
+  });
+
+  await test('formatLoadTimings gives a short readable summary for the reader', () => {
+    assert.strictEqual(readerText.formatLoadTimings({ total: 2412, build: 300, byName: { vietPhrase: 1900, hanViet: 200 } }),
+      'Dictionaries loaded in 2.4 s · slowest: VietPhrase 1.9 s');
+    assert.strictEqual(readerText.formatLoadTimings({ total: 640, build: 500, byName: { vietPhrase: 120, qtNames: 90 } }),
+      'Dictionaries loaded in 640 ms · slowest: building the converter 500 ms');
+    assert.strictEqual(readerText.formatLoadTimings({ total: 900, build: 10, byName: { traditional: 700 } }),
+      'Dictionaries loaded in 900 ms · slowest: Traditional → Simplified 700 ms');
+    assert.strictEqual(readerText.formatLoadTimings(null), '');
+  });
+
   await test('buildReaderConverter loads every list and dictionary for the novel', async () => {
     const calls = [];
     const services = {
