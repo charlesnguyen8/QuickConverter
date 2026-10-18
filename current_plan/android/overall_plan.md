@@ -3,7 +3,7 @@
 **Goal:** ship QuickConverter as an Android app (Capacitor) while the Chrome extension keeps working.
 One repository, one shared web app, two thin platform shells.
 
-**Status (2026-10-18):** Phase 0 done (platform layer, `extension/` split, `build:app`). Next: Phase 1.
+**Status (2026-10-18):** Phase 0 done (platform layer, `extension/` split, `build:app`). Phase 1 in progress (app runs on the phone, v1.1.0 released).
 
 **Rule of engagement:** same as the extension — `npm test` green (test-first where behavior changes),
 `npm run build:css` when new utility classes appear, `npm run build:ext` must keep producing a working
@@ -144,7 +144,16 @@ Rough ranges for focused work. The real bottleneck is testing on a phone/emulato
 - **Progress (2026-10-18):** Capacitor 8.5.3 added (`capacitor.config.json`: app id
   `com.quickconverter.app`, `webDir: dist-app`, CapacitorHttp + CapacitorCookies on); `android/`
   generated; debug APK (33 MB) builds with JDK 23 and runs on the owner's Galaxy S23 (installed by
-  the owner from the APK file; no adb). Next: on-screen dictionary load timing, then the rest above.
+  the owner from the APK file; no adb). Since then: `navigator.storage.persist()` at startup,
+  backup to/from a file in Settings, Drive sync through a native GoogleAuth plugin (pulled forward
+  from Phase 3), and signed GitHub releases on `v*` tags for Obtainium (v1.1.0 published).
+- **Risk 1 measured:** all dictionaries load and the converter builds in about 1 s on the S23, so
+  the current dictionary format stays; no compact format needed.
+- **v1.1.1:** Android back button (closes the open panel via Escape, then previous page, then the
+  library, then minimizes; `@capacitor/app`), dark status/gesture bars matching the pages (Capacitor
+  8 SystemBars pads the WebView, so no `viewport-fit=cover` CSS needed), and saving a backup file in
+  the app through a native FileSaver plugin (Android's create-document picker).
+- **Left:** the "done when" check on the phone.
 
 ### Phase 2 — Sources (≈1–1.5 weeks)
 
