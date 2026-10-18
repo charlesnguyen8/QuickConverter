@@ -16,6 +16,10 @@ function getQueueService() {
   return typeof window !== 'undefined' ? window.DownloadQueueService : null;
 }
 
+export async function syncCatalog(storage, novel) {
+  return storage.syncNovel(novel.id);
+}
+
 function Spinner({ className }) {
   return (
     <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -129,7 +133,7 @@ export default function NovelApp() {
     if (!novel || syncing) return;
     setSyncing(true);
     try {
-      const updated = await window.StorageService.syncNovelChapters(novel.id);
+      const updated = await syncCatalog(window.StorageService, novel);
       if (updated) setNovel(updated);
       refreshChapterList();
     } catch (e) {
@@ -294,7 +298,7 @@ export default function NovelApp() {
       <main className="max-w-5xl mx-auto w-full px-6 py-8 flex-1 flex flex-col gap-8">
         <ProviderLoginBanner novel={novel} />
 
-        <NovelHero />
+        <NovelHero novel={novel} />
 
         <section className="flex flex-col gap-4">
           <div className="flex items-center justify-between pb-2 border-b border-slate-800">

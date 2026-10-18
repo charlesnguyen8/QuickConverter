@@ -8,8 +8,9 @@ function getNovelId() {
   return new URLSearchParams(window.location.search).get('id');
 }
 
-export default function NovelHero() {
-  const [novel, setNovel] = useState(null);
+export default function NovelHero({ novel: givenNovel = null } = {}) {
+  const [loadedNovel, setNovel] = useState(null);
+  const novel = givenNovel || loadedNovel;
   const [notFound, setNotFound] = useState(false);
   const [stats, setStats] = useState({ downloaded: 0, total: 0 });
 

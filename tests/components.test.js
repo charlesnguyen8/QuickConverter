@@ -26,6 +26,16 @@ function test(name, fn) {
   }
 }
 
+async function testAsync(name, fn) {
+  try {
+    await fn();
+    results.push(`  ✓ ${name}`);
+  } catch (err) {
+    failures++;
+    results.push(`  ✗ ${name}\n      ${err.message}`);
+  }
+}
+
 (async () => {
   console.log('--- Running React Component Render Test Suite ---');
 
@@ -638,6 +648,26 @@ function test(name, fn) {
     assert(novelHeader && novelHeader[0].includes('id="open-name-list-btn"'), 'novel Name List trigger must live in the top bar next to Settings');
   });
 
+  const { syncCatalog } = await loadComponent('components/react/novel/NovelApp.jsx');
+  await testAsync('Sync Catalog refreshes the book (cover, total) together with its catalog', async () => {
+    const calls = [];
+    const updated = { id: 'n1', thumbnail: 'cover.png', chapterList: [{ chapterNumber: 1 }] };
+    const storage = {
+      async syncNovel(id) { calls.push(['syncNovel', id]); return updated; },
+      async syncNovelChapters(id) { calls.push(['syncNovelChapters', id]); return updated; }
+    };
+    assert.strictEqual(await syncCatalog(storage, { id: 'n1' }), updated, 'returns the refreshed book');
+    assert.deepStrictEqual(calls, [['syncNovel', 'n1']], 'one full sync, not the catalog alone');
+  });
+
+  const NovelHero = (await loadComponent('components/react/novel/NovelHero.jsx')).default;
+  test('NovelHero shows the book it is given, so a sync refreshes the cover and total', () => {
+    const html = render(h(NovelHero, { novel: { id: 'n1', title: 'A Regressor’s Tale', thumbnail: 'https://media.reaperscans.net/c.png', totalChapters: 893, domain: 'wetriedtls.com' } }));
+    assert(/id="novel-artwork"[^>]*src="https:\/\/media\.reaperscans\.net\/c\.png"/.test(html) || /src="https:\/\/media\.reaperscans\.net\/c\.png"[^>]*id="novel-artwork"/.test(html), 'cover from the given book');
+    assert(html.includes('A Regressor’s Tale'), 'title from the given book');
+    assert(html.includes('893'), 'total from the given book');
+  });
+
   test('NovelApp has a per-novel dictionary conversion toggle, off by default', () => {
     assert(/id="conversion-mode-toggle"[^>]*role="switch"/.test(novelApp) || /role="switch"[^>]*id="conversion-mode-toggle"/.test(novelApp), 'toggle is a switch');
     assert(/id="conversion-mode-toggle"[^>]*aria-checked="false"/.test(novelApp) || /aria-checked="false"[^>]*id="conversion-mode-toggle"/.test(novelApp), 'off by default');
@@ -706,7 +736,6 @@ function test(name, fn) {
   });
 
   const { NovelCard } = await loadComponent('components/react/library/LibraryView.jsx');
-  const NovelHero = (await loadComponent('components/react/novel/NovelHero.jsx')).default;
   test('library cards and the novel page show the default cover when a novel has none', () => {
     const card = (thumbnail) => render(h(NovelCard, { novel: { id: 'n1', title: 'N', totalChapters: 3, thumbnail }, stats: {} }));
     assert(card('').includes('src="../icons/default-cover.png"'), 'no cover');

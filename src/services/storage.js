@@ -818,6 +818,12 @@ const StorageService = {
     return novel;
   },
 
+  async syncNovel(slugOrId) {
+    const novel = await this.syncNovelMetadata(slugOrId);
+    if (!novel) return null;
+    return this.syncNovelChapters(novel.id);
+  },
+
   async syncNovelChapters(slugOrId) {
     let novel = await this.getNovelById(slugOrId);
     if (!novel) {

@@ -94,6 +94,66 @@ vm.runInContext(registryCode, testEnv);
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'src', 'services', 'platform.js'), 'utf8'), testEnv);
 vm.runInContext(storageCode, testEnv);
 
+function makeSyncEnv() {
+  const stores = { novels: {}, chapters: {} };
+  const calls = [];
+  const request = (result) => {
+    const req = { result, onsuccess: null, onerror: null };
+    setTimeout(() => { if (req.onsuccess) req.onsuccess(); }, 0);
+    return req;
+  };
+  const database = {
+    transaction() {
+      const tx = {
+        objectStore: (name) => {
+          if (!stores[name]) stores[name] = {};
+          return {
+            getAll: () => request(Object.values(stores[name])),
+            get: (id) => request(stores[name][id] || null),
+            put: (record) => { stores[name][record.id] = { ...record }; },
+            delete: (id) => { delete stores[name][id]; }
+          };
+        },
+        oncomplete: null,
+        onerror: null
+      };
+      setTimeout(() => { if (tx.oncomplete) tx.oncomplete(); }, 5);
+      return tx;
+    }
+  };
+  const provider = {
+    async fetchSeriesMetadata() {
+      calls.push('metadata');
+      return { title: 'A Regressor’s Tale of Cultivation', totalChapters: 893, thumbnail: 'https://media.reaperscans.net/file/7BSHk1m/cover.png', author: null, status: 'Active' };
+    },
+    async fetchChapterList(slug) {
+      calls.push('chapters');
+      return [0, 1, 2].map((n) => ({ chapterNumber: n, title: `Chapter ${n}`, slug: `chapter-${n}`, url: `https://wetriedtls.com/series/${slug}/chapter-${n}` }));
+    }
+  };
+  const ls = { quickconverter_db_initialized: 'true' };
+  const env = {
+    console,
+    URL,
+    setTimeout,
+    clearTimeout,
+    localStorage: {
+      getItem: (k) => (k in ls ? ls[k] : null),
+      setItem: (k, v) => { ls[k] = String(v); },
+      removeItem: (k) => { delete ls[k]; }
+    },
+    indexedDB: { open: () => request(database) },
+    ProviderRegistry: { getProviderForUrl: () => provider, getProviderForDomain: () => provider }
+  };
+  env.window = env;
+  env.self = env;
+  env.globalThis = env;
+  vm.createContext(env);
+  vm.runInContext(fs.readFileSync(path.join(repoRoot, 'src', 'services', 'platform.js'), 'utf8'), env);
+  vm.runInContext(storageCode, env);
+  return { S: env.StorageService, stores, calls };
+}
+
 const WetriedtlsProvider = testEnv.WetriedtlsProvider;
 const ProviderRegistry = testEnv.ProviderRegistry;
 const StorageService = testEnv.StorageService;
@@ -195,8 +255,42 @@ async function runTests() {
   console.log('✓ novel-added custom DOM event dispatched with expected payload');
   passedCount++;
 
+  // Test 9: one sync refreshes the book's cover/total and its catalog (the app has no popup or
+  // content script to refresh the metadata)
+  const synced = makeSyncEnv();
+  synced.stores.novels['novel-1'] = {
+    id: 'novel-1',
+    title: 'A Regressor’s Tale of Cultivation',
+    slug: 'a-regressors-tale-of-cultivation',
+    url: 'https://wetriedtls.com/series/a-regressors-tale-of-cultivation',
+    domain: 'wetriedtls.com',
+    thumbnail: '',
+    totalChapters: 100,
+    chapterList: []
+  };
+  const result = await synced.S.syncNovel('novel-1');
+  const stored = synced.stores.novels['novel-1'];
+  assert.strictEqual(stored.thumbnail, 'https://media.reaperscans.net/file/7BSHk1m/cover.png', 'cover comes from the series page');
+  assert.strictEqual(stored.totalChapters, 893, 'total comes from the series page');
+  assert.deepStrictEqual(stored.chapterList.map((c) => c.slug), ['chapter-0', 'chapter-1', 'chapter-2'], 'catalog comes from the chapter API');
+  assert.strictEqual(result.thumbnail, stored.thumbnail, 'returns the updated book');
+  assert.strictEqual(result.chapterList.length, 3, 'returns the book with its catalog');
+  assert.deepStrictEqual(synced.calls, ['metadata', 'chapters'], 'metadata first, then the catalog');
+  assert.strictEqual(await synced.S.syncNovel('missing'), null, 'an unknown book syncs nothing');
+  console.log('✓ StorageService.syncNovel refreshes cover/total and the chapter catalog in one call');
+  passedCount++;
+
   console.log(`\n🎉 All ${passedCount} Add Book & Provider tests passed!`);
+  finished = true;
 }
+
+let finished = false;
+process.on('beforeExit', () => {
+  if (!finished) {
+    console.error('❌ Add Book suite stopped before its last test (a promise never settled)');
+    process.exitCode = 1;
+  }
+});
 
 runTests().catch((err) => {
   console.error('❌ Test failed:', err);
