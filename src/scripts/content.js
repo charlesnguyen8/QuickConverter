@@ -95,8 +95,9 @@
         // 2. Wait for content hydration if needed
         let chapterInfo = provider.extractChapterInfo(document, chapterNumber);
         let attempts = 0;
+        const maxAttempts = Math.ceil((provider.contentWaitMs || 5000) / 500);
 
-        while ((!chapterInfo || !chapterInfo.rawText) && attempts < 10) {
+        while ((!chapterInfo || !chapterInfo.rawText) && attempts < maxAttempts) {
           attempts++;
           await new Promise((resolve) => setTimeout(resolve, 500));
           chapterInfo = provider.extractChapterInfo(document, chapterNumber);

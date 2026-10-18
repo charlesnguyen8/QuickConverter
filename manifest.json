@@ -23,8 +23,14 @@
     "storage",
     "unlimitedStorage",
     "alarms",
-    "identity"
+    "identity",
+    "declarativeNetRequestWithHostAccess"
   ],
+  "declarative_net_request": {
+    "rule_resources": [
+      { "id": "sangtacviet", "enabled": true, "path": "rules/sangtacviet.json" }
+    ]
+  },
   "oauth2": {
     "client_id": "438493947438-003cf2s30kfu33fespdmd3ac31rhenef.apps.googleusercontent.com",
     "scopes": [
@@ -40,6 +46,8 @@
     "*://*.wetriedtls.com/*",
     "*://nkwwlkj.cn/*",
     "*://*.nkwwlkj.cn/*",
+    "*://sangtacviet.com/*",
+    "*://*.sangtacviet.com/*",
     "https://api.deepseek.com/*",
     "https://www.googleapis.com/*",
     "http://127.0.0.1:*/*",
@@ -67,6 +75,18 @@
       ],
       "js": [
         "providers/nkwwlkj.js",
+        "providers/registry.js",
+        "scripts/content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://sangtacviet.com/truyen/*",
+        "*://*.sangtacviet.com/truyen/*"
+      ],
+      "js": [
+        "providers/sangtacviet.js",
         "providers/registry.js",
         "scripts/content.js"
       ],

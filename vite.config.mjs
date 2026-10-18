@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { cpSync, mkdirSync, readdirSync } from 'node:fs';
 
-const legacyDirs = ['providers', 'services', 'scripts', 'styles', 'fonts', 'icons', 'ocr', 'dict'];
+const legacyDirs = ['providers', 'services', 'scripts', 'styles', 'fonts', 'icons', 'ocr', 'dict', 'rules'];
 
 export default defineConfig({
   root: 'src',

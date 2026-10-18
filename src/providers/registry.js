@@ -65,6 +65,9 @@ const ProviderRegistry = (() => {
   if (globalScope && globalScope.NkwwlkjProvider) {
     registerProvider(globalScope.NkwwlkjProvider);
   }
+  if (globalScope && globalScope.SangtacvietProvider) {
+    registerProvider(globalScope.SangtacvietProvider);
+  }
 
   return {
     registerProvider,

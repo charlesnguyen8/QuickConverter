@@ -1,7 +1,7 @@
 // QuickConverter Background Service Worker
 // Coordinates tab listeners, automated popup triggering via providers, and IndexedDB message bus.
 
-importScripts('../providers/wetriedtls.js', '../providers/nkwwlkj.js', '../providers/registry.js', '../services/custom-api.js', '../services/deepseek.js', '../services/ai-service.js', '../services/name-matcher.js', '../services/longest-matcher.js', '../services/qt-numbers.js', '../services/luat-nhan.js', '../services/text-processors.js', '../services/han-viet.js', '../services/qt-dictionaries.js', '../services/storage.js', '../services/download-queue.js', '../services/open-to-save.js');
+importScripts('../providers/wetriedtls.js', '../providers/nkwwlkj.js', '../providers/sangtacviet.js', '../providers/registry.js', '../services/custom-api.js', '../services/deepseek.js', '../services/ai-service.js', '../services/name-matcher.js', '../services/longest-matcher.js', '../services/qt-numbers.js', '../services/luat-nhan.js', '../services/text-processors.js', '../services/han-viet.js', '../services/qt-dictionaries.js', '../services/storage.js', '../services/download-queue.js', '../services/open-to-save.js');
 
 const OPEN_TO_SAVE_KEY = 'qcOpenToSaveTabs';
 const openToSave = OpenToSave.createTracker({
