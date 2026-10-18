@@ -317,6 +317,18 @@
         title: (typeof document !== 'undefined' && document.title) || ''
       };
     },
+    // Asks the browser/WebView not to evict the library under storage pressure (the app on
+    // Android). The extension already has unlimitedStorage, so it never asks.
+    async requestPersistentStorage() {
+      if (isExtension()) return false;
+      const nav = typeof navigator !== 'undefined' ? navigator : null;
+      if (!nav || !nav.storage || typeof nav.storage.persist !== 'function') return false;
+      try {
+        return !!(await nav.storage.persist());
+      } catch (e) {
+        return false;
+      }
+    },
     // Keeps the extension service worker awake during long work; a no-op elsewhere.
     async ping() {
       const c = chromeApi();

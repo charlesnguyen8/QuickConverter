@@ -171,6 +171,32 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   assert.strictEqual(late.Platform.runtime.isExtension(), true);
   console.log('✓ Platform detects chrome per call');
 
+  // Persistent storage: the app asks Android not to evict its library; the extension already has unlimitedStorage.
+  const persistCalls = [];
+  const appEnv = { console, setTimeout, clearTimeout, navigator: { storage: { persist: async () => { persistCalls.push('persist'); return true; } } } };
+  appEnv.globalThis = appEnv;
+  vm.createContext(appEnv);
+  vm.runInContext(platformCode, appEnv);
+  assert.strictEqual(await appEnv.Platform.runtime.requestPersistentStorage(), true);
+  assert.deepStrictEqual(persistCalls, ['persist']);
+  appEnv.chrome = fakeChrome().chrome;
+  assert.strictEqual(await appEnv.Platform.runtime.requestPersistentStorage(), false, 'not needed in the extension');
+  assert.deepStrictEqual(persistCalls, ['persist'], 'the extension never asks');
+  const bare = { console, setTimeout, clearTimeout };
+  bare.globalThis = bare;
+  vm.createContext(bare);
+  vm.runInContext(platformCode, bare);
+  assert.strictEqual(await bare.Platform.runtime.requestPersistentStorage(), false, 'no Storage API: nothing to ask');
+
+  const startup = { console, setTimeout, clearTimeout, navigator: { storage: { persist: async () => { persistCalls.push('startup'); return true; } } } };
+  startup.globalThis = startup;
+  startup.window = startup;
+  vm.createContext(startup);
+  vm.runInContext(platformCode, startup);
+  vm.runInContext(fs.readFileSync(path.join(repoRoot, 'src', 'services', 'storage.js'), 'utf8'), startup);
+  assert.strictEqual(persistCalls.filter((c) => c === 'startup').length, 1, 'the app asks once when its storage service starts');
+  console.log('✓ Persistent storage is requested once in the app, never in the extension');
+
   for (const view of ['library', 'novel', 'popup', 'reader', 'settings', 'ocr-panel']) {
     const html = fs.readFileSync(path.join(repoRoot, 'src', 'views', `${view}.html`), 'utf8');
     const services = [...html.matchAll(/<script src="\.\.\/services\/([^"]+)"><\/script>/g)].map((m) => m[1]);

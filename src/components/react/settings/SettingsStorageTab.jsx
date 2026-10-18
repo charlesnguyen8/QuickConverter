@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import SettingsBackupFile from './SettingsBackupFile.jsx';
 
 const STATUS_CONNECTED = 'flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
 const STATUS_OFFLINE = 'flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-700 text-slate-300 border border-slate-600';
@@ -207,6 +208,8 @@ export default function SettingsStorageTab() {
           <span className={feedback.cls}>{feedback.text}</span>
         </div>
       </div>
+
+      <SettingsBackupFile onImported={loadStorage} />
     </>
   );
 }

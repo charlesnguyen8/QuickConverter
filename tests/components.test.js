@@ -140,6 +140,61 @@ function test(name, fn) {
     }
   });
 
+  // --- Backup to / from a file ---
+  const backupFile = await loadComponent('components/react/settings/backupFile.js');
+  test('backup files are named by date and validated before import', () => {
+    assert.strictEqual(backupFile.backupFileName(new Date(2026, 9, 18, 23, 5)), 'quickconverter-backup-2026-10-18.json');
+    const good = { format: 'quickconverter-backup', version: 1, novels: [{ id: 'n1' }], chapters: [], preferences: {} };
+    assert.deepStrictEqual(backupFile.parseBackupFile(JSON.stringify(good)), good);
+    assert.throws(() => backupFile.parseBackupFile('not json'), /not a QuickConverter backup/i);
+    assert.throws(() => backupFile.parseBackupFile(JSON.stringify({ format: 'other', version: 1 })), /not a QuickConverter backup/i);
+    assert.throws(() => backupFile.parseBackupFile(JSON.stringify({ ...good, version: 99 })), /newer version/i);
+    assert.strictEqual(backupFile.describeImport({ novels: 3, chapters: 120 }), 'Imported 3 novels and 120 chapters.');
+    assert.strictEqual(backupFile.describeImport({ novels: 1, chapters: 1 }), 'Imported 1 novel and 1 chapter.');
+  });
+
+  test('exporting a backup file downloads the whole library as JSON', async () => {
+    const data = { format: 'quickconverter-backup', version: 1, novels: [{ id: 'n1' }], chapters: [], preferences: {} };
+    const clicks = [];
+    const doc = { createElement: () => ({ click() { clicks.push({ href: this.href, download: this.download }); } }) };
+    const urls = [];
+    const env = {
+      document: doc,
+      URL: { createObjectURL: (blob) => { urls.push(blob); return 'blob:qc-1'; }, revokeObjectURL: (u) => urls.push(`revoked ${u}`) },
+      Blob: class { constructor(parts, opts) { this.text = parts.join(''); this.type = opts.type; } }
+    };
+    const summary = await backupFile.exportBackupFile({ exportAll: async () => data }, env, new Date(2026, 9, 18));
+    assert.deepStrictEqual(clicks, [{ href: 'blob:qc-1', download: 'quickconverter-backup-2026-10-18.json' }]);
+    assert.strictEqual(urls[0].type, 'application/json');
+    assert.deepStrictEqual(JSON.parse(urls[0].text), data, 'the file is the exported library');
+    assert.strictEqual(urls[1], 'revoked blob:qc-1', 'the temporary link is released');
+    assert.strictEqual(summary, 'Saved 1 novel and 0 chapters to quickconverter-backup-2026-10-18.json.');
+  });
+
+  test('importing a backup file merges by default and replaces only when asked', async () => {
+    const data = { format: 'quickconverter-backup', version: 1, novels: [], chapters: [], preferences: {} };
+    const calls = [];
+    const storage = { importAll: async (d, o) => { calls.push(o); return { novels: 2, chapters: 5 }; } };
+    const file = { text: async () => JSON.stringify(data) };
+    assert.strictEqual(await backupFile.importBackupFile(storage, file, { replace: false }), 'Imported 2 novels and 5 chapters.');
+    await backupFile.importBackupFile(storage, file, { replace: true });
+    assert.deepStrictEqual(calls, [{ replace: false }, { replace: true }]);
+    await assert.rejects(() => backupFile.importBackupFile(storage, { text: async () => '{' }, { replace: false }), /not a QuickConverter backup/i);
+    assert.strictEqual(calls.length, 2, 'a bad file never reaches storage');
+  });
+
+  const SettingsBackupFile = (await loadComponent('components/react/settings/SettingsBackupFile.jsx')).default;
+  test('Settings has backup-to-file export and import controls', () => {
+    const html = render(h(SettingsBackupFile));
+    assert(/<button[^>]*id="settings-backup-export"[^>]*>/.test(html), 'export button');
+    const input = html.match(/<input[^>]*id="settings-backup-import"[^>]*>/);
+    assert(input && /type="file"/.test(input[0]) && /accept="[^"]*\.json/.test(input[0]), 'file picker for .json backups');
+    const replace = html.match(/<input[^>]*id="settings-backup-replace"[^>]*>/);
+    assert(replace && /type="checkbox"/.test(replace[0]) && !/checked=""/.test(replace[0]), 'merge by default; replacing is opt-in');
+    assert(/min-h-10/.test(html.match(/<button[^>]*id="settings-backup-export"[^>]*>/)[0]), 'touch-friendly');
+    assert(/API keys/.test(html), 'says API keys are left out');
+  });
+
   // --- SettingsView (shell) ---
   const SettingsView = (await loadComponent('components/react/settings/SettingsView.jsx')).default;
   const shell = render(h(SettingsView));

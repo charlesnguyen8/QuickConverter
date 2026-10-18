@@ -1745,3 +1745,12 @@ if (typeof globalThis !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = StorageService;
 }
+
+(function requestPersistentStorageOnce() {
+  const platform = storagePlatform();
+  const runtime = platform && platform.runtime;
+  if (!runtime || typeof runtime.requestPersistentStorage !== 'function') return;
+  try {
+    Promise.resolve(runtime.requestPersistentStorage()).catch(() => {});
+  } catch (e) {}
+})();
