@@ -22,6 +22,7 @@ const APP_INDEX = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>location.replace('views/library.html');</script>
     <meta http-equiv="refresh" content="0; url=views/library.html" />
     <title>QuickConverter</title>
   </head>

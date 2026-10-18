@@ -55,7 +55,7 @@ export default function AddBookButton({ compact = false, buttonClass = '' }) {
   useEffect(() => {
     if (!open) return undefined;
     const focusTimer = setTimeout(() => { if (inputRef.current) inputRef.current.focus(); }, 80);
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
     document.addEventListener('keydown', onKey);
     return () => {
       clearTimeout(focusTimer);

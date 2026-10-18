@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import LibraryView from './LibraryView.jsx';
+import { installBackButton } from '../shared/backButton.js';
 
 function mount() {
   const target = document.getElementById('library-root');
@@ -12,3 +13,5 @@ if (document.readyState === 'loading') {
 } else {
   mount();
 }
+
+installBackButton();

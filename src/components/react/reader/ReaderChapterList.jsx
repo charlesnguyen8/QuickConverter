@@ -222,6 +222,18 @@ export default function ReaderChapterList({ open = false, onClose }) {
     }
   }, [novel, load]);
 
+  useEffect(() => {
+    if (!open || !onClose) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1024px)').matches) return;
+      e.preventDefault();
+      onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   const queueService = getQueueService();
   const displayList = catalog.length > 0 ? catalog : Array.from(downloadedMap.values());
 

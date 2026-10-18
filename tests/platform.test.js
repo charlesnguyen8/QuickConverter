@@ -211,6 +211,101 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   assert.notStrictEqual(nativeEnv.Platform.identity, appIdentity, 'the extension keeps chrome.identity');
   console.log('✓ App mode: identity goes through the native GoogleAuth plugin');
 
+  // Android back button and leaving the app go through @capacitor/app.
+  const shellCalls = [];
+  let backCallback = null;
+  const shellCap = {
+    PluginHeaders: [{ name: 'App', methods: [] }],
+    nativeCallback: (plugin, method, options, callback) => {
+      shellCalls.push(JSON.parse(JSON.stringify([plugin, method, options])));
+      backCallback = callback;
+      return 'cb-1';
+    },
+    nativePromise: async (plugin, method, options) => {
+      shellCalls.push(JSON.parse(JSON.stringify([plugin, method, options])));
+      return {};
+    }
+  };
+  const shellEnv = { console, setTimeout, clearTimeout, Capacitor: shellCap };
+  shellEnv.globalThis = shellEnv;
+  vm.createContext(shellEnv);
+  vm.runInContext(platformCode, shellEnv);
+  const presses = [];
+  const stopBack = shellEnv.Platform.runtime.onBackButton((info) => presses.push(JSON.parse(JSON.stringify(info))));
+  assert.deepStrictEqual(shellCalls, [['App', 'addListener', { eventName: 'backButton' }]]);
+  backCallback({ canGoBack: true });
+  backCallback(null);
+  assert.deepStrictEqual(presses, [{ canGoBack: true }, { canGoBack: false }]);
+  await stopBack();
+  assert.deepStrictEqual(shellCalls[1], ['App', 'removeListener', { eventName: 'backButton', callbackId: 'cb-1' }]);
+  assert.strictEqual(await shellEnv.Platform.runtime.minimizeApp(), true);
+  assert.deepStrictEqual(shellCalls[2], ['App', 'minimizeApp', {}]);
+  const noShell = { console, setTimeout, clearTimeout };
+  noShell.globalThis = noShell;
+  vm.createContext(noShell);
+  vm.runInContext(platformCode, noShell);
+  const noop = noShell.Platform.runtime.onBackButton(() => { throw new Error('never called'); });
+  assert.strictEqual(typeof noop, 'function', 'still returns an unsubscribe');
+  assert.strictEqual(await noShell.Platform.runtime.minimizeApp(), false, 'nothing to minimize outside the app');
+  console.log('✓ App mode: back button and minimizing go through the App plugin');
+
+  // Saving a file in the app: Android's "create document" picker, written in chunks.
+  const saveCalls = [];
+  let created = true;
+  let failWrite = false;
+  const saverCap = {
+    PluginHeaders: [{ name: 'FileSaver', methods: [] }],
+    nativePromise: async (plugin, method, options) => {
+      saveCalls.push(JSON.parse(JSON.stringify([plugin, method, options])));
+      if (method === 'begin') return { created };
+      if (method === 'write' && failWrite) throw new Error('disk full');
+      return {};
+    }
+  };
+  const saverEnv = { console, setTimeout, clearTimeout, Capacitor: saverCap };
+  saverEnv.globalThis = saverEnv;
+  vm.createContext(saverEnv);
+  vm.runInContext(platformCode, saverEnv);
+  const files = saverEnv.Platform.files;
+  assert.ok(files, 'the app can save files when its FileSaver plugin is present');
+  const text = 'a'.repeat(5) + 'b'.repeat(5) + 'c'.repeat(2);
+  assert.strictEqual(await files.saveText('backup.json', 'application/json', text, { chunkSize: 5 }), true);
+  assert.deepStrictEqual(saveCalls, [
+    ['FileSaver', 'begin', { fileName: 'backup.json', mimeType: 'application/json' }],
+    ['FileSaver', 'write', { text: 'aaaaa' }],
+    ['FileSaver', 'write', { text: 'bbbbb' }],
+    ['FileSaver', 'write', { text: 'cc' }],
+    ['FileSaver', 'finish', {}]
+  ]);
+  saveCalls.length = 0;
+  created = false;
+  assert.strictEqual(await files.saveText('backup.json', 'application/json', text), false, 'picker cancelled');
+  assert.deepStrictEqual(saveCalls.map((c) => c[1]), ['begin'], 'nothing is written after a cancel');
+  saveCalls.length = 0;
+  created = true;
+  failWrite = true;
+  await assert.rejects(() => files.saveText('backup.json', 'application/json', text), /disk full/);
+  assert.deepStrictEqual(saveCalls.map((c) => c[1]), ['begin', 'write', 'abort'], 'a failed save removes the half-written file');
+  assert.strictEqual(noShell.Platform.files, null, 'no FileSaver plugin: the page downloads instead');
+  console.log('✓ App mode: files are saved through the FileSaver plugin in chunks');
+
+  const capConfig = JSON.parse(fs.readFileSync(path.join(repoRoot, 'capacitor.config.json'), 'utf8'));
+  assert.strictEqual(capConfig.plugins.SystemBars && capConfig.plugins.SystemBars.style, 'DARK', 'light status bar icons on the dark app');
+  const androidRes = path.join(repoRoot, 'android', 'app', 'src', 'main', 'res', 'values');
+  const colors = fs.readFileSync(path.join(androidRes, 'colors.xml'), 'utf8');
+  assert(/<color name="qc_background">#0f172a<\/color>/i.test(colors), 'app background is slate-900 like the pages');
+  const styles = fs.readFileSync(path.join(androidRes, 'styles.xml'), 'utf8');
+  const appTheme = styles.match(/<style name="AppTheme\.NoActionBar"[\s\S]*?<\/style>/);
+  assert(appTheme && /name="android:windowBackground">@color\/qc_background</.test(appTheme[0]), 'status and gesture bar areas match the pages');
+  const mainActivity = fs.readFileSync(path.join(repoRoot, 'android', 'app', 'src', 'main', 'java', 'com', 'quickconverter', 'app', 'MainActivity.java'), 'utf8');
+  assert(/registerPlugin\(FileSaverPlugin\.class\)/.test(mainActivity) && /registerPlugin\(GoogleAuthPlugin\.class\)/.test(mainActivity), 'app plugins are registered');
+  assert(JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).dependencies['@capacitor/app'], '@capacitor/app provides the back button');
+  for (const view of ['library', 'novel', 'reader', 'settings']) {
+    const entry = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', view, `${view}-entry.jsx`), 'utf8');
+    assert(/installBackButton\(/.test(entry), `${view} handles the Android back button`);
+  }
+  console.log('✓ Android shell: dark system bars, plugins registered, every app page handles Back');
+
   // Persistent storage: the app asks Android not to evict its library; the extension already has unlimitedStorage.
   const persistCalls = [];
   const appEnv = { console, setTimeout, clearTimeout, navigator: { storage: { persist: async () => { persistCalls.push('persist'); return true; } } } };
@@ -291,6 +386,7 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   );
   assert(!app.copies.some(([from]) => from.startsWith('extension/')), 'nothing extension-only goes into the app');
   assert(/url=views\/library\.html/.test(app.files['index.html'] || ''), 'the app starts on the library');
+  assert(/location\.replace\(['"]views\/library\.html['"]\)/.test(app.files['index.html'] || ''), 'the start page leaves no history entry, so Back never lands on it');
   assert.deepStrictEqual(Object.keys(ext.files), [], 'the extension needs no generated start page');
   assert.throws(() => targets.buildTarget('nope'), /unknown build target/i);
   for (const moved of ['manifest.json', 'scripts/background.js', 'scripts/content.js', 'scripts/open-to-save-page.js', 'rules/sangtacviet.json']) {

@@ -8,6 +8,9 @@
     },
     "CapacitorCookies": {
       "enabled": true
+    },
+    "SystemBars": {
+      "style": "DARK"
     }
   }
 }

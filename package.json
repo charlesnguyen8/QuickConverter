@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@capacitor/android": "8.5.3",
+    "@capacitor/app": "^8.1.2",
     "@capacitor/core": "8.5.3",
     "onnxruntime-web": "^1.30.0",
     "ppu-paddle-ocr": "^6.6.1",

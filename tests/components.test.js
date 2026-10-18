@@ -183,6 +183,81 @@ function test(name, fn) {
     assert.strictEqual(calls.length, 2, 'a bad file never reaches storage');
   });
 
+  test('in the app, a backup file is saved through the native file picker', async () => {
+    const data = { format: 'quickconverter-backup', version: 1, novels: [{ id: 'n1' }, { id: 'n2' }], chapters: [{ id: 'c' }], preferences: {} };
+    const saved = [];
+    let accept = true;
+    const env = {
+      Platform: { files: { saveText: async (name, type, text) => { saved.push({ name, type, text }); return accept; } } },
+      document: { createElement: () => { throw new Error('no download link in the app'); } }
+    };
+    const summary = await backupFile.exportBackupFile({ exportAll: async () => data }, env, new Date(2026, 9, 18));
+    assert.strictEqual(saved.length, 1);
+    assert.strictEqual(saved[0].name, 'quickconverter-backup-2026-10-18.json');
+    assert.strictEqual(saved[0].type, 'application/json');
+    assert.deepStrictEqual(JSON.parse(saved[0].text), data);
+    assert.strictEqual(summary, 'Saved 2 novels and 1 chapter to quickconverter-backup-2026-10-18.json.');
+    accept = false;
+    assert.strictEqual(await backupFile.exportBackupFile({ exportAll: async () => data }, env, new Date(2026, 9, 18)), 'Save cancelled.');
+  });
+
+  // --- Android back button ---
+  const back = await loadComponent('components/react/shared/backButton.js');
+  function backEnv({ handled = false, active = null, path = '/views/reader.html' } = {}) {
+    const log = [];
+    const doc = {
+      body: { id: 'body' },
+      activeElement: active,
+      dispatchEvent(event) { log.push(['escape-on', 'document', event.key]); if (handled) event.preventDefault(); return !handled; }
+    };
+    if (active) {
+      active.dispatchEvent = (event) => { log.push(['escape-on', active.id, event.key]); if (handled) event.preventDefault(); return !handled; };
+    }
+    return {
+      log,
+      env: {
+        document: doc,
+        history: { back: () => log.push(['history-back']) },
+        location: { pathname: path, set href(v) { log.push(['go', v]); } },
+        minimizeApp: () => log.push(['minimize'])
+      }
+    };
+  }
+
+  test('Back first closes whatever is open (as Escape would)', () => {
+    const { log, env } = backEnv({ handled: true });
+    assert.strictEqual(back.handleBackPress({ canGoBack: true }, env), 'closed');
+    assert.deepStrictEqual(log, [['escape-on', 'document', 'Escape']], 'nothing else happens');
+    const focused = backEnv({ handled: true, active: { id: 'rename-input' } });
+    back.handleBackPress({ canGoBack: true }, focused.env);
+    assert.deepStrictEqual(focused.log, [['escape-on', 'rename-input', 'Escape']], 'a focused field gets it first');
+  });
+
+  test('Back then goes to the previous page, then the library, then leaves the app', () => {
+    const prev = backEnv();
+    assert.strictEqual(back.handleBackPress({ canGoBack: true }, prev.env), 'back');
+    assert.deepStrictEqual(prev.log.slice(1), [['history-back']]);
+    const home = backEnv({ path: '/views/reader.html' });
+    assert.strictEqual(back.handleBackPress({ canGoBack: false }, home.env), 'home');
+    assert.deepStrictEqual(home.log.slice(1), [['go', 'library.html']]);
+    const leave = backEnv({ path: '/views/library.html' });
+    assert.strictEqual(back.handleBackPress({ canGoBack: false }, leave.env), 'exit');
+    assert.deepStrictEqual(leave.log.slice(1), [['minimize']]);
+  });
+
+  test('installBackButton listens only where the platform has a back button', () => {
+    const handlers = [];
+    const platform = { runtime: { onBackButton: (fn) => { handlers.push(fn); return () => handlers.splice(0); }, minimizeApp: () => {} } };
+    const { log, env } = backEnv();
+    const stop = back.installBackButton(platform, env);
+    assert.strictEqual(handlers.length, 1);
+    handlers[0]({ canGoBack: true });
+    assert.deepStrictEqual(log.slice(1), [['history-back']]);
+    stop();
+    assert.strictEqual(handlers.length, 0);
+    assert.strictEqual(typeof back.installBackButton(null, env), 'function', 'no platform: harmless no-op');
+  });
+
   const SettingsBackupFile = (await loadComponent('components/react/settings/SettingsBackupFile.jsx')).default;
   test('Settings has backup-to-file export and import controls', () => {
     const html = render(h(SettingsBackupFile));

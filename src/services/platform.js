@@ -285,7 +285,7 @@
     }
   };
 
-  // The Android app's own GoogleAuth plugin (android/app/.../GoogleAuthPlugin.java).
+  // A native Capacitor plugin of the Android app (its own GoogleAuth/FileSaver, or @capacitor/app).
   function nativePlugin(name) {
     const cap = global.Capacitor;
     if (!cap || typeof cap.nativePromise !== 'function' || !Array.isArray(cap.PluginHeaders)) return null;
@@ -303,6 +303,29 @@
     },
     async clearAllCachedAuthTokens() {
       await nativePlugin('GoogleAuth').nativePromise('GoogleAuth', 'signOut', {});
+    }
+  };
+
+  const DEFAULT_CHUNK = 256 * 1024;
+
+  const appFiles = {
+    // Asks where to save (Android's "create document" picker) and writes the text in chunks.
+    // Resolves true when saved, false when the picker was cancelled.
+    async saveText(fileName, mimeType, text, { chunkSize = DEFAULT_CHUNK } = {}) {
+      const cap = nativePlugin('FileSaver');
+      const begun = await cap.nativePromise('FileSaver', 'begin', { fileName, mimeType });
+      if (!begun || !begun.created) return false;
+      try {
+        const body = String(text);
+        for (let i = 0; i < body.length; i += chunkSize) {
+          await cap.nativePromise('FileSaver', 'write', { text: body.slice(i, i + chunkSize) });
+        }
+        await cap.nativePromise('FileSaver', 'finish', {});
+        return true;
+      } catch (e) {
+        try { await cap.nativePromise('FileSaver', 'abort', {}); } catch (ignored) {}
+        throw e;
+      }
     }
   };
 
@@ -350,6 +373,22 @@
         return false;
       }
     },
+    // The Android back button: handler({ canGoBack }) replaces the default behaviour while subscribed.
+    onBackButton(handler) {
+      const cap = nativePlugin('App');
+      if (!cap || typeof cap.nativeCallback !== 'function') return () => {};
+      const callbackId = cap.nativeCallback('App', 'addListener', { eventName: 'backButton' }, (data) => {
+        handler({ canGoBack: !!(data && data.canGoBack) });
+      });
+      return () => cap.nativePromise('App', 'removeListener', { eventName: 'backButton', callbackId }).catch(() => {});
+    },
+    // Sends the app to the background, like Back on a phone's home screen app.
+    async minimizeApp() {
+      const cap = nativePlugin('App');
+      if (!cap) return false;
+      await cap.nativePromise('App', 'minimizeApp', {});
+      return true;
+    },
     // Keeps the extension service worker awake during long work; a no-op elsewhere.
     async ping() {
       const c = chromeApi();
@@ -372,6 +411,9 @@
       const c = chromeApi();
       if (c && c.identity && typeof c.identity.getAuthToken === 'function') return chromeIdentity;
       return nativePlugin('GoogleAuth') ? appIdentity : null;
+    },
+    get files() {
+      return nativePlugin('FileSaver') ? appFiles : null;
     },
     storage,
     messaging,

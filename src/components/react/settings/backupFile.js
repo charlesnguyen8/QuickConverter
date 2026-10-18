@@ -34,15 +34,21 @@ export function describeImport(result) {
 export async function exportBackupFile(storage, env = globalThis, date = new Date()) {
   const data = await storage.exportAll();
   const name = backupFileName(date);
-  const blob = new env.Blob([JSON.stringify(data)], { type: 'application/json' });
-  const url = env.URL.createObjectURL(blob);
-  try {
-    const link = env.document.createElement('a');
-    link.href = url;
-    link.download = name;
-    link.click();
-  } finally {
-    env.URL.revokeObjectURL(url);
+  const nativeFiles = env.Platform && env.Platform.files;
+  if (nativeFiles) {
+    const saved = await nativeFiles.saveText(name, 'application/json', JSON.stringify(data));
+    if (!saved) return 'Save cancelled.';
+  } else {
+    const blob = new env.Blob([JSON.stringify(data)], { type: 'application/json' });
+    const url = env.URL.createObjectURL(blob);
+    try {
+      const link = env.document.createElement('a');
+      link.href = url;
+      link.download = name;
+      link.click();
+    } finally {
+      env.URL.revokeObjectURL(url);
+    }
   }
   const novels = Array.isArray(data.novels) ? data.novels.length : 0;
   const chapters = Array.isArray(data.chapters) ? data.chapters.length : 0;

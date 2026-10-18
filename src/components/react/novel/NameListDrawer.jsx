@@ -190,6 +190,8 @@ export default function NameListDrawer() {
   const [scrollTop, setScrollTop] = useState(0);
   const [listViewport, setListViewport] = useState(600);
   const [sourceEntry, setSourceEntry] = useState(null);
+  const sourceEntryRef = useRef(null);
+  sourceEntryRef.current = sourceEntry;
   const [sourceChapter, setSourceChapter] = useState(null);
   const [scanAll, setScanAll] = useState(null);
   const [renamePrompt, setRenamePrompt] = useState(null);
@@ -332,11 +334,12 @@ export default function NameListDrawer() {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
-      if (conflictPromptRef.current) { setConflictPrompt(null); return; }
-      if (renamePromptRef.current) { setRenamePrompt(null); return; }
-      if (duplicatePromptRef.current) { setDuplicatePrompt(null); return; }
-      if (deleteAllPromptRef.current) { setDeleteAllPrompt(false); return; }
-      if (promptPanelRef.current) { setPromptPanelOpen(false); return; }
+      if (conflictPromptRef.current) { e.preventDefault(); setConflictPrompt(null); return; }
+      if (renamePromptRef.current) { e.preventDefault(); setRenamePrompt(null); return; }
+      if (duplicatePromptRef.current) { e.preventDefault(); setDuplicatePrompt(null); return; }
+      if (deleteAllPromptRef.current) { e.preventDefault(); setDeleteAllPrompt(false); return; }
+      if (promptPanelRef.current) { e.preventDefault(); setPromptPanelOpen(false); return; }
+      if (sourceEntryRef.current || open) e.preventDefault();
       setSourceEntry((current) => {
         if (current) return null;
         if (open) setOpen(false);
@@ -1524,6 +1527,7 @@ function InlineEditRow({ entry, onCancel, onSave }) {
       e.preventDefault();
       onSave({ original, translation, chapter });
     } else if (e.key === 'Escape') {
+      e.preventDefault();
       e.stopPropagation();
       onCancel();
     }
