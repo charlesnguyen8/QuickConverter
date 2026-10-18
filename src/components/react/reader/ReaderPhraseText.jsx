@@ -4,7 +4,7 @@ const NAME_CLASS = 'rounded-sm bg-indigo-500/15 px-0.5 -mx-0.5 border-b border-d
 const WORD_CLASS = 'rounded-sm cursor-pointer transition hover:bg-slate-500/20 hover:underline decoration-dotted underline-offset-4';
 const ACTIVE_CLASS = 'bg-amber-400/25 ring-1 ring-amber-400/60';
 
-export default function ReaderPhraseText({ paragraph, activeIndex = -1, activeEnd, onSelect }) {
+export default function ReaderPhraseText({ paragraph, activeIndex = -1, activeEnd, onSelect, highlightNames = true }) {
   const lastActive = typeof activeEnd === 'number' ? activeEnd : activeIndex;
   const text = paragraph ? paragraph.text : '';
   const segments = paragraph && Array.isArray(paragraph.segments) ? paragraph.segments : [];
@@ -30,7 +30,7 @@ export default function ReaderPhraseText({ paragraph, activeIndex = -1, activeEn
         title={`${seg.source} · ${seg.reading}`}
         onClick={select}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') select(e); }}
-        className={`${seg.origin === 'name' ? NAME_CLASS : WORD_CLASS}${active ? ` ${ACTIVE_CLASS}` : ''}`}
+        className={`${highlightNames && seg.origin === 'name' ? NAME_CLASS : WORD_CLASS}${active ? ` ${ACTIVE_CLASS}` : ''}`}
       >
         {text.slice(seg.start, seg.end)}
       </span>

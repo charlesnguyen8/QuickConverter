@@ -236,6 +236,28 @@ function test(name, fn) {
     assert(/data-phrase="0"[^>]*class="[^"]*border-indigo-400/.test(html) || /class="[^"]*border-indigo-400[^"]*"[^>]*data-phrase="0"/.test(html), 'names keep the name highlight');
   });
 
+  test('ReaderPhraseText styles name chunks only while name highlighting is on', () => {
+    const named = { text: 'Lâm Động đi', segments: [
+      { start: 0, end: 8, source: '林动', reading: 'lâm động', translation: 'Lâm Động', origin: 'name' },
+      { start: 9, end: 11, source: '走', reading: 'tẩu', translation: 'đi', origin: 'vietPhrase' }
+    ] };
+    const on = render(h(ReaderPhraseText, { paragraph: named, onSelect: () => {} }));
+    assert(/data-phrase="0"[^>]*class="[^"]*bg-indigo-500\/15/.test(on), 'names stand out by default');
+    const off = render(h(ReaderPhraseText, { paragraph: named, onSelect: () => {}, highlightNames: false }));
+    assert(!off.includes('bg-indigo-500/15'), 'no name styling when turned off');
+    assert(/data-phrase="0"[^>]*role="button"|role="button"[^>]*data-phrase="0"/.test(off), 'the name is still a tappable phrase');
+  });
+
+  const ReaderNameText = (await loadComponent('components/react/reader/ReaderNameText.jsx')).default;
+  test('ReaderNameText links Name List names only while name highlighting is on', () => {
+    const segments = [{ text: 'Lâm Động', nameId: 'n1', original: '林动' }, { text: ' walked in.' }];
+    const on = render(h(ReaderNameText, { segments, highlight: true, onOpenName: () => {} }));
+    assert(/<span[^>]*role="button"[^>]*title="View &quot;林动&quot; in the Name List"/.test(on), 'names link to the Name List');
+    assert(on.includes('bg-indigo-500/15'), 'and are highlighted');
+    const off = render(h(ReaderNameText, { segments, highlight: false, onOpenName: () => {} }));
+    assert.strictEqual(off, 'Lâm Động walked in.', 'plain text when turned off');
+  });
+
   test('ReaderPhraseText highlights the phrase whose popup is open', () => {
     const html = render(h(ReaderPhraseText, { paragraph: phrasePara, activeIndex: 1, onSelect: () => {} }));
     const active = (html.match(/<span[^>]*data-phrase="1"[^>]*>/) || [''])[0];
@@ -1139,8 +1161,40 @@ function test(name, fn) {
     global.localStorage = { getItem: (k) => (k in data ? data[k] : null) };
     try {
       assert.deepStrictEqual(prefsMod.readPrefs(), {
-        fontSize: 24, fontFamily: 'mono', lineHeight: 'spacious', columnWidth: 'full', theme: 'oled'
+        fontSize: 24, fontFamily: 'mono', lineHeight: 'spacious', columnWidth: 'full', theme: 'oled', highlightNames: true
       });
+      data.quickconverter_reader_highlight_names = 'false';
+      assert.strictEqual(prefsMod.readPrefs().highlightNames, false, 'name highlighting can be turned off');
+    } finally {
+      global.localStorage = prev;
+    }
+  });
+
+  test('writePrefs stores the highlight names setting', () => {
+    const prev = global.localStorage;
+    const stored = {};
+    global.localStorage = { getItem: (k) => (k in stored ? stored[k] : null), setItem: (k, v) => { stored[k] = String(v); } };
+    try {
+      prefsMod.writePrefs({ fontSize: 18, fontFamily: 'sans', lineHeight: 'relaxed', columnWidth: 'standard', theme: 'slate', highlightNames: false });
+      assert.strictEqual(stored.quickconverter_reader_highlight_names, 'false');
+      assert.strictEqual(prefsMod.readPrefs().highlightNames, false);
+      prefsMod.writePrefs({ ...prefsMod.readPrefs(), highlightNames: true });
+      assert.strictEqual(prefsMod.readPrefs().highlightNames, true);
+    } finally {
+      global.localStorage = prev;
+    }
+  });
+
+  test('ReaderPrefsPopover has a Highlight names switch, on by default', () => {
+    const input = popover.match(/<input[^>]*id="in-reader-highlight-names"[^>]*>/);
+    assert(input, 'switch is in the reader settings popover');
+    assert(/type="checkbox"/.test(input[0]) && /checked=""/.test(input[0]), 'on unless turned off');
+    assert(/Highlight names/.test(popover), 'labelled');
+    const prev = global.localStorage;
+    global.localStorage = { getItem: (k) => (k === 'quickconverter_reader_highlight_names' ? 'false' : null) };
+    try {
+      const off = render(h(ReaderPrefsPopover)).match(/<input[^>]*id="in-reader-highlight-names"[^>]*>/);
+      assert(off && !/checked=""/.test(off[0]), 'reflects the stored setting');
     } finally {
       global.localStorage = prev;
     }

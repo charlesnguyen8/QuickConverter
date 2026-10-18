@@ -17,6 +17,7 @@ import {
 } from './readerText.js';
 import ReaderPhraseText from './ReaderPhraseText.jsx';
 import ReaderPhrasePopover from './ReaderPhrasePopover.jsx';
+import ReaderNameText from './ReaderNameText.jsx';
 import { useReaderSearch } from './readerLocation.js';
 import { recordChapterOpened, restoreParagraph, topParagraphIndex } from '../shared/lastRead.jsx';
 
@@ -69,7 +70,7 @@ function themeTitleColor(theme) {
 
 function readPrefs() {
   if (typeof localStorage === 'undefined') {
-    return { fontSize: 18, fontFamilyCss: resolveFontFamilyCss('sans'), lineHeight: '1.75', contentColor: '#e2e8f0', titleColor: '#f8fafc' };
+    return { fontSize: 18, fontFamilyCss: resolveFontFamilyCss('sans'), lineHeight: '1.75', contentColor: '#e2e8f0', titleColor: '#f8fafc', highlightNames: true };
   }
   const fontSize = parseInt(localStorage.getItem('quickconverter_reader_font_size'), 10) || 18;
   const fontFamily = localStorage.getItem('quickconverter_reader_font_family') || 'sans';
@@ -81,7 +82,8 @@ function readPrefs() {
     fontFamilyCss: resolveFontFamilyCss(fontFamily),
     lineHeight,
     contentColor: themeContentColor(theme),
-    titleColor: themeTitleColor(theme)
+    titleColor: themeTitleColor(theme),
+    highlightNames: localStorage.getItem('quickconverter_reader_highlight_names') !== 'false'
   };
 }
 
@@ -513,22 +515,11 @@ export default function ReaderChapter() {
                   activeIndex={selected && selected.p === idx ? selected.from : -1}
                   activeEnd={selected && selected.p === idx ? selected.to : -1}
                   onSelect={(_seg, s) => setSelected({ p: idx, from: s, to: s })}
+                  highlightNames={prefs.highlightNames}
                 />
-              ) : highlightedParagraphs[idx].map((seg, i) => (seg.nameId ? (
-                <span
-                  key={i}
-                  role="button"
-                  tabIndex={0}
-                  title={`View "${seg.original}" in the Name List`}
-                  onClick={(e) => openNameEntry(seg.nameId, e)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNameEntry(seg.nameId, e); } }}
-                  className="rounded-sm bg-indigo-500/15 px-0.5 -mx-0.5 border-b border-dotted border-indigo-400/70 hover:bg-indigo-500/25 hover:border-solid cursor-pointer transition"
-                >
-                  {seg.text}
-                </span>
               ) : (
-                <React.Fragment key={i}>{seg.text}</React.Fragment>
-              )))}
+                <ReaderNameText segments={highlightedParagraphs[idx]} highlight={prefs.highlightNames} onOpenName={openNameEntry} />
+              )}
             </p>
             {editable ? <div className="paragraph-actions absolute right-2 -top-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none select-none">
               <button

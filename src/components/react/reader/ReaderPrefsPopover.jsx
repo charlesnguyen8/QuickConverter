@@ -5,7 +5,8 @@ const READER_PREF_KEYS = {
   fontFamily: 'quickconverter_reader_font_family',
   lineHeight: 'quickconverter_reader_line_height',
   columnWidth: 'quickconverter_reader_column_width',
-  theme: 'quickconverter_reader_theme'
+  theme: 'quickconverter_reader_theme',
+  highlightNames: 'quickconverter_reader_highlight_names'
 };
 
 const FONTS = [
@@ -38,14 +39,15 @@ const THEMES = [
 
 export function readPrefs() {
   if (typeof localStorage === 'undefined') {
-    return { fontSize: 18, fontFamily: 'sans', lineHeight: 'relaxed', columnWidth: 'standard', theme: 'slate' };
+    return { fontSize: 18, fontFamily: 'sans', lineHeight: 'relaxed', columnWidth: 'standard', theme: 'slate', highlightNames: true };
   }
   return {
     fontSize: parseInt(localStorage.getItem(READER_PREF_KEYS.fontSize), 10) || 18,
     fontFamily: localStorage.getItem(READER_PREF_KEYS.fontFamily) || 'sans',
     lineHeight: localStorage.getItem(READER_PREF_KEYS.lineHeight) || 'relaxed',
     columnWidth: localStorage.getItem(READER_PREF_KEYS.columnWidth) || 'standard',
-    theme: localStorage.getItem(READER_PREF_KEYS.theme) || 'slate'
+    theme: localStorage.getItem(READER_PREF_KEYS.theme) || 'slate',
+    highlightNames: localStorage.getItem(READER_PREF_KEYS.highlightNames) !== 'false'
   };
 }
 
@@ -56,6 +58,7 @@ export function writePrefs(prefs) {
   localStorage.setItem(READER_PREF_KEYS.lineHeight, prefs.lineHeight);
   localStorage.setItem(READER_PREF_KEYS.columnWidth, prefs.columnWidth);
   localStorage.setItem(READER_PREF_KEYS.theme, prefs.theme);
+  localStorage.setItem(READER_PREF_KEYS.highlightNames, prefs.highlightNames === false ? 'false' : 'true');
 }
 
 export function applyReaderPreferences(prefs) {
@@ -310,6 +313,20 @@ export default function ReaderPrefsPopover() {
                 ))}
               </div>
             </div>
+
+            <label htmlFor="in-reader-highlight-names" className="flex items-center justify-between gap-3 min-h-10 cursor-pointer select-none">
+              <span className="flex flex-col">
+                <span className="text-[11px] font-semibold uppercase tracking-wider popover-subtext text-slate-400">Highlight names</span>
+                <span className="text-[11px] popover-subtext text-slate-500">Mark Name List names in the text</span>
+              </span>
+              <input
+                type="checkbox"
+                id="in-reader-highlight-names"
+                checked={prefs.highlightNames !== false}
+                onChange={(e) => update({ highlightNames: e.target.checked })}
+                className="w-5 h-5 accent-indigo-500 cursor-pointer flex-shrink-0"
+              />
+            </label>
           </div>
 
           <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] popover-subtext text-slate-400">
