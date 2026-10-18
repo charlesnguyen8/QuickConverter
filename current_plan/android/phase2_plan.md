@@ -44,6 +44,21 @@ wetriedtls, nkwwlkj and sangtacviet. Parent plan: `overall_plan.md` §3, §6 Pha
    Phase 3, risk 4).
 5. **sangtacviet chapters** through SiteBrowser (Chinese text after the page's own scripts run).
 
+**Built (2026-10-18, steps 2–5, waiting on the phone check):** owner chose the custom Java plugin.
+- `Platform.http.getText` (native `CapacitorHttp.request`); the sangtacviet chapter list sends
+  `Referer: https://sangtacviet.com/` through it in the app.
+- `SiteBrowserPlugin.java`: one WebView in an overlay with a host title and Close; hidden = drawn
+  behind the app's WebView (still renders and runs scripts), shown = brought to the front; Back
+  goes back in the site, then closes. Runs the page script on every page load; the page posts JSON
+  through `QCSiteBrowser.post`. App-wide CookieManager, `; wv` dropped from the user agent.
+- `src/services/site-page.js` (runs in the site page with the providers + registry) reports
+  `chapter` / `empty` / `image` / `other`. `src/services/site-save.js` opens hidden, saves a
+  `chapter` with `saveOpenedChapter` (syncing the catalog once for a new chapter), shows the page for
+  anything else or after 45 s, one page at a time. `openChapterInBackground` uses it in the app, and
+  the login banner's Log in opens the site in it and re-checks the login when closed.
+- **Not yet:** nkwwlkj image (paid) chapters only show the page; OCR in the app is the next piece.
+  "Save next N" does not exist in the extension either; it stays a later idea.
+
 **Done when:** for all three sites the owner can add a book, sync its catalog and save chapters on
 the phone; `npm test` green; `build:ext` extension unchanged.
 

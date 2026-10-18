@@ -329,6 +329,57 @@
     }
   };
 
+  const appHttp = {
+    // A native GET (Capacitor's CapacitorHttp), for headers fetch() may not set such as Referer.
+    async getText(url, { headers = {} } = {}) {
+      const reply = await nativePlugin('CapacitorHttp').nativePromise('CapacitorHttp', 'request', {
+        url,
+        method: 'GET',
+        headers,
+        responseType: 'text'
+      });
+      const status = Number(reply && reply.status) || 0;
+      const data = reply ? reply.data : '';
+      const text = typeof data === 'string' ? data : (data === null || data === undefined ? '' : JSON.stringify(data));
+      return { ok: status >= 200 && status < 300, status, text };
+    }
+  };
+
+  // The app's embedded WebView for sites that need their own page (nkwwlkj, sangtacviet):
+  // it loads hidden behind the app, runs a page script that posts JSON back, and is shown
+  // when the user must log in or pass a check.
+  const appSiteBrowser = {
+    open(url, { script = '', visible = false } = {}) {
+      return nativePlugin('SiteBrowser').nativePromise('SiteBrowser', 'open', { url, script, visible: !!visible });
+    },
+    show() {
+      return nativePlugin('SiteBrowser').nativePromise('SiteBrowser', 'show', {});
+    },
+    hide() {
+      return nativePlugin('SiteBrowser').nativePromise('SiteBrowser', 'hide', {});
+    },
+    close() {
+      return nativePlugin('SiteBrowser').nativePromise('SiteBrowser', 'close', {});
+    },
+    // handler(message) gets each page message, plus { type: 'closed' } when the user closes it.
+    subscribe(handler) {
+      const cap = nativePlugin('SiteBrowser');
+      if (!cap || typeof cap.nativeCallback !== 'function') return () => {};
+      const callbackId = cap.nativeCallback('SiteBrowser', 'addListener', { eventName: 'event' }, (data) => {
+        let message = null;
+        try {
+          message = JSON.parse(data && data.data);
+        } catch (e) {
+          return;
+        }
+        if (message && typeof message === 'object') handler(message);
+      });
+      return () => {
+        Promise.resolve(cap.nativePromise('SiteBrowser', 'removeListener', { eventName: 'event', callbackId })).catch(() => {});
+      };
+    }
+  };
+
   // --- Runtime -------------------------------------------------------------------------
 
   const runtime = {
@@ -414,6 +465,14 @@
     },
     get files() {
       return nativePlugin('FileSaver') ? appFiles : null;
+    },
+    get http() {
+      if (isExtension()) return null;
+      return nativePlugin('CapacitorHttp') ? appHttp : null;
+    },
+    get siteBrowser() {
+      if (isExtension()) return null;
+      return nativePlugin('SiteBrowser') ? appSiteBrowser : null;
     },
     storage,
     messaging,

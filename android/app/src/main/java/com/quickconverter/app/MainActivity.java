@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(GoogleAuthPlugin.class);
         registerPlugin(FileSaverPlugin.class);
+        registerPlugin(SiteBrowserPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

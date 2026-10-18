@@ -807,6 +807,23 @@ async function testAsync(name, fn) {
   const { ProviderLoginStatus } = providerLoginMod;
   const ProviderLoginBanner = providerLoginMod.default;
   const LOGIN_URL = 'https://www.nkwwlkj.cn/signup/login?redirect=https%3A%2F%2Fwww.nkwwlkj.cn%2F';
+  await testAsync('in the app, Log in opens the site inside the app and checks the login again when it closes', async () => {
+    const { handleLoginLink } = providerLoginMod;
+    const opened = [];
+    let prevented = false;
+    let rechecked = 0;
+    const siteSave = { available: () => true, openLogin: async (url) => { opened.push(url); return { status: 'closed' }; } };
+    handleLoginLink({ preventDefault() { prevented = true; } }, LOGIN_URL, { siteSave, onDone: () => { rechecked++; } });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepStrictEqual(opened, [LOGIN_URL]);
+    assert.strictEqual(prevented, true, 'no external browser');
+    assert.strictEqual(rechecked, 1, 'login checked again after closing');
+
+    prevented = false;
+    handleLoginLink({ preventDefault() { prevented = true; } }, LOGIN_URL, { siteSave: { available: () => false }, onDone: () => {} });
+    assert.strictEqual(prevented, false, 'the extension keeps the normal new-tab link');
+  });
+
   test('ProviderLoginStatus shows a login link that opens the official site in a new tab when logged out', () => {
     const html = render(h(ProviderLoginStatus, { state: { loggedIn: false, userId: null, userName: '' }, providerName: '独阅读', loginUrl: LOGIN_URL, onRecheck: () => {} }));
     assert(html.includes('id="provider-login-status"'), 'status container');

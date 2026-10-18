@@ -178,7 +178,17 @@ const SangtacvietProvider = (() => {
     };
   }
 
-  async function fetchText(url) {
+  function nativeHttp() {
+    const platform = typeof Platform !== 'undefined' ? Platform : null;
+    return platform && platform.http ? platform.http : null;
+  }
+
+  async function fetchText(url, headers) {
+    const http = headers ? nativeHttp() : null;
+    if (http) {
+      const reply = await http.getText(url, { headers });
+      return reply.ok ? reply.text : null;
+    }
     const resp = await fetch(url, { credentials: 'include' });
     if (!resp.ok) return null;
     return resp.text();
@@ -267,7 +277,7 @@ const SangtacvietProvider = (() => {
       if (!parts) return [];
       const query = new URLSearchParams({ ngmar: 'chapterlist', h: parts.host, bookid: parts.bookId, sajax: 'getchapterlist' });
       try {
-        const body = await fetchText(`${ORIGIN}/index.php?${query.toString()}`);
+        const body = await fetchText(`${ORIGIN}/index.php?${query.toString()}`, { Referer: `${ORIGIN}/` });
         if (!body) return [];
         const json = JSON.parse(body);
         if (!json || Number(json.code) !== 1) return [];

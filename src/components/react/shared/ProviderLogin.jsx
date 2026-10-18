@@ -48,6 +48,14 @@ export function watchLoginState({ provider, context, target, onState }) {
   };
 }
 
+export function handleLoginLink(event, url, { siteSave = typeof window !== 'undefined' ? window.SiteSave : null, onDone } = {}) {
+  if (!url || !siteSave || typeof siteSave.available !== 'function' || !siteSave.available()) return;
+  event.preventDefault();
+  siteSave.openLogin(url).catch(() => null).then(() => {
+    if (typeof onDone === 'function') onDone();
+  });
+}
+
 function formatCount(value) {
   return Number(value).toLocaleString('en-US');
 }
@@ -99,6 +107,7 @@ export function ProviderLoginStatus({ state, providerName, loginUrl, compact = f
         href={loginUrl}
         target="_blank"
         rel="noreferrer"
+        onClick={(e) => handleLoginLink(e, loginUrl, { onDone: onRecheck })}
         className="inline-flex items-center justify-center gap-1 min-h-10 px-4 rounded-lg text-xs font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition"
       >
         <span>Log in</span>

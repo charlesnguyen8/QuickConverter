@@ -211,6 +211,93 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   assert.notStrictEqual(nativeEnv.Platform.identity, appIdentity, 'the extension keeps chrome.identity');
   console.log('✓ App mode: identity goes through the native GoogleAuth plugin');
 
+  // Native GET with headers fetch() may not set (Referer) goes through CapacitorHttp in the app.
+  const httpCalls = [];
+  const httpReplies = [
+    { status: 200, data: '{"code":1}', headers: {} },
+    { status: 200, data: { code: 1 }, headers: { 'Content-Type': 'application/json' } },
+    { status: 403, data: '<title>Just a moment...</title>', headers: {} }
+  ];
+  const httpEnv = {
+    console,
+    setTimeout,
+    clearTimeout,
+    Capacitor: {
+      PluginHeaders: [{ name: 'CapacitorHttp', methods: [] }],
+      nativePromise: async (plugin, method, options) => {
+        httpCalls.push(JSON.parse(JSON.stringify([plugin, method, options])));
+        return httpReplies.shift();
+      }
+    }
+  };
+  httpEnv.globalThis = httpEnv;
+  vm.createContext(httpEnv);
+  vm.runInContext(platformCode, httpEnv);
+  const http = httpEnv.Platform.http;
+  assert.ok(http, 'the app has native HTTP');
+  const listUrl = 'https://sangtacviet.com/index.php?ngmar=chapterlist&h=uukanshu&bookid=1&sajax=getchapterlist';
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(await http.getText(listUrl, { headers: { Referer: 'https://sangtacviet.com/' } }))), { ok: true, status: 200, text: '{"code":1}' });
+  assert.deepStrictEqual(httpCalls[0], ['CapacitorHttp', 'request', { url: listUrl, method: 'GET', headers: { Referer: 'https://sangtacviet.com/' }, responseType: 'text' }]);
+  assert.strictEqual((await http.getText(listUrl)).text, '{"code":1}', 'a JSON reply parsed natively comes back as its text');
+  assert.strictEqual((await http.getText(listUrl)).ok, false, 'an error status is not ok');
+  const noHttp = { console, setTimeout, clearTimeout, Capacitor: { PluginHeaders: [], nativePromise: async () => ({}) } };
+  noHttp.globalThis = noHttp;
+  vm.createContext(noHttp);
+  vm.runInContext(platformCode, noHttp);
+  assert.strictEqual(noHttp.Platform.http, null, 'no native HTTP outside the app');
+  httpEnv.chrome = fakeChrome().chrome;
+  assert.strictEqual(httpEnv.Platform.http, null, 'the extension keeps fetch and its request rules');
+  console.log('✓ App mode: native GET with headers through CapacitorHttp');
+
+  // The embedded site WebView (nkwwlkj, sangtacviet chapter pages) is the app's SiteBrowser plugin.
+  const siteCalls = [];
+  const siteListeners = {};
+  const siteEnv = {
+    console,
+    setTimeout,
+    clearTimeout,
+    Capacitor: {
+      PluginHeaders: [{ name: 'SiteBrowser', methods: [] }],
+      nativePromise: async (plugin, method, options) => {
+        siteCalls.push(JSON.parse(JSON.stringify([plugin, method, options])));
+        return {};
+      },
+      nativeCallback: (plugin, method, options, callback) => {
+        siteCalls.push(JSON.parse(JSON.stringify([plugin, method, options])));
+        siteListeners[options.eventName] = callback;
+        return 'cb-1';
+      }
+    }
+  };
+  siteEnv.globalThis = siteEnv;
+  vm.createContext(siteEnv);
+  vm.runInContext(platformCode, siteEnv);
+  const site = siteEnv.Platform.siteBrowser;
+  assert.ok(site, 'the app has a site browser');
+  await site.open('https://www.nkwwlkj.cn/chapter/book_chapter_detail/1', { script: 'S', visible: false });
+  await site.show();
+  await site.hide();
+  await site.close();
+  const seen = [];
+  const stopSite = site.subscribe((msg) => seen.push(msg));
+  siteListeners.event({ data: '{"type":"chapter","rawText":"x"}' });
+  siteListeners.event({ data: 'not json' });
+  siteListeners.event({ data: '{"type":"closed"}' });
+  stopSite();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(seen)), [{ type: 'chapter', rawText: 'x' }, { type: 'closed' }], 'messages arrive parsed; garbage is dropped');
+  assert.deepStrictEqual(siteCalls, [
+    ['SiteBrowser', 'open', { url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/1', script: 'S', visible: false }],
+    ['SiteBrowser', 'show', {}],
+    ['SiteBrowser', 'hide', {}],
+    ['SiteBrowser', 'close', {}],
+    ['SiteBrowser', 'addListener', { eventName: 'event' }],
+    ['SiteBrowser', 'removeListener', { eventName: 'event', callbackId: 'cb-1' }]
+  ]);
+  assert.strictEqual(noHttp.Platform.siteBrowser, null, 'no site browser outside the app');
+  siteEnv.chrome = fakeChrome().chrome;
+  assert.strictEqual(siteEnv.Platform.siteBrowser, null, 'the extension uses tabs and content scripts');
+  console.log('✓ App mode: SiteBrowser plugin opens, shows, hides, closes and reports page messages');
+
   // Android back button and leaving the app go through @capacitor/app.
   const shellCalls = [];
   let backCallback = null;

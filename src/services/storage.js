@@ -736,6 +736,11 @@ const StorageService = {
   },
 
   openChapterInBackground(url) {
+    const siteSave = typeof SiteSave !== 'undefined' ? SiteSave : null;
+    if (url && siteSave && siteSave.available()) {
+      siteSave.open(url).catch(() => {});
+      return true;
+    }
     const platform = storagePlatform();
     if (!url || !platform || !platform.messaging.isNative()) return false;
     const fallback = () => {
