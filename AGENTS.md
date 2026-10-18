@@ -8,7 +8,7 @@ for directory layout, porting rules, and feature checklists.
 
 ## Commands
 
-- `npm test` — run the full Node test suite (22 suites) (`tests/run_all.js`). Must pass before finishing a task.
+- `npm test` — run the full Node test suite (23 suites) (`tests/run_all.js`). Must pass before finishing a task.
 - `npm run build:css` — rebuild `src/styles/tailwind.css` from `src/styles/input.css` + scanned content.
 - `npm run watch:css` — watch mode while developing UI.
 - `npm run build:ext` — build the Chrome extension into `dist/`.
@@ -34,12 +34,18 @@ Google's AuthorizationClient), reached through `Platform.identity`. It needs an 
 client in the same Google Cloud project as the extension (package `com.quickconverter.app` + the
 SHA-1 of the signing key).
 
+**Releases (Obtainium):** pushing a `v1.2.3` tag runs `.github/workflows/android-release.yml`: tests,
+`build:app`, `cap sync`, then a signed `assembleRelease`, and attaches `QuickConverter-v1.2.3.apk` to a
+GitHub Release. `android-version.mjs` turns the tag into versionName/versionCode (major*1e6 + minor*1e3 + patch).
+The release key lives only in the gitignored `release-keys/` folder and the repo's `QC_KEYSTORE_*`/`QC_KEY_*`
+Actions secrets; never commit or print it. Its SHA-1 must also be on the Android OAuth client.
+
 **CSS gotcha:** Tailwind is compiled and committed. After editing any markup/JS that
 introduces new utility classes, run `npm run build:css` (or the `watch` script). Missing
 classes silently break layout (e.g. a missing `justify-end` makes the drawer anchor left)
 because the committed `src/styles/tailwind.css` is stale.
 
-**Testing:** `npm test` runs 22 suites via `tests/run_all.js`. Twenty-one are zero-dependency Node
+**Testing:** `npm test` runs 23 suites via `tests/run_all.js`. Twenty-two are zero-dependency Node
 suites (unit + static/contract, no DOM); the twenty-second, `tests/components.test.js`, renders the
 migrated React components with `react-dom/server` (`renderToString`) and asserts their markup.
 JSX is compiled for Node by `tests/helpers/render.js` using the `esbuild` devDependency

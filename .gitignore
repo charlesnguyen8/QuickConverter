@@ -35,3 +35,8 @@ lerna-debug.log*
 
 todo.txt
 temp.txt
+
+# Android release signing (never commit)
+release-keys/
+*.jks
+*.keystore

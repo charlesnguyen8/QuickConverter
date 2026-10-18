@@ -1,0 +1,67 @@
+name: Android release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Test
+        run: npm test
+
+      - name: Version from tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node android-version.mjs "$TAG" >> "$GITHUB_ENV"
+
+      - name: Build the app
+        run: npm run build:app
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Restore the release key
+        env:
+          QC_KEYSTORE_BASE64: ${{ secrets.QC_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$QC_KEYSTORE_BASE64" ]; then echo "QC_KEYSTORE_BASE64 secret is missing"; exit 1; fi
+          echo "$QC_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "QC_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build the signed APK
+        working-directory: android
+        env:
+          QC_KEYSTORE_PASSWORD: ${{ secrets.QC_KEYSTORE_PASSWORD }}
+          QC_KEY_ALIAS: ${{ secrets.QC_KEY_ALIAS }}
+          QC_KEY_PASSWORD: ${{ secrets.QC_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/QuickConverter-v$QC_VERSION_NAME.apk"
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ runner.temp }}/QuickConverter-v${{ env.QC_VERSION_NAME }}.apk
+          generate_release_notes: true

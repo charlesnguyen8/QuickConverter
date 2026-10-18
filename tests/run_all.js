@@ -27,7 +27,8 @@ const testFiles = [
   'luat-nhan.test.js',
   'jieba.test.js',
   'name-finder.test.js',
-  'components.test.js'
+  'components.test.js',
+  'release.test.js'
 ];
 
 let allPassed = true;
