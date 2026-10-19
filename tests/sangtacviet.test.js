@@ -189,6 +189,28 @@ const EXPECTED_CHINESE = [
     assert.deepStrictEqual(plain(await blocked.SangtacvietProvider.fetchChapterList('uukanshu-92019', BOOK_URL)), [], 'a challenge gives an empty list');
   });
 
+  await test('the app trusts the root sangtacviet chains to (Android lacks Sectigo R46), for that site only', () => {
+    const { X509Certificate } = require('crypto');
+    const manifest = read('android', 'app', 'src', 'main', 'AndroidManifest.xml');
+    assert(/<application[^>]*android:networkSecurityConfig="@xml\/network_security_config"/.test(manifest), 'the app uses a network security config');
+    const config = read('android', 'app', 'src', 'main', 'res', 'xml', 'network_security_config.xml');
+    assert(!/<base-config[\s\S]*?<trust-anchors/.test(config), 'other sites keep the system trust store only');
+    const domainConfig = config.match(/<domain-config[^>]*>([\s\S]*?)<\/domain-config>/);
+    assert(domainConfig, 'a per-site config');
+    assert(/<domain includeSubdomains="true">sangtacviet\.com<\/domain>/.test(domainConfig[1]), 'for sangtacviet.com');
+    assert(/<certificates src="system"\s*\/>/.test(domainConfig[1]), 'still trusts the system roots');
+    const raw = domainConfig[1].match(/<certificates src="@raw\/([a-z0-9_]+)"\s*\/>/);
+    assert(raw, 'plus a bundled root');
+
+    const root = new X509Certificate(read('android', 'app', 'src', 'main', 'res', 'raw', `${raw[1]}.pem`));
+    assert(/CN=Sectigo Public Server Authentication Root R46/.test(root.subject), root.subject);
+    assert.strictEqual(root.fingerprint.replace(/:/g, ''), 'AD98F9F3E47D753B65D482B3A45217BB6EF5E438', 'the genuine R46 root');
+    assert(root.verify(root.publicKey), 'self-signed root');
+    const intermediate = new X509Certificate(read('tests', 'fixtures', 'zerossl-rsa-dv-ssl-ca-2.pem'));
+    assert(/ZeroSSL RSA DV SSL CA 2/.test(intermediate.subject), 'the intermediate sangtacviet.com sends');
+    assert(intermediate.checkIssued(root) && intermediate.verify(root.publicKey), 'the bundled root signs the site\'s intermediate');
+  });
+
   await test('fetchChapterList and fetchSeriesMetadata give up quietly on a Cloudflare challenge or error', async () => {
     const challenge = loadEnv({ fetch: async () => ({ ok: false, status: 403, text: async () => '<title>Just a moment...</title>' }) });
     assert.deepStrictEqual(plain(await challenge.SangtacvietProvider.fetchChapterList('uukanshu-92019', BOOK_URL)), []);
