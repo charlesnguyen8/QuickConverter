@@ -45,3 +45,17 @@ export function useReaderSearch() {
   useEffect(() => subscribeReaderLocation(setSearch), []);
   return search;
 }
+
+export function adjacentChapter(novel, ch, direction) {
+  if (!novel) return null;
+  const catalog = (novel.chapterList || []).slice().sort((a, b) => a.chapterNumber - b.chapterNumber);
+  const idx = catalog.findIndex((c) => Number(c.chapterNumber) === ch);
+  if (direction === 'prev') {
+    if (idx > 0) return catalog[idx - 1].chapterNumber;
+    if (ch > 1) return ch - 1;
+    return null;
+  }
+  if (idx >= 0 && idx < catalog.length - 1) return catalog[idx + 1].chapterNumber;
+  if (idx < 0 && (!novel.totalChapters || ch < novel.totalChapters)) return ch + 1;
+  return null;
+}

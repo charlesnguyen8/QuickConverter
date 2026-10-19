@@ -6,7 +6,9 @@ const READER_PREF_KEYS = {
   lineHeight: 'quickconverter_reader_line_height',
   columnWidth: 'quickconverter_reader_column_width',
   theme: 'quickconverter_reader_theme',
-  highlightNames: 'quickconverter_reader_highlight_names'
+  highlightNames: 'quickconverter_reader_highlight_names',
+  swipeChapters: 'quickconverter_reader_swipe_chapters',
+  keepScreenOn: 'quickconverter_reader_keep_screen_on'
 };
 
 const FONTS = [
@@ -39,7 +41,7 @@ const THEMES = [
 
 export function readPrefs() {
   if (typeof localStorage === 'undefined') {
-    return { fontSize: 18, fontFamily: 'sans', lineHeight: 'relaxed', columnWidth: 'standard', theme: 'slate', highlightNames: true };
+    return { fontSize: 18, fontFamily: 'sans', lineHeight: 'relaxed', columnWidth: 'standard', theme: 'slate', highlightNames: true, swipeChapters: true, keepScreenOn: true };
   }
   return {
     fontSize: parseInt(localStorage.getItem(READER_PREF_KEYS.fontSize), 10) || 18,
@@ -47,7 +49,9 @@ export function readPrefs() {
     lineHeight: localStorage.getItem(READER_PREF_KEYS.lineHeight) || 'relaxed',
     columnWidth: localStorage.getItem(READER_PREF_KEYS.columnWidth) || 'standard',
     theme: localStorage.getItem(READER_PREF_KEYS.theme) || 'slate',
-    highlightNames: localStorage.getItem(READER_PREF_KEYS.highlightNames) !== 'false'
+    highlightNames: localStorage.getItem(READER_PREF_KEYS.highlightNames) !== 'false',
+    swipeChapters: localStorage.getItem(READER_PREF_KEYS.swipeChapters) !== 'false',
+    keepScreenOn: localStorage.getItem(READER_PREF_KEYS.keepScreenOn) !== 'false'
   };
 }
 
@@ -59,6 +63,8 @@ export function writePrefs(prefs) {
   localStorage.setItem(READER_PREF_KEYS.columnWidth, prefs.columnWidth);
   localStorage.setItem(READER_PREF_KEYS.theme, prefs.theme);
   localStorage.setItem(READER_PREF_KEYS.highlightNames, prefs.highlightNames === false ? 'false' : 'true');
+  localStorage.setItem(READER_PREF_KEYS.swipeChapters, prefs.swipeChapters === false ? 'false' : 'true');
+  localStorage.setItem(READER_PREF_KEYS.keepScreenOn, prefs.keepScreenOn === false ? 'false' : 'true');
 }
 
 export function applyReaderPreferences(prefs) {
@@ -178,7 +184,7 @@ export default function ReaderPrefsPopover() {
 
         <div
           id="reader-typography-popover"
-          className={`${open ? '' : 'hidden '}absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-4 flex flex-col gap-4 z-50`}
+          className={`${open ? '' : 'hidden '}fixed left-2 right-2 top-16 max-h-[80vh] overflow-y-auto sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-none sm:overflow-visible sm:w-96 rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-4 flex flex-col gap-4 z-50`}
         >
           <div className="flex items-center justify-between pb-2.5 border-b border-slate-700/60">
             <div className="flex items-center gap-2">
@@ -324,6 +330,35 @@ export default function ReaderPrefsPopover() {
                 id="in-reader-highlight-names"
                 checked={prefs.highlightNames !== false}
                 onChange={(e) => update({ highlightNames: e.target.checked })}
+                className="w-5 h-5 accent-indigo-500 cursor-pointer flex-shrink-0"
+              />
+            </label>
+          </div>
+
+          <div id="reader-behaviour-switches" className="flex flex-col gap-3">
+            <label htmlFor="in-reader-swipe-chapters" className="flex items-center justify-between gap-3 min-h-10 cursor-pointer select-none">
+              <span className="flex flex-col">
+                <span className="text-[11px] font-semibold uppercase tracking-wider popover-subtext text-slate-400">Swipe between chapters</span>
+                <span className="text-[11px] popover-subtext text-slate-500">Swipe left for the next chapter, right for the previous</span>
+              </span>
+              <input
+                type="checkbox"
+                id="in-reader-swipe-chapters"
+                checked={prefs.swipeChapters !== false}
+                onChange={(e) => update({ swipeChapters: e.target.checked })}
+                className="w-5 h-5 accent-indigo-500 cursor-pointer flex-shrink-0"
+              />
+            </label>
+            <label htmlFor="in-reader-keep-screen-on" className="flex items-center justify-between gap-3 min-h-10 cursor-pointer select-none">
+              <span className="flex flex-col">
+                <span className="text-[11px] font-semibold uppercase tracking-wider popover-subtext text-slate-400">Keep screen on</span>
+                <span className="text-[11px] popover-subtext text-slate-500">The screen stays on while a chapter is open</span>
+              </span>
+              <input
+                type="checkbox"
+                id="in-reader-keep-screen-on"
+                checked={prefs.keepScreenOn !== false}
+                onChange={(e) => update({ keepScreenOn: e.target.checked })}
                 className="w-5 h-5 accent-indigo-500 cursor-pointer flex-shrink-0"
               />
             </label>

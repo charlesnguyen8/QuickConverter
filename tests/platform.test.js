@@ -338,6 +338,65 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   assert.strictEqual(siteEnv.Platform.siteBrowser, null, 'the extension uses tabs and content scripts');
   console.log('✓ App mode: SiteBrowser plugin opens, shows, hides, closes and reports page messages');
 
+  // Keeping the screen on while reading: the app's Screen plugin, else the browser's wake lock.
+  const screenCalls = [];
+  const screenEnv = {
+    console,
+    setTimeout,
+    clearTimeout,
+    Capacitor: {
+      PluginHeaders: [{ name: 'Screen', methods: [] }],
+      nativePromise: async (plugin, method, options) => { screenCalls.push(JSON.parse(JSON.stringify([plugin, method, options]))); return {}; }
+    }
+  };
+  screenEnv.globalThis = screenEnv;
+  vm.createContext(screenEnv);
+  vm.runInContext(platformCode, screenEnv);
+  assert.strictEqual(await screenEnv.Platform.screen.keepAwake(true), true);
+  assert.strictEqual(await screenEnv.Platform.screen.keepAwake(false), true);
+  assert.deepStrictEqual(screenCalls, [['Screen', 'keepOn', { on: true }], ['Screen', 'keepOn', { on: false }]]);
+
+  const lockLog = [];
+  const lockListeners = {};
+  const lockEnv = {
+    console,
+    setTimeout,
+    clearTimeout,
+    document: {
+      visibilityState: 'visible',
+      addEventListener: (type, fn) => { lockListeners[type] = fn; },
+      removeEventListener: (type) => { delete lockListeners[type]; }
+    },
+    navigator: {
+      wakeLock: {
+        async request(type) {
+          lockLog.push(['request', type]);
+          return { released: false, async release() { this.released = true; lockLog.push(['release']); } };
+        }
+      }
+    }
+  };
+  lockEnv.globalThis = lockEnv;
+  vm.createContext(lockEnv);
+  vm.runInContext(platformCode, lockEnv);
+  assert.strictEqual(await lockEnv.Platform.screen.keepAwake(true), true);
+  await lockListeners.visibilitychange();
+  assert.deepStrictEqual(lockLog, [['request', 'screen'], ['request', 'screen']], 'the browser drops the lock when hidden, so it is taken again on return');
+  assert.strictEqual(await lockEnv.Platform.screen.keepAwake(false), true);
+  assert.strictEqual(lockLog[lockLog.length - 1][0], 'release');
+  assert.strictEqual(lockListeners.visibilitychange, undefined, 'stops re-taking it');
+
+  const noScreen = { console, setTimeout, clearTimeout };
+  noScreen.globalThis = noScreen;
+  vm.createContext(noScreen);
+  vm.runInContext(platformCode, noScreen);
+  assert.strictEqual(await noScreen.Platform.screen.keepAwake(true), false, 'nothing to keep the screen on with');
+
+  const screenPlugin = fs.readFileSync(path.join(repoRoot, 'android', 'app', 'src', 'main', 'java', 'com', 'quickconverter', 'app', 'ScreenPlugin.java'), 'utf8');
+  assert(/@CapacitorPlugin\(name = "Screen"\)/.test(screenPlugin) && /FLAG_KEEP_SCREEN_ON/.test(screenPlugin), 'the Screen plugin holds the screen on');
+  assert(/registerPlugin\(ScreenPlugin\.class\)/.test(fs.readFileSync(path.join(repoRoot, 'android', 'app', 'src', 'main', 'java', 'com', 'quickconverter', 'app', 'MainActivity.java'), 'utf8')), 'registered');
+  console.log('✓ Keeping the screen on: the app plugin, else the browser wake lock');
+
   // Android back button and leaving the app go through @capacitor/app.
   const shellCalls = [];
   let backCallback = null;

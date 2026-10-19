@@ -8,7 +8,9 @@ import ReaderToast from './ReaderToast.jsx';
 import ReaderChapterList from './ReaderChapterList.jsx';
 import { canBulkDownload } from '../shared/ManualChapterAction.jsx';
 import NameListDrawer from '../novel/NameListDrawer.jsx';
-import { navigateToChapter, useReaderSearch } from './readerLocation.js';
+import { adjacentChapter, navigateToChapter, useReaderSearch } from './readerLocation.js';
+import { installSwipe } from './readerGestures.js';
+import { readPrefs } from './ReaderPrefsPopover.jsx';
 
 const CHAPTERS_OPEN_KEY = 'quickconverter_reader_chapters_open';
 
@@ -38,6 +40,7 @@ export default function ReaderApp() {
       return false;
     }
   });
+  const [readerPrefs, setReaderPrefs] = useState(readPrefs);
   const panelRef = useRef(null);
   const loadSeq = useRef(0);
 
@@ -176,17 +179,7 @@ export default function ReaderApp() {
 
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === '[' || e.key === ']') {
         if (!novel) return;
-        const catalog = (novel.chapterList || []).slice().sort((a, b) => a.chapterNumber - b.chapterNumber);
-        const idx = catalog.findIndex((c) => Number(c.chapterNumber) === ch);
-        let target = null;
-        if (e.key === 'ArrowLeft' || e.key === '[') {
-          if (idx > 0) target = catalog[idx - 1].chapterNumber;
-          else if (ch > 1) target = ch - 1;
-        } else if (idx >= 0 && idx < catalog.length - 1) {
-          target = catalog[idx + 1].chapterNumber;
-        } else if (idx < 0 && (!novel.totalChapters || ch < novel.totalChapters)) {
-          target = ch + 1;
-        }
+        const target = adjacentChapter(novel, ch, e.key === 'ArrowLeft' || e.key === '[' ? 'prev' : 'next');
         if (target !== null) {
           e.preventDefault();
           goToChapter(target);
@@ -196,6 +189,35 @@ export default function ReaderApp() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [novel, chapter, ch, goToChapter, toggleChapters]);
+
+  useEffect(() => {
+    const onPrefs = () => setReaderPrefs(readPrefs());
+    window.addEventListener('reader-prefs-updated', onPrefs);
+    return () => window.removeEventListener('reader-prefs-updated', onPrefs);
+  }, []);
+
+  useEffect(() => {
+    if (status !== 'ready' || !novel || readerPrefs.swipeChapters === false) return undefined;
+    return installSwipe(window, {
+      onSwipe: (direction) => {
+        const target = adjacentChapter(novel, ch, direction);
+        if (target !== null) goToChapter(target);
+      },
+      isBlocked: (el) => chaptersOpen || !el || typeof el.closest !== 'function' || !el.closest('#reader-content-view')
+    });
+  }, [status, novel, ch, chaptersOpen, readerPrefs.swipeChapters, goToChapter]);
+
+  useEffect(() => {
+    const screen = window.Platform && window.Platform.screen;
+    if (!screen || status !== 'ready' || readerPrefs.keepScreenOn === false) return undefined;
+    screen.keepAwake(true).catch(() => {});
+    const release = () => { screen.keepAwake(false).catch(() => {}); };
+    window.addEventListener('pagehide', release);
+    return () => {
+      window.removeEventListener('pagehide', release);
+      release();
+    };
+  }, [status, readerPrefs.keepScreenOn]);
 
   const handleDownload = useCallback(async () => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;

@@ -1360,6 +1360,95 @@ async function testAsync(name, fn) {
     assert(/id="reader-typography-popover" class="[^"]*hidden/.test(popover), 'popover must start closed');
   });
 
+  test('the reader settings popover fits a phone screen and keeps its switches full width', () => {
+    const cls = (popover.match(/id="reader-typography-popover" class="([^"]*)"/) || [])[1] || '';
+    assert(/(^| )fixed( |$)/.test(cls) && /(^| )left-2( |$)/.test(cls) && /(^| )right-2( |$)/.test(cls), `phones: pinned to the screen with margins (${cls})`);
+    assert(/sm:absolute/.test(cls) && /sm:w-96/.test(cls), 'larger screens: anchored under its button as before');
+    const section = popover.indexOf('id="reader-behaviour-switches"');
+    assert(section > popover.indexOf('grid grid-cols-2 gap-3'), 'a full-width section after the two-column grid');
+    for (const id of ['in-reader-swipe-chapters', 'in-reader-keep-screen-on']) {
+      assert(popover.indexOf(`id="${id}"`) > section, `${id} sits in that section`);
+    }
+  });
+
+  test('the reader settings offer swipe between chapters and keeping the screen on, both on by default', () => {
+    for (const id of ['in-reader-swipe-chapters', 'in-reader-keep-screen-on']) {
+      const input = popover.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`));
+      assert(input, `missing #${id}`);
+      assert(/type="checkbox"/.test(input[0]) && /checked=""/.test(input[0]), `${id} is an on-by-default checkbox`);
+    }
+    assert(popover.includes('Swipe between chapters') && popover.includes('Keep screen on'), 'labelled');
+  });
+
+  const { adjacentChapter } = await loadComponent('components/react/reader/readerLocation.js');
+  test('adjacentChapter follows the catalog order, then plain numbers when the chapter is not listed', () => {
+    const novel = { totalChapters: 10, chapterList: [{ chapterNumber: 5 }, { chapterNumber: 1 }, { chapterNumber: 2.5 }, { chapterNumber: 2 }] };
+    assert.strictEqual(adjacentChapter(novel, 2, 'next'), 2.5);
+    assert.strictEqual(adjacentChapter(novel, 2.5, 'next'), 5);
+    assert.strictEqual(adjacentChapter(novel, 2.5, 'prev'), 2);
+    assert.strictEqual(adjacentChapter(novel, 1, 'prev'), null, 'nothing before the first chapter');
+    assert.strictEqual(adjacentChapter(novel, 5, 'next'), null, 'nothing after the last listed chapter');
+    assert.strictEqual(adjacentChapter(novel, 7, 'next'), 8, 'unlisted: the next number, up to the total');
+    assert.strictEqual(adjacentChapter(novel, 7, 'prev'), 6);
+    assert.strictEqual(adjacentChapter({ totalChapters: 7, chapterList: [] }, 7, 'next'), null);
+    assert.strictEqual(adjacentChapter({ chapterList: [] }, 1, 'prev'), null);
+    assert.strictEqual(adjacentChapter(null, 3, 'next'), null);
+  });
+
+  const gestures = await loadComponent('components/react/reader/readerGestures.js');
+  test('a quick horizontal swipe changes chapter; scrolling, short or slow moves do not', () => {
+    const { swipeDirection } = gestures;
+    const at = (x, y, t) => ({ x, y, t });
+    assert.strictEqual(swipeDirection(at(300, 400, 0), at(120, 420, 250)), 'next', 'right to left: next chapter');
+    assert.strictEqual(swipeDirection(at(100, 400, 0), at(290, 380, 250)), 'prev', 'left to right: previous chapter');
+    assert.strictEqual(swipeDirection(at(300, 400, 0), at(260, 400, 200)), null, 'too short');
+    assert.strictEqual(swipeDirection(at(300, 400, 0), at(150, 300, 250)), null, 'too steep: that is scrolling');
+    assert.strictEqual(swipeDirection(at(300, 400, 0), at(100, 400, 1500)), null, 'too slow: a drag, not a swipe');
+  });
+
+  test('swipes are ignored while text is selected, with two fingers, or inside a panel', () => {
+    const listeners = {};
+    const target = { addEventListener: (type, fn) => { listeners[type] = fn; }, removeEventListener: (type) => { delete listeners[type]; } };
+    const swiped = [];
+    let selected = '';
+    let blocked = false;
+    const stop = gestures.installSwipe(target, {
+      onSwipe: (dir) => swiped.push(dir),
+      selectionText: () => selected,
+      isBlocked: () => blocked,
+      now: (() => { let t = 0; return () => (t += 100); })()
+    });
+    const touch = (x, y) => ({ clientX: x, clientY: y });
+    const swipe = (fingers = 1) => {
+      listeners.touchstart({ touches: Array.from({ length: fingers }, () => touch(300, 400)), target: {} });
+      listeners.touchend({ changedTouches: [touch(100, 405)], touches: [], target: {} });
+    };
+    swipe();
+    selected = 'Lâm Động';
+    swipe();
+    selected = '';
+    swipe(2);
+    blocked = true;
+    swipe();
+    blocked = false;
+    swipe();
+    assert.deepStrictEqual(swiped, ['next', 'next'], 'only the plain swipes count');
+    stop();
+    assert.strictEqual(Object.keys(listeners).length, 0, 'stops listening');
+  });
+
+  const { releaseScreenOn } = await loadComponent('components/react/shared/screenOn.js');
+  await testAsync('pages other than the reader let the screen turn off again', async () => {
+    const calls = [];
+    await releaseScreenOn({ Platform: { screen: { keepAwake: async (on) => { calls.push(on); return true; } } } });
+    await releaseScreenOn({});
+    assert.deepStrictEqual(calls, [false]);
+    for (const entry of ['library/library-entry.jsx', 'novel/novel-entry.jsx', 'settings/settings-entry.jsx']) {
+      const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'components', 'react', ...entry.split('/')), 'utf8');
+      assert(/releaseScreenOn\(/.test(src), `${entry} releases the screen`);
+    }
+  });
+
   test('readPrefs maps the shared reader storage keys', () => {
     const prev = global.localStorage;
     const data = {
@@ -1372,10 +1461,15 @@ async function testAsync(name, fn) {
     global.localStorage = { getItem: (k) => (k in data ? data[k] : null) };
     try {
       assert.deepStrictEqual(prefsMod.readPrefs(), {
-        fontSize: 24, fontFamily: 'mono', lineHeight: 'spacious', columnWidth: 'full', theme: 'oled', highlightNames: true
+        fontSize: 24, fontFamily: 'mono', lineHeight: 'spacious', columnWidth: 'full', theme: 'oled', highlightNames: true,
+        swipeChapters: true, keepScreenOn: true
       });
       data.quickconverter_reader_highlight_names = 'false';
       assert.strictEqual(prefsMod.readPrefs().highlightNames, false, 'name highlighting can be turned off');
+      data.quickconverter_reader_swipe_chapters = 'false';
+      data.quickconverter_reader_keep_screen_on = 'false';
+      assert.strictEqual(prefsMod.readPrefs().swipeChapters, false, 'swiping can be turned off');
+      assert.strictEqual(prefsMod.readPrefs().keepScreenOn, false, 'keeping the screen on can be turned off');
     } finally {
       global.localStorage = prev;
     }

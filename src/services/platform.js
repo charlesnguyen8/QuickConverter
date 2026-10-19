@@ -425,6 +425,54 @@
     }
   };
 
+  // --- Screen --------------------------------------------------------------------------
+
+  let wakeSentinel = null;
+  let wakeOnVisible = null;
+
+  const screenControl = {
+    // Keeps the screen on while reading: the app's Screen plugin, else the browser's wake lock
+    // (taken again when the page comes back, since the browser drops it while hidden).
+    // Resolves false when the platform has neither.
+    async keepAwake(on) {
+      const cap = nativePlugin('Screen');
+      if (cap) {
+        await cap.nativePromise('Screen', 'keepOn', { on: !!on });
+        return true;
+      }
+      const nav = global.navigator;
+      const lock = nav && nav.wakeLock;
+      if (!lock || typeof lock.request !== 'function') return false;
+      const doc = global.document;
+      if (on) {
+        const take = async () => {
+          try {
+            wakeSentinel = await lock.request('screen');
+          } catch (e) {
+            wakeSentinel = null;
+          }
+        };
+        await take();
+        if (doc && !wakeOnVisible) {
+          wakeOnVisible = () => (doc.visibilityState === 'visible' ? take() : undefined);
+          doc.addEventListener('visibilitychange', wakeOnVisible);
+        }
+        return true;
+      }
+      if (doc && wakeOnVisible) {
+        doc.removeEventListener('visibilitychange', wakeOnVisible);
+        wakeOnVisible = null;
+      }
+      if (wakeSentinel) {
+        try {
+          await wakeSentinel.release();
+        } catch (e) {}
+        wakeSentinel = null;
+      }
+      return true;
+    }
+  };
+
   // --- Runtime -------------------------------------------------------------------------
 
   const runtime = {
@@ -522,6 +570,7 @@
     desktopUserAgent,
     mobileUserAgent,
     useSiteIdentity,
+    screen: screenControl,
     storage,
     messaging,
     alarms,

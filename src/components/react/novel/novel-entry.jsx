@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import NovelApp from './NovelApp.jsx';
 import { installBackButton } from '../shared/backButton.js';
+import { releaseScreenOn } from '../shared/screenOn.js';
 import SiteSaveStatus from '../shared/SiteSaveStatus.jsx';
 import { installAppOcr } from '../shared/appOcr.js';
 
@@ -13,6 +14,7 @@ if (target) {
 }
 
 installBackButton();
+releaseScreenOn();
 installAppOcr();
 
 if (typeof document !== 'undefined' && document.body) {
