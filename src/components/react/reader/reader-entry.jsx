@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import ReaderApp from './ReaderApp.jsx';
 import { installBackButton } from '../shared/backButton.js';
+import { refreshOnSync } from '../shared/SyncStatus.jsx';
 import SiteSaveStatus from '../shared/SiteSaveStatus.jsx';
 import { installAppOcr } from '../shared/appOcr.js';
 
@@ -13,6 +14,7 @@ if (target) {
 }
 
 installBackButton();
+refreshOnSync(window, 'reader-chapter-refresh');
 installAppOcr();
 
 if (typeof document !== 'undefined' && document.body) {

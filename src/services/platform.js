@@ -429,11 +429,22 @@
 
   // The app's foreground service: while held, Android keeps the app (and its page) running in
   // the background, with a notification showing the text.
+  // Several kinds of work (downloads, sync) share it: each holds under its own key, the
+  // notification shows the latest holder, and the service stops when no one holds it.
+  const backgroundHolders = new Map();
   const appBackground = {
-    hold(text) {
+    hold(text, key = 'default') {
+      backgroundHolders.delete(key);
+      backgroundHolders.set(key, String(text || ''));
       return nativePlugin('BackgroundWork').nativePromise('BackgroundWork', 'hold', { text: String(text || '') });
     },
-    release() {
+    release(key = 'default') {
+      if (!backgroundHolders.has(key)) return Promise.resolve();
+      backgroundHolders.delete(key);
+      if (backgroundHolders.size > 0) {
+        const texts = Array.from(backgroundHolders.values());
+        return nativePlugin('BackgroundWork').nativePromise('BackgroundWork', 'hold', { text: texts[texts.length - 1] });
+      }
       return nativePlugin('BackgroundWork').nativePromise('BackgroundWork', 'release', {});
     }
   };

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import AddBookButton from '../shared/AddBookButton.jsx';
+import SyncStatusBadge from '../shared/SyncStatus.jsx';
 import { coverSrc, showDefaultCover } from '../shared/novelCover.js';
 import { continueHref, lastReadLabel } from '../shared/lastRead.jsx';
 
@@ -131,7 +132,11 @@ export default function LibraryView() {
     load();
     const onAdded = () => load();
     window.addEventListener('novel-added', onAdded);
-    return () => window.removeEventListener('novel-added', onAdded);
+    window.addEventListener('library-synced', onAdded);
+    return () => {
+      window.removeEventListener('novel-added', onAdded);
+      window.removeEventListener('library-synced', onAdded);
+    };
   }, [load]);
 
   const count = novels.length;
@@ -167,6 +172,7 @@ export default function LibraryView() {
               <span>💾</span>
               <span id="library-disk-text">{diskText}</span>
             </span>
+            <SyncStatusBadge />
             <AddBookButton />
             <SettingsLink />
           </div>

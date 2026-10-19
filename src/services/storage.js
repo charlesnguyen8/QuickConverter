@@ -10,8 +10,16 @@ const NAME_LIST_PREFIX = 'namelist::';
 const BACKUP_EXCLUDED_KEYS = [
   'quickconverter_deepseek_key',
   'quickconverter_deepseek_key_storage',
-  'quickconverter_custom_api_key'
+  'quickconverter_custom_api_key',
+  'quickconverter_sync_deleted',
+  'quickconverter_sync_dirty_at',
+  'quickconverter_sync_lock',
+  'quickconverter_last_sync_at'
 ];
+const SYNC_DELETED_KEY = 'quickconverter_sync_deleted';
+const SYNC_DIRTY_KEY = 'quickconverter_sync_dirty_at';
+const libraryChangeListeners = new Set();
+const LIST_KINDS = ['namelist', 'locked', 'soft'];
 
 const INITIAL_NOVELS = [
   {
@@ -173,6 +181,71 @@ function textProcessors() {
 // `<kind>::<novelId>` with an `owner` and `list`, so it must never be treated as a novel.
 function isListRecord(record) {
   return !!record && typeof record.id === 'string' && record.id.indexOf('::') !== -1 && !!record.owner && Array.isArray(record.list);
+}
+
+// A backup/sync book carries its name list and glossaries inline; on the device they are their own
+// records, each with the time it last changed.
+function splitNovelLists(novel) {
+  const { nameList, glossaries, listsUpdatedAt, ...record } = novel;
+  const times = listsUpdatedAt && typeof listsUpdatedAt === 'object' ? listsUpdatedAt : {};
+  const lists = [];
+  const add = (kind, list) => {
+    lists.push({ id: `${kind}::${novel.id}`, owner: novel.id, kind, list: Array.isArray(list) ? list : [], updatedAt: Number(times[kind]) || 0 });
+  };
+  if (Object.prototype.hasOwnProperty.call(novel, 'nameList')) add('namelist', nameList);
+  if (glossaries && typeof glossaries === 'object') {
+    ['locked', 'soft'].forEach((kind) => {
+      if (Object.prototype.hasOwnProperty.call(glossaries, kind)) add(kind, glossaries[kind]);
+    });
+  }
+  return { record, lists };
+}
+
+function syncTime(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).filter((k) => value[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${stableJson(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function syncLibraryParts(data) {
+  const deleted = data && data.deleted && typeof data.deleted === 'object' ? data.deleted : {};
+  return {
+    novels: data && Array.isArray(data.novels) ? data.novels.filter((n) => n && n.id) : [],
+    chapters: data && Array.isArray(data.chapters) ? data.chapters.filter((c) => c && c.id) : [],
+    preferences: data && data.preferences && typeof data.preferences === 'object' ? data.preferences : {},
+    deleted: { novels: { ...(deleted.novels || {}) }, chapters: { ...(deleted.chapters || {}) } }
+  };
+}
+
+function mergeSyncedNovel(local, remote) {
+  const base = syncTime(remote.updatedAt) > syncTime(local.updatedAt) ? remote : local;
+  const merged = { ...base };
+  const localRead = local.lastRead ? syncTime(local.lastRead.updatedAt) : -1;
+  const remoteRead = remote.lastRead ? syncTime(remote.lastRead.updatedAt) : -1;
+  if (remoteRead > localRead) merged.lastRead = remote.lastRead;
+  else if (local.lastRead) merged.lastRead = local.lastRead;
+  const localTimes = local.listsUpdatedAt || {};
+  const remoteTimes = remote.listsUpdatedAt || {};
+  const pick = (kind) => (syncTime(remoteTimes[kind]) > syncTime(localTimes[kind]) ? remote : local);
+  const listOf = (book, kind) => (kind === 'namelist' ? book.nameList : (book.glossaries || {})[kind]);
+  const times = {};
+  const lists = {};
+  LIST_KINDS.forEach((kind) => {
+    const source = pick(kind);
+    lists[kind] = Array.isArray(listOf(source, kind)) ? listOf(source, kind) : [];
+    times[kind] = syncTime((source.listsUpdatedAt || {})[kind]);
+  });
+  merged.nameList = lists.namelist;
+  merged.glossaries = { locked: lists.locked, soft: lists.soft };
+  merged.listsUpdatedAt = times;
+  return merged;
 }
 
 // Collapses entries that share a source name (trimmed, case-insensitive), keeping
@@ -415,7 +488,7 @@ const StorageService = {
     if (stored) return { ...record, nameList: stored };
 
     const legacy = Array.isArray(record.nameList) ? record.nameList : [];
-    await this._putNameListRecord(novelId, legacy);
+    await this._putNameListRecord(novelId, legacy, 'namelist', { migrated: true });
     if (Object.prototype.hasOwnProperty.call(record, 'nameList')) {
       const { nameList, ...rest } = record;
       try { await this._putNovelRecord(rest); } catch (e) {}
@@ -454,7 +527,8 @@ const StorageService = {
       chapterList: Array.isArray(novel.chapterList) ? novel.chapterList : [],
       icon: novel.icon || '📚',
       status: 'Active',
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      updatedAt: Date.now()
     };
 
     const db = await openDatabase();
@@ -467,6 +541,7 @@ const StorageService = {
     });
 
     await this._setDbInitialized();
+    this._libraryChanged('novel');
 
     // Populate chapter catalog in background if slug is present
     if (newNovel.slug) {
@@ -499,10 +574,14 @@ const StorageService = {
         const updated = {
           ...novel,
           ...cleanUpdates,
-          id: novel.id // preserve id
+          id: novel.id, // preserve id
+          updatedAt: Date.now()
         };
         store.put(updated);
-        tx.oncomplete = () => resolve(updated);
+        tx.oncomplete = () => {
+          this._libraryChanged('novel');
+          resolve(updated);
+        };
       };
       getReq.onerror = () => reject(getReq.error);
       tx.onerror = () => reject(tx.error);
@@ -531,7 +610,7 @@ const StorageService = {
     const novels = await this.getManagedNovels();
     const novel = novels.find((n) => n.id === novelId) || null;
     const legacy = novel && Array.isArray(novel.nameList) ? novel.nameList : [];
-    await this._putNameListRecord(novelId, legacy, kind);
+    await this._putNameListRecord(novelId, legacy, kind, { migrated: true });
     if (novel && Object.prototype.hasOwnProperty.call(novel, 'nameList')) {
       const { nameList, ...rest } = novel;
       try { await this._putNovelRecord(rest); } catch (e) {}
@@ -551,13 +630,31 @@ const StorageService = {
     }));
   },
 
-  _putNameListRecord(novelId, list, kind = 'namelist') {
+  _putNameListRecord(novelId, list, kind = 'namelist', { migrated = false } = {}) {
     return openDatabase().then((db) => new Promise((resolve, reject) => {
       const tx = db.transaction('novels', 'readwrite');
-      tx.objectStore('novels').put({ id: `${kind}::${novelId}`, owner: novelId, kind, list });
+      tx.objectStore('novels').put({ id: `${kind}::${novelId}`, owner: novelId, kind, list, updatedAt: migrated ? 0 : Date.now() });
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
-    }));
+    })).then(() => {
+      if (!migrated) this._libraryChanged('names');
+    });
+  },
+
+  // Announces a change made on this device (not one applied by a sync) and marks the library as
+  // changed since the last sync, so AutoSync uploads it.
+  onLibraryChanged(handler) {
+    libraryChangeListeners.add(handler);
+    return () => libraryChangeListeners.delete(handler);
+  },
+
+  _libraryChanged(kind) {
+    this.setPreference(SYNC_DIRTY_KEY, String(Date.now()));
+    libraryChangeListeners.forEach((handler) => {
+      try {
+        handler({ kind });
+      } catch (e) {}
+    });
   },
 
   _putNovelRecord(record) {
@@ -938,6 +1035,9 @@ const StorageService = {
       tx.onerror = () => reject(tx.error);
     });
 
+    this._markDeleted('novels', Array.from(targetIds).filter((id) => String(id).indexOf('::') === -1));
+    this._libraryChanged('novel');
+
     // 3. Mark database as initialized so deleting all novels leaves the list empty instead of re-seeding
     await this._setDbInitialized();
 
@@ -984,7 +1084,10 @@ const StorageService = {
       const tx = db.transaction('chapters', 'readwrite');
       const store = tx.objectStore('chapters');
       store.put(chapterRecord);
-      tx.oncomplete = () => resolve(chapterRecord);
+      tx.oncomplete = () => {
+        this._libraryChanged('chapter');
+        resolve(chapterRecord);
+      };
       tx.onerror = () => reject(tx.error);
     });
   },
@@ -1013,7 +1116,10 @@ const StorageService = {
       const tx = db.transaction('chapters', 'readwrite');
       const store = tx.objectStore('chapters');
       store.put(updatedRecord);
-      tx.oncomplete = () => resolve(updatedRecord);
+      tx.oncomplete = () => {
+        this._libraryChanged('chapter');
+        resolve(updatedRecord);
+      };
       tx.onerror = () => reject(tx.error);
     });
   },
@@ -1467,6 +1573,7 @@ const StorageService = {
         }
         const updated = { ...novel, lastRead };
         store.put(updated);
+        this._libraryChanged('reading');
         resolve(updated);
       };
       request.onerror = () => reject(request.error);
@@ -1577,13 +1684,45 @@ const StorageService = {
   async deleteChapter(novelId, chapterNumber) {
     const chapterId = `${novelId}_ch${chapterNumber}`;
     const db = await openDatabase();
-    return new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
       const tx = db.transaction('chapters', 'readwrite');
       const store = tx.objectStore('chapters');
       store.delete(chapterId);
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => reject(tx.error);
     });
+    this._markDeleted('chapters', [chapterId]);
+    this._libraryChanged('chapter');
+    return true;
+  },
+
+  // Deletion markers ({ novels: { id: time }, chapters: { id: time } }) so a sync removes what
+  // another device deleted instead of bringing it back.
+  _readSyncDeleted() {
+    try {
+      const parsed = JSON.parse(this.getPreference(SYNC_DELETED_KEY, '{}') || '{}');
+      return {
+        novels: parsed && parsed.novels && typeof parsed.novels === 'object' ? parsed.novels : {},
+        chapters: parsed && parsed.chapters && typeof parsed.chapters === 'object' ? parsed.chapters : {}
+      };
+    } catch (e) {
+      return { novels: {}, chapters: {} };
+    }
+  },
+
+  _writeSyncDeleted(deleted) {
+    this.setPreference(SYNC_DELETED_KEY, JSON.stringify({
+      novels: (deleted && deleted.novels) || {},
+      chapters: (deleted && deleted.chapters) || {}
+    }));
+  },
+
+  _markDeleted(kind, ids) {
+    if (!ids || ids.length === 0) return;
+    const deleted = this._readSyncDeleted();
+    const now = Date.now();
+    ids.forEach((id) => { deleted[kind][id] = now; });
+    this._writeSyncDeleted(deleted);
   },
 
   /**
@@ -1624,22 +1763,27 @@ const StorageService = {
     const chapters = await getAllFromStore(db, 'chapters');
 
     const listsByNovel = new Map();
+    const listTimesByNovel = new Map();
     rawNovels.forEach((record) => {
       if (!record || typeof record.id !== 'string' || !record.owner || !Array.isArray(record.list)) return;
       const sep = record.id.indexOf('::');
       if (sep === -1) return;
       const kind = record.id.slice(0, sep);
       if (!listsByNovel.has(record.owner)) listsByNovel.set(record.owner, {});
+      if (!listTimesByNovel.has(record.owner)) listTimesByNovel.set(record.owner, {});
       listsByNovel.get(record.owner)[kind] = record.list;
+      listTimesByNovel.get(record.owner)[kind] = Number(record.updatedAt) || 0;
     });
     const novels = rawNovels
       .filter((record) => !isListRecord(record))
       .map((novel) => {
         const lists = listsByNovel.get(novel.id) || {};
+        const times = listTimesByNovel.get(novel.id) || {};
         return {
           ...novel,
           nameList: lists.namelist !== undefined ? lists.namelist : (Array.isArray(novel.nameList) ? novel.nameList : []),
-          glossaries: { locked: lists.locked || [], soft: lists.soft || [] }
+          glossaries: { locked: lists.locked || [], soft: lists.soft || [] },
+          listsUpdatedAt: { namelist: times.namelist || 0, locked: times.locked || 0, soft: times.soft || 0 }
         };
       });
 
@@ -1672,7 +1816,8 @@ const StorageService = {
       exportedAt: new Date().toISOString(),
       novels,
       chapters,
-      preferences
+      preferences,
+      deleted: this._readSyncDeleted()
     };
   },
 
@@ -1690,22 +1835,14 @@ const StorageService = {
       if (!novel) return;
       const hasNameList = Object.prototype.hasOwnProperty.call(novel, 'nameList');
       const hasGlossaries = novel.glossaries && typeof novel.glossaries === 'object';
+      const { listsUpdatedAt, ...withoutTimes } = novel;
       if (!hasNameList && !hasGlossaries) {
-        novelRecords.push(novel);
+        novelRecords.push(withoutTimes);
         return;
       }
-      const { nameList, glossaries, ...rest } = novel;
-      if (hasNameList) {
-        nameRecords.push({ id: NAME_LIST_PREFIX + novel.id, owner: novel.id, kind: 'namelist', list: Array.isArray(nameList) ? nameList : [] });
-      }
-      if (hasGlossaries) {
-        ['locked', 'soft'].forEach((kind) => {
-          if (Object.prototype.hasOwnProperty.call(glossaries, kind)) {
-            nameRecords.push({ id: `${kind}::${novel.id}`, owner: novel.id, kind, list: Array.isArray(glossaries[kind]) ? glossaries[kind] : [] });
-          }
-        });
-      }
-      novelRecords.push(rest);
+      const split = splitNovelLists(novel);
+      novelRecords.push(split.record);
+      split.lists.forEach((record) => nameRecords.push(record));
     });
 
     const db = await openDatabase();
@@ -1738,6 +1875,126 @@ const StorageService = {
 
     await this._setDbInitialized();
     return { novels: novels.length, chapters: chapters.length };
+  },
+
+  // Merges this device's library (exportAll) with another copy (e.g. the one in Drive): per book and
+  // chapter the newer copy wins, the reading position and each name list follow their own times,
+  // deletion markers remove what is older than them, and settings stay as they are here (missing
+  // ones are filled in). Returns the merged library and the changes to write on this device.
+  mergeLibraries(localData, remoteData) {
+    const local = syncLibraryParts(localData);
+    const apply = { novels: [], chapters: [], deleteNovels: [], deleteChapters: [], preferences: {} };
+    const libraryOf = (parts) => ({
+      format: BACKUP_FORMAT,
+      version: BACKUP_VERSION,
+      exportedAt: new Date().toISOString(),
+      novels: parts.novels,
+      chapters: parts.chapters,
+      preferences: parts.preferences,
+      deleted: parts.deleted
+    });
+    if (!remoteData) return { library: libraryOf(local), apply };
+    const remote = syncLibraryParts(remoteData);
+
+    const deleted = { novels: { ...local.deleted.novels }, chapters: { ...local.deleted.chapters } };
+    ['novels', 'chapters'].forEach((kind) => {
+      Object.keys(remote.deleted[kind]).forEach((id) => {
+        deleted[kind][id] = Math.max(syncTime(deleted[kind][id]), syncTime(remote.deleted[kind][id]));
+      });
+    });
+
+    const byId = (list) => new Map(list.map((item) => [item.id, item]));
+    const idsOf = (a, b) => Array.from(new Set([...a.map((x) => x.id), ...b.map((x) => x.id)]));
+
+    const localNovels = byId(local.novels);
+    const remoteNovels = byId(remote.novels);
+    const novels = [];
+    idsOf(local.novels, remote.novels).forEach((id) => {
+      const mine = localNovels.get(id);
+      const theirs = remoteNovels.get(id);
+      const merged = mine && theirs ? mergeSyncedNovel(mine, theirs) : (mine || theirs);
+      const marker = deleted.novels[id];
+      if (marker !== undefined && syncTime(marker) >= syncTime(merged.updatedAt)) {
+        if (mine) apply.deleteNovels.push(id);
+        return;
+      }
+      if (marker !== undefined) delete deleted.novels[id];
+      novels.push(merged);
+      if (!mine || stableJson(mine) !== stableJson(merged)) apply.novels.push(merged);
+    });
+
+    const localChapters = byId(local.chapters);
+    const remoteChapters = byId(remote.chapters);
+    const chapters = [];
+    idsOf(local.chapters, remote.chapters).forEach((id) => {
+      const mine = localChapters.get(id);
+      const theirs = remoteChapters.get(id);
+      const merged = mine && theirs ? (syncTime(theirs.updatedAt) > syncTime(mine.updatedAt) ? theirs : mine) : (mine || theirs);
+      const time = syncTime(merged.updatedAt);
+      const bookMarker = deleted.novels[merged.novelId];
+      const marker = deleted.chapters[id];
+      if ((bookMarker !== undefined && syncTime(bookMarker) >= time) || (marker !== undefined && syncTime(marker) >= time)) {
+        if (mine) apply.deleteChapters.push(id);
+        return;
+      }
+      if (marker !== undefined) delete deleted.chapters[id];
+      chapters.push(merged);
+      if (merged !== mine) apply.chapters.push(merged);
+    });
+
+    const preferences = {};
+    Object.keys(remote.preferences).forEach((key) => {
+      if (BACKUP_EXCLUDED_KEYS.indexOf(key) !== -1) return;
+      preferences[key] = remote.preferences[key];
+      if (!Object.prototype.hasOwnProperty.call(local.preferences, key)) apply.preferences[key] = remote.preferences[key];
+    });
+    Object.keys(local.preferences).forEach((key) => {
+      if (BACKUP_EXCLUDED_KEYS.indexOf(key) === -1) preferences[key] = local.preferences[key];
+    });
+
+    return { library: libraryOf({ novels, chapters, preferences, deleted }), apply };
+  },
+
+  // Writes a merge's changes on this device, keeping each record's time so it does not look
+  // newly changed, and remembers the merged deletion markers.
+  async applySync(apply, deleted) {
+    const changes = apply || {};
+    const novelRecords = [];
+    const listRecords = [];
+    (changes.novels || []).forEach((novel) => {
+      const split = splitNovelLists(novel);
+      novelRecords.push(split.record);
+      split.lists.forEach((record) => listRecords.push(record));
+    });
+    const db = await openDatabase();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(['novels', 'chapters'], 'readwrite');
+      const novelStore = tx.objectStore('novels');
+      const chapterStore = tx.objectStore('chapters');
+      novelRecords.forEach((record) => novelStore.put(record));
+      listRecords.forEach((record) => novelStore.put(record));
+      (changes.chapters || []).forEach((chapter) => chapterStore.put(chapter));
+      (changes.deleteNovels || []).forEach((id) => {
+        novelStore.delete(id);
+        LIST_KINDS.forEach((kind) => novelStore.delete(`${kind}::${id}`));
+      });
+      (changes.deleteChapters || []).forEach((id) => chapterStore.delete(id));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    const preferences = changes.preferences || {};
+    Object.keys(preferences).forEach((key) => {
+      if (BACKUP_EXCLUDED_KEYS.indexOf(key) !== -1) return;
+      const value = preferences[key];
+      if (typeof value === 'string') {
+        this.setPreference(key, value);
+      } else {
+        const area = storageArea('local');
+        if (area) area.set({ [key]: value });
+      }
+    });
+    if (deleted) this._writeSyncDeleted(deleted);
+    await this._setDbInitialized();
   }
 };
 

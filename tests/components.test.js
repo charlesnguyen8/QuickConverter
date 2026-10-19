@@ -807,6 +807,80 @@ async function testAsync(name, fn) {
   const { ProviderLoginStatus } = providerLoginMod;
   const ProviderLoginBanner = providerLoginMod.default;
   const LOGIN_URL = 'https://www.nkwwlkj.cn/signup/login?redirect=https%3A%2F%2Fwww.nkwwlkj.cn%2F';
+  const { SettingsDriveCard } = await loadComponent('components/react/settings/SettingsStorageTab.jsx');
+  test('the Google Drive card leads with Sync now and says which actions replace data', () => {
+    const noop = () => {};
+    const handlers = { onSignIn: noop, onSync: noop, onUpload: noop, onDownload: noop, onSignOut: noop };
+    const signedOut = render(h(SettingsDriveCard, { cloud: { connected: false }, busy: false, feedback: { text: '', cls: '' }, formatWhen: (x) => x, ...handlers }));
+    assert(/<button[^>]*id="cloud-sync-btn"[^>]*disabled=""/.test(signedOut), 'Sync needs a sign-in');
+    const html = render(h(SettingsDriveCard, {
+      cloud: { connected: true, lastBackupAt: 'B', lastSyncAt: 'S' },
+      busy: false,
+      feedback: { text: '', cls: '' },
+      formatWhen: (x) => `when(${x})`,
+      ...handlers
+    }));
+    const sync = html.indexOf('id="cloud-sync-btn"');
+    assert(sync > -1 && !/<button[^>]*id="cloud-sync-btn"[^>]*disabled=""/.test(html), 'Sync is available when signed in');
+    assert(sync < html.indexOf('id="cloud-upload-btn"') && sync < html.indexOf('id="cloud-download-btn"'), 'Sync comes first');
+    assert(html.includes('Sync now'), 'labelled');
+    assert(html.includes('Replace Drive copy') && html.includes('Replace this device'), 'the one-way actions say what they replace');
+    assert(html.includes('Last sync: when(S)'), 'shows the last sync');
+    assert(/merg/i.test(html), 'explains that sync merges both sides');
+  });
+
+  test('the Google Drive card has a Sync automatically switch reflecting the setting', () => {
+    const noop = () => {};
+    const card = (autoSync) => render(h(SettingsDriveCard, {
+      cloud: { connected: true }, busy: false, feedback: { text: '', cls: '' }, formatWhen: (x) => x,
+      onSignIn: noop, onSync: noop, onUpload: noop, onDownload: noop, onSignOut: noop, autoSync, onToggleAuto: noop
+    }));
+    const on = card(true).match(/<input[^>]*id="auto-sync-toggle"[^>]*>/);
+    assert(on && /type="checkbox"/.test(on[0]) && /checked=""/.test(on[0]), 'on');
+    const off = card(false).match(/<input[^>]*id="auto-sync-toggle"[^>]*>/);
+    assert(off && !/checked=""/.test(off[0]), 'off');
+    assert(card(true).includes('Sync automatically'), 'labelled');
+  });
+
+  const { SyncStatusBadgeView } = await loadComponent('components/react/shared/SyncStatus.jsx');
+  test('the library shows how the sync is doing', () => {
+    const now = Date.parse('2026-10-19T12:00:00Z');
+    const badge = (status) => render(h(SyncStatusBadgeView, { status, now, onSyncNow() {} }));
+    assert.strictEqual(badge(null), '', 'nothing before the first status');
+    assert.strictEqual(badge({ state: 'off' }), '', 'nothing when automatic sync is off');
+    assert(badge({ state: 'syncing' }).includes('Syncing…'));
+    assert(badge({ state: 'idle', lastSyncAt: '2026-10-19T11:58:00Z' }).includes('Synced 2 min ago'));
+    assert(badge({ state: 'idle', lastSyncAt: '2026-10-19T11:59:40Z' }).includes('Synced just now'));
+    assert(badge({ state: 'idle', lastSyncAt: '2026-10-19T09:00:00Z' }).includes('Synced 3 h ago'));
+    const signedOut = badge({ state: 'signed-out' });
+    assert(signedOut.includes('Sign in to sync') && /href="settings\.html/.test(signedOut), 'points to Settings to sign in');
+    const failed = badge({ state: 'error', error: 'Google Drive upload failed (503)' });
+    assert(failed.includes('Sync failed') && failed.includes('Google Drive upload failed (503)'), 'says what failed');
+    const idle = badge({ state: 'idle', lastSyncAt: '2026-10-19T11:58:00Z' });
+    assert(/<button[^>]*id="library-sync-status"/.test(idle) && /min-h-10/.test(idle), 'a tappable button that syncs now');
+  });
+
+  const { refreshOnSync } = await loadComponent('components/react/shared/SyncStatus.jsx');
+  test('pages refresh what they show when a sync brings changes', () => {
+    const listeners = {};
+    const fired = [];
+    const win = {
+      addEventListener: (type, fn) => { listeners[type] = fn; },
+      removeEventListener: (type) => { delete listeners[type]; },
+      dispatchEvent: (e) => fired.push(e.type)
+    };
+    const stop = refreshOnSync(win, 'novel-chapters-refresh');
+    listeners['library-synced']({ detail: { novels: 0, chapters: 3, deleted: 0 } });
+    assert.deepStrictEqual(fired, ['novel-chapters-refresh']);
+    stop();
+    assert.strictEqual(listeners['library-synced'], undefined);
+    const read = (entry) => require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'components', 'react', ...entry.split('/')), 'utf8');
+    assert(/refreshOnSync\(window, 'novel-chapters-refresh'\)/.test(read('novel/novel-entry.jsx')), 'the novel page refreshes its chapters');
+    assert(/refreshOnSync\(window, 'reader-chapter-refresh'\)/.test(read('reader/reader-entry.jsx')), 'the reader refreshes its chapter');
+    const library = read('library/LibraryView.jsx');
+    assert(/<SyncStatusBadge \/>/.test(library) && /'library-synced'/.test(library), 'the library shows the sync status and reloads after a sync');
+  });
+
   const { SiteSaveStatusView } = await loadComponent('components/react/shared/SiteSaveStatus.jsx');
   test('the Open to save message says what the app is doing with the chapter', () => {
     assert.strictEqual(render(h(SiteSaveStatusView, { status: null })), '');

@@ -73,13 +73,15 @@ const CloudSyncService = require(path.join(repoRoot, 'src', 'services', 'cloud-s
   assert(prefs.quickconverter_last_backup_at, 'backup() must record lastBackupAt');
   console.log('✓ backup: creates the app-data file when none exists');
 
-  listFiles = [{ id: 'file-42', name: 'quickconverter-backup.json', modifiedTime: '2026-09-20T00:00:00Z' }];
+  listFiles = [{ id: 'file-42', name: 'quickconverter-index.json', modifiedTime: '2026-09-20T00:00:00Z' }];
   fetchCalls = [];
   await CloudSyncService.backup();
   const patchCall = fetchCalls.find((c) => c.method === 'PATCH');
-  assert(patchCall, 'backup() must update the existing file');
+  assert(patchCall, 'backup() must update the existing index file');
   assert(patchCall.url.includes('/file-42'), 'PATCH must target the existing file id');
-  console.log('✓ backup: updates the existing file when present');
+  console.log('✓ backup: updates the existing index file when present');
+
+  listFiles = [{ id: 'file-42', name: 'quickconverter-backup.json', modifiedTime: '2026-09-20T00:00:00Z' }];
 
   fetchCalls = [];
   const restoreResult = await CloudSyncService.restore();
@@ -90,7 +92,7 @@ const CloudSyncService = require(path.join(repoRoot, 'src', 'services', 'cloud-s
   assert.strictEqual(restoreResult.modifiedTime, '2026-09-20T00:00:00Z');
   console.log('✓ restore: downloads and imports with replace=true');
 
-  listFiles = [{ id: 'file-42' }];
+  listFiles = [{ id: 'file-42', name: 'quickconverter-backup.json' }];
   let first = true;
   removedTokens = [];
   fetchHandler = (url, options) => {
@@ -107,9 +109,13 @@ const CloudSyncService = require(path.join(repoRoot, 'src', 'services', 'cloud-s
   fetchHandler = null;
   console.log('✓ authFetch: refreshes the cached token once on 401');
 
+
+
+  prefs.quickconverter_last_sync_at = '2026-10-19T00:00:00.000Z';
   const status = await CloudSyncService.getStatus();
   assert.strictEqual(status.connected, true);
   assert.strictEqual(status.lastBackupAt, prefs.quickconverter_last_backup_at);
+  assert.strictEqual(status.lastSyncAt, prefs.quickconverter_last_sync_at, 'and the last sync time');
   console.log('✓ getStatus: reports connection and last backup time');
 
   const out = await CloudSyncService.signOut();

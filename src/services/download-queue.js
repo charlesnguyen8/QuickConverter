@@ -116,10 +116,10 @@
       win.addEventListener('pagehide', () => {
         if (heldText === null) return;
         heldText = null;
-        Promise.resolve(background.release()).catch(() => {});
+        Promise.resolve(background.release('downloads')).catch(() => {});
       });
     }
-    const call = text ? background.hold(text) : background.release();
+    const call = text ? background.hold(text, 'downloads') : background.release('downloads');
     Promise.resolve(call).catch(() => {});
   }
 

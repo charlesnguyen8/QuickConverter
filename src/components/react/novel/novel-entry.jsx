@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import NovelApp from './NovelApp.jsx';
 import { installBackButton } from '../shared/backButton.js';
+import { refreshOnSync } from '../shared/SyncStatus.jsx';
 import { releaseScreenOn } from '../shared/screenOn.js';
 import SiteSaveStatus from '../shared/SiteSaveStatus.jsx';
 import { installAppOcr } from '../shared/appOcr.js';
@@ -14,6 +15,7 @@ if (target) {
 }
 
 installBackButton();
+refreshOnSync(window, 'novel-chapters-refresh');
 releaseScreenOn();
 installAppOcr();
 

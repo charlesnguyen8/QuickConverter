@@ -8,7 +8,7 @@ for directory layout, porting rules, and feature checklists.
 
 ## Commands
 
-- `npm test` — run the full Node test suite (24 suites) (`tests/run_all.js`). Must pass before finishing a task.
+- `npm test` — run the full Node test suite (26 suites) (`tests/run_all.js`). Must pass before finishing a task.
 - `npm run build:css` — rebuild `src/styles/tailwind.css` from `src/styles/input.css` + scanned content.
 - `npm run watch:css` — watch mode while developing UI.
 - `npm run build:ext` — build the Chrome extension into `dist/`.
@@ -45,7 +45,7 @@ introduces new utility classes, run `npm run build:css` (or the `watch` script).
 classes silently break layout (e.g. a missing `justify-end` makes the drawer anchor left)
 because the committed `src/styles/tailwind.css` is stale.
 
-**Testing:** `npm test` runs 24 suites via `tests/run_all.js`. Twenty-three are zero-dependency Node
+**Testing:** `npm test` runs 26 suites via `tests/run_all.js`. Twenty-five are zero-dependency Node
 suites (unit + static/contract, no DOM); one of them, `tests/components.test.js`, renders the
 migrated React components with `react-dom/server` (`renderToString`) and asserts their markup.
 JSX is compiled for Node by `tests/helpers/render.js` using the `esbuild` devDependency

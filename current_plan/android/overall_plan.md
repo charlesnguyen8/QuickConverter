@@ -183,6 +183,20 @@ Rough ranges for focused work. The real bottleneck is testing on a phone/emulato
   when it is paused, empty, in its 75-minute error backoff, or its page goes away. The page renderer
   keeps the app's priority. Limits: swiping the app away from Recents stops downloads (the queue
   lives in the page and resumes on the next open); Android 15+ caps dataSync services at 6 h a day.
+- **Seamless Drive sync (2026-10-19), steps 1–2 of 3 built:** `CloudSyncService.sync()` merges the
+  device with the Drive copy (`StorageService.mergeLibraries`/`applySync`: newer book/chapter wins,
+  reading position and each name list by their own times, deletion markers, settings kept local)
+  instead of replacing either side. `AutoSync` (`src/services/auto-sync.js`, library/novel/reader
+  pages) syncs on open, ~30 s after changes, on return after a minute, every 15 min; one at a time
+  per device; quiet when signed out; holds the app's background service while syncing. Library
+  badge shows the state; Settings has "Sync automatically". The extension's service worker does not
+  sync (it cannot read the pages' sync markers); chapters it saves reach open pages' AutoSync
+  through the chapter-saved notice. Step 3 built: Drive holds one file per book
+  (`quickconverter-book-<id>.json`) plus `quickconverter-index.json` (book fingerprints from change
+  times, deletion markers, settings); a sync reads the index and transfers only books whose
+  fingerprint differs, and writes the index only when it changed. The old single
+  `quickconverter-backup.json` is merged in on the first sync and left in place. Replace Drive copy /
+  Replace this device use the new layout. Locally a sync still reads the whole library (exportAll).
 
 **Total:** about 3–4 weeks for full features. A useful first version (Phases 0–1: read and convert
 everything already saved, translate, backup) comes much sooner.

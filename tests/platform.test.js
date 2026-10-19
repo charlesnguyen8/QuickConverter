@@ -417,6 +417,17 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
     ['BackgroundWork', 'hold', { text: 'Downloading Regressor · Chapter 7' }],
     ['BackgroundWork', 'release', {}]
   ]);
+  bgCalls.length = 0;
+  await bgEnv.Platform.background.hold('Downloading Regressor · Chapter 7', 'downloads');
+  await bgEnv.Platform.background.hold('Syncing library…', 'sync');
+  await bgEnv.Platform.background.release('sync');
+  await bgEnv.Platform.background.release('downloads');
+  assert.deepStrictEqual(bgCalls, [
+    ['BackgroundWork', 'hold', { text: 'Downloading Regressor · Chapter 7' }],
+    ['BackgroundWork', 'hold', { text: 'Syncing library…' }],
+    ['BackgroundWork', 'hold', { text: 'Downloading Regressor · Chapter 7' }],
+    ['BackgroundWork', 'release', {}]
+  ], 'downloads and sync share the notification; it ends only when neither needs it');
   assert.strictEqual(noScreen.Platform.background, null, 'no background work outside the app');
   bgEnv.chrome = fakeChrome().chrome;
   assert.strictEqual(bgEnv.Platform.background, null, 'the extension has its own service worker');

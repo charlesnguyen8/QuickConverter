@@ -7,11 +7,81 @@ const FEEDBACK_OK = 'text-xs font-medium text-emerald-400';
 const FEEDBACK_ERR = 'text-xs font-medium text-rose-400';
 const FEEDBACK_INFO = 'text-xs font-medium text-slate-400';
 
+export function SettingsDriveCard({ cloud, busy, feedback, formatWhen, onSignIn, onSync, onUpload, onDownload, onSignOut, autoSync = true, onToggleAuto }) {
+  const connected = !!(cloud && cloud.connected);
+  let when = 'Not synced yet.';
+  if (cloud && cloud.lastSyncAt) when = `Last sync: ${formatWhen(cloud.lastSyncAt)}`;
+  else if (cloud && cloud.lastBackupAt) when = `Last backup: ${formatWhen(cloud.lastBackupAt)}`;
+  return (
+    <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+            <span>☁️</span>
+            <span>Google Drive Sync</span>
+          </h3>
+          <p className="text-xs text-slate-400 mt-1">
+            Sync keeps your library (novels, chapters, name lists, reading position, settings) the same on every device: it merges this device with your Google Drive copy, keeping the newer version of each item. API keys are never uploaded.
+          </p>
+        </div>
+        <span className={connected ? STATUS_CONNECTED : STATUS_OFFLINE}>
+          {connected ? 'Connected' : 'Not signed in'}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {!connected ? (
+          <button type="button" onClick={onSignIn} disabled={busy} className="inline-flex items-center gap-1.5 min-h-10 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            <span>Sign in with Google</span>
+          </button>
+        ) : null}
+        <button type="button" id="cloud-sync-btn" onClick={onSync} disabled={!connected || busy} className="inline-flex items-center gap-1.5 min-h-10 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+          <span>Sync now</span>
+        </button>
+        <button type="button" id="cloud-upload-btn" onClick={onUpload} disabled={!connected || busy} className="inline-flex items-center gap-1.5 min-h-10 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" title="Overwrite the Google Drive copy with this device's library">
+          <span>Replace Drive copy</span>
+        </button>
+        <button type="button" id="cloud-download-btn" onClick={onDownload} disabled={!connected || busy} className="inline-flex items-center gap-1.5 min-h-10 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" title="Overwrite this device's library with the Google Drive copy">
+          <span>Replace this device</span>
+        </button>
+        {connected ? (
+          <button type="button" onClick={onSignOut} disabled={busy} className="inline-flex items-center gap-1.5 min-h-10 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            <span>Sign out</span>
+          </button>
+        ) : null}
+      </div>
+
+      <label htmlFor="auto-sync-toggle" className="flex items-center justify-between gap-3 min-h-10 cursor-pointer select-none">
+        <span className="flex flex-col">
+          <span className="text-xs font-semibold text-slate-200">Sync automatically</span>
+          <span className="text-[11px] text-slate-400">When the library opens, after changes, and every 15 minutes while it is open</span>
+        </span>
+        <input
+          type="checkbox"
+          id="auto-sync-toggle"
+          checked={autoSync !== false}
+          onChange={(e) => onToggleAuto && onToggleAuto(e.target.checked)}
+          className="w-5 h-5 accent-indigo-500 cursor-pointer flex-shrink-0"
+        />
+      </label>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+        <span>{when}</span>
+        <span className={feedback.cls}>{feedback.text}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsStorageTab() {
   const [disk, setDisk] = useState(null);
   const [novelCount, setNovelCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [cloud, setCloud] = useState({ connected: false, lastBackupAt: null });
+  const [autoSync, setAutoSync] = useState(() => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    return !storage || storage.getPreference('quickconverter_auto_sync', 'true') !== 'false';
+  });
   const [feedback, setFeedback] = useState({ text: '', cls: FEEDBACK_INFO });
   const [busy, setBusy] = useState(false);
 
@@ -61,9 +131,32 @@ export default function SettingsStorageTab() {
     await refreshCloud();
   };
 
+  const onToggleAuto = (on) => {
+    setAutoSync(on);
+    const storage = window.StorageService;
+    if (storage) storage.setPreference('quickconverter_auto_sync', on ? 'true' : 'false');
+  };
+
+  const onSync = async () => {
+    const CloudSync = window.CloudSyncService;
+    if (!CloudSync) return;
+    setBusy(true);
+    setMsg('Syncing...');
+    try {
+      const r = await CloudSync.sync();
+      const got = r.received;
+      const changes = got.novels + got.chapters + got.deleted;
+      setMsg(changes ? `Synced ✓ ${got.novels} novels and ${got.chapters} chapters updated here, ${got.deleted} removed` : 'Synced ✓ already up to date', FEEDBACK_OK);
+    } catch (e) { setMsg(e.message || 'Sync failed', FEEDBACK_ERR); }
+    setBusy(false);
+    await refreshCloud();
+    await loadStorage();
+  };
+
   const onBackup = async () => {
     const CloudSync = window.CloudSyncService;
     if (!CloudSync) return;
+    if (!window.confirm('Replace the Google Drive copy with this device? Changes from other devices that are not synced here will be lost. Use Sync now to merge instead.')) return;
     setBusy(true);
     setMsg('Backing up...');
     try {
@@ -168,46 +261,19 @@ export default function SettingsStorageTab() {
         </div>
       </div>
 
-      <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm backdrop-blur flex flex-col gap-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-              <span>☁️</span>
-              <span>Google Drive Backup</span>
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Back up your whole library (novels, chapters, name lists, prompts, settings) to your Google Drive. API keys are never uploaded.
-            </p>
-          </div>
-          <span className={cloud.connected ? STATUS_CONNECTED : STATUS_OFFLINE}>
-            {cloud.connected ? 'Connected' : 'Not signed in'}
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {!cloud.connected ? (
-            <button type="button" onClick={onSignIn} disabled={busy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-              <span>Sign in with Google</span>
-            </button>
-          ) : null}
-          <button type="button" onClick={onBackup} disabled={!cloud.connected || busy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-            <span>Backup now</span>
-          </button>
-          <button type="button" onClick={onRestore} disabled={!cloud.connected || busy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-            <span>Restore</span>
-          </button>
-          {cloud.connected ? (
-            <button type="button" onClick={onSignOut} disabled={busy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-              <span>Sign out</span>
-            </button>
-          ) : null}
-        </div>
-
-        <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
-          <span>{cloud.lastBackupAt ? `Last backup: ${formatWhen(cloud.lastBackupAt)}` : 'No backup yet.'}</span>
-          <span className={feedback.cls}>{feedback.text}</span>
-        </div>
-      </div>
+      <SettingsDriveCard
+        cloud={cloud}
+        busy={busy}
+        feedback={feedback}
+        formatWhen={formatWhen}
+        onSignIn={onSignIn}
+        onSync={onSync}
+        onUpload={onBackup}
+        onDownload={onRestore}
+        onSignOut={onSignOut}
+        autoSync={autoSync}
+        onToggleAuto={onToggleAuto}
+      />
 
       <SettingsBackupFile onImported={loadStorage} />
     </>
