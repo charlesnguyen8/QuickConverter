@@ -52,7 +52,7 @@
     return err && err.message ? err.message : String(err);
   }
 
-  function createSiteSave({ browser, storage, loadScript = loadPageScript, hiddenWaitMs = 45000, recognize = null }) {
+  function createSiteSave({ browser, storage, loadScript = loadPageScript, hiddenWaitMs = 45000, recognize = null, userAgentFor = () => undefined }) {
     let chain = Promise.resolve();
     const statusListeners = new Set();
 
@@ -189,7 +189,8 @@
         (async () => {
           try {
             const script = login ? '' : await loadScript();
-            await browser.open(url, { script, visible: login });
+            const userAgent = userAgentFor(url);
+            await browser.open(url, userAgent ? { script, visible: login, userAgent } : { script, visible: login });
             if (!login && !finished) timer = setTimeout(reveal, hiddenWaitMs);
           } catch (e) {
             finish({ status: 'error', error: e && e.message ? e.message : String(e) });
@@ -218,6 +219,14 @@
     };
   }
 
+  function siteUserAgent(url) {
+    const platform = global.Platform;
+    if (!platform || typeof platform.desktopUserAgent !== 'function') return undefined;
+    const registry = global.ProviderRegistry;
+    const provider = registry && typeof registry.getProviderForUrl === 'function' ? registry.getProviderForUrl(url) : null;
+    return provider && provider.appUserAgent === 'desktop' ? platform.desktopUserAgent() : platform.mobileUserAgent();
+  }
+
   let shared = null;
 
   function sharedSiteSave() {
@@ -229,6 +238,7 @@
       shared = createSiteSave({
         browser,
         storage,
+        userAgentFor: siteUserAgent,
         recognize: (bytes, mimeType) => {
           const ocr = global.QCOcr;
           if (!ocr || typeof ocr.recognize !== 'function') throw new Error('Reading chapter images is not available on this page.');
@@ -243,6 +253,7 @@
     pageScriptFiles,
     bundlePageScript,
     createSiteSave,
+    siteUserAgent,
     available() {
       return !!sharedSiteSave();
     },

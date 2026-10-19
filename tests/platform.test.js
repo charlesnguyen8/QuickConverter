@@ -244,6 +244,7 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   assert.deepStrictEqual(JSON.parse(JSON.stringify(await http.getText(listUrl, { headers: { Referer: 'https://sangtacviet.com/' } }))), { ok: true, status: 200, text: '{"code":1}' });
   assert.deepStrictEqual(httpCalls[0], ['CapacitorHttp', 'request', { url: listUrl, method: 'GET', headers: { 'User-Agent': DESKTOP_UA, Referer: 'https://sangtacviet.com/' }, responseType: 'text' }]);
   assert.strictEqual(httpEnv.Platform.desktopUserAgent(), DESKTOP_UA, "desktop Chrome with the WebView's version");
+  assert.strictEqual(httpEnv.Platform.mobileUserAgent(), 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36', 'phone Chrome sends its reduced user agent, without the WebView marker');
   assert.strictEqual((await http.getText(listUrl)).text, '{"code":1}', 'a JSON reply parsed natively comes back as its text');
   assert.strictEqual((await http.getText(listUrl)).ok, false, 'an error status is not ok');
   const noHttp = { console, setTimeout, clearTimeout, Capacitor: { PluginHeaders: [], nativePromise: async () => ({}) } };
@@ -282,6 +283,7 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   const site = siteEnv.Platform.siteBrowser;
   assert.ok(site, 'the app has a site browser');
   await site.open('https://www.nkwwlkj.cn/chapter/book_chapter_detail/1', { script: 'S', visible: false });
+  await site.open('https://sangtacviet.com/truyen/uukanshu/1/92019/1122/', { script: 'S', visible: false, userAgent: 'PHONE-CHROME' });
   await site.show();
   await site.hide();
   await site.close();
@@ -294,6 +296,7 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   assert.deepStrictEqual(JSON.parse(JSON.stringify(seen)), [{ type: 'chapter', rawText: 'x' }, { type: 'closed' }], 'messages arrive parsed; garbage is dropped');
   assert.deepStrictEqual(siteCalls, [
     ['SiteBrowser', 'open', { url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/1', script: 'S', visible: false, userAgent: DESKTOP_UA }],
+    ['SiteBrowser', 'open', { url: 'https://sangtacviet.com/truyen/uukanshu/1/92019/1122/', script: 'S', visible: false, userAgent: 'PHONE-CHROME' }],
     ['SiteBrowser', 'show', {}],
     ['SiteBrowser', 'hide', {}],
     ['SiteBrowser', 'close', {}],

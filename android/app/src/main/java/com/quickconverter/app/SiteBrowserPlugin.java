@@ -23,11 +23,17 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.webkit.UserAgentMetadata;
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewFeature;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import org.json.JSONObject;
 
 @CapacitorPlugin(name = "SiteBrowser")
@@ -178,6 +184,7 @@ public class SiteBrowserPlugin extends Plugin {
         settings.setUseWideViewPort(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         settings.setUserAgentString(settings.getUserAgentString().replace("; wv", ""));
+        looksLikeChrome(settings);
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(site, true);
         site.addJavascriptInterface(new PageBridge(), "QCSiteBrowser");
@@ -220,6 +227,24 @@ public class SiteBrowserPlugin extends Plugin {
                 else closeByUser();
             }
         };
+    }
+
+    private void looksLikeChrome(WebSettings settings) {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+            WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, Collections.emptySet());
+        }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) {
+            UserAgentMetadata current = WebSettingsCompat.getUserAgentMetadata(settings);
+            List<UserAgentMetadata.BrandVersion> brands = new ArrayList<>();
+            for (UserAgentMetadata.BrandVersion brand : current.getBrandVersionList()) {
+                if ("Android WebView".equals(brand.getBrand())) {
+                    brands.add(new UserAgentMetadata.BrandVersion.Builder(brand).setBrand("Google Chrome").build());
+                } else {
+                    brands.add(brand);
+                }
+            }
+            WebSettingsCompat.setUserAgentMetadata(settings, new UserAgentMetadata.Builder(current).setBrandVersionList(brands).build());
+        }
     }
 
     private class PageBridge {

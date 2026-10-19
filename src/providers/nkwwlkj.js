@@ -218,6 +218,7 @@ const NkwwlkjProvider = (() => {
     domains: ['www.nkwwlkj.cn', 'nkwwlkj.cn'],
     supportsBulkDownload: false,
     shortName: '独阅读',
+    appUserAgent: 'desktop',
 
     matches(url) {
       if (!url) return false;

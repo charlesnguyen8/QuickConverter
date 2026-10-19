@@ -337,6 +337,14 @@
     return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${found ? found[1] : '130.0.0.0'} Safari/537.36`;
   }
 
+  // Chrome on Android, as phone Chrome reports itself (reduced user agent, no WebView marker), for
+  // sites that refuse a desktop identity on a phone (sangtacviet).
+  function mobileUserAgent() {
+    const nav = global.navigator;
+    const found = nav && typeof nav.userAgent === 'string' ? nav.userAgent.match(/Chrome\/(\d+)/) : null;
+    return `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${found ? found[1] : '130'}.0.0.0 Mobile Safari/537.36`;
+  }
+
   const appHttp = {
     // A native GET (Capacitor's CapacitorHttp), for headers fetch() may not set such as Referer.
     async getText(url, { headers = {} } = {}) {
@@ -357,8 +365,8 @@
   // it loads hidden behind the app, runs a page script that posts JSON back, and is shown
   // when the user must log in or pass a check.
   const appSiteBrowser = {
-    open(url, { script = '', visible = false } = {}) {
-      return nativePlugin('SiteBrowser').nativePromise('SiteBrowser', 'open', { url, script, visible: !!visible, userAgent: desktopUserAgent() });
+    open(url, { script = '', visible = false, userAgent = desktopUserAgent() } = {}) {
+      return nativePlugin('SiteBrowser').nativePromise('SiteBrowser', 'open', { url, script, visible: !!visible, userAgent });
     },
     show() {
       return nativePlugin('SiteBrowser').nativePromise('SiteBrowser', 'show', {});
@@ -483,6 +491,7 @@
       return nativePlugin('SiteBrowser') ? appSiteBrowser : null;
     },
     desktopUserAgent,
+    mobileUserAgent,
     storage,
     messaging,
     alarms,

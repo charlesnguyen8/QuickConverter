@@ -201,6 +201,7 @@ const SangtacvietProvider = (() => {
     domains: ['sangtacviet.com', 'www.sangtacviet.com'],
     supportsBulkDownload: false,
     contentWaitMs: 20000,
+    appUserAgent: 'mobile',
 
     matches(url) {
       if (!url) return false;

@@ -401,6 +401,31 @@ process.on('beforeExit', () => {
     assert.strictEqual((await second).status, 'saved');
   });
 
+  await test('each site opens with the user agent it needs (nkwwlkj desktop, sangtacviet phone Chrome)', async () => {
+    const env = loadSiteSave();
+    const { createSiteSave } = env.SiteSave;
+    const browser = fakeBrowser();
+    const save = createSiteSave({ browser, storage: fakeStorage(), loadScript: async () => '', userAgentFor: (url) => (url.includes('sangtacviet') ? 'PHONE' : 'DESKTOP') });
+    const first = save.open('https://sangtacviet.com/truyen/uukanshu/1/92019/1122/');
+    await tick(); await tick();
+    await browser.emit({ type: 'closed' });
+    await first;
+    const login = save.openLogin('https://www.nkwwlkj.cn/signup/login');
+    await tick(); await tick();
+    await browser.emit({ type: 'closed' });
+    await login;
+    assert.deepStrictEqual(browser.calls.filter((c) => c[0] === 'open').map((c) => c[2].userAgent), ['PHONE', 'DESKTOP']);
+
+    env.Platform = { desktopUserAgent: () => 'DESKTOP-UA', mobileUserAgent: () => 'PHONE-UA' };
+    vm.runInContext(read('src', 'providers', 'nkwwlkj.js'), env);
+    vm.runInContext(read('src', 'providers', 'sangtacviet.js'), env);
+    vm.runInContext(read('src', 'providers', 'wetriedtls.js'), env);
+    vm.runInContext(read('src', 'providers', 'registry.js'), env);
+    assert.strictEqual(env.SiteSave.siteUserAgent('https://www.nkwwlkj.cn/chapter/book_chapter_detail/1'), 'DESKTOP-UA', 'nkwwlkj sends phones to its mobile site');
+    assert.strictEqual(env.SiteSave.siteUserAgent('https://sangtacviet.com/truyen/uukanshu/1/92019/1122/'), 'PHONE-UA', 'sangtacviet refuses a desktop identity on a phone');
+    assert.strictEqual(env.SiteSave.siteUserAgent('https://example.com/'), 'PHONE-UA');
+  });
+
   await test('Log in opens the site visibly without the page script and ends when closed', async () => {
     const { createSiteSave } = loadSiteSave().SiteSave;
     const browser = fakeBrowser();
@@ -478,6 +503,11 @@ process.on('beforeExit', () => {
     assert(/addJavascriptInterface\(new \w+\(\), "QCSiteBrowser"\)/.test(plugin),'exposes the QCSiteBrowser bridge to the page script');
     assert(/setAcceptThirdPartyCookies/.test(plugin), 'shares cookies with native HTTP');
     assert(/call\.getString\("userAgent"/.test(plugin) && /setUserAgentString\(userAgent\)/.test(plugin), 'loads pages with the user agent the app asks for (desktop, like native HTTP)');
+    assert(/setRequestedWithHeaderOriginAllowList\([^,]+,\s*Collections\.emptySet\(\)\)/.test(plugin), 'no X-Requested-With app header, like a browser');
+    assert(/"Android WebView"/.test(plugin) && /"Google Chrome"/.test(plugin) && /setUserAgentMetadata\(/.test(plugin), 'reports itself as Chrome, not Android WebView');
+    assert(/isFeatureSupported\(WebViewFeature\.REQUESTED_WITH_HEADER_ALLOW_LIST\)/.test(plugin) && /isFeatureSupported\(WebViewFeature\.USER_AGENT_METADATA\)/.test(plugin), 'only where the WebView supports it');
+    const appGradle = read('android', 'app', 'build.gradle');
+    assert(/implementation "androidx\.webkit:webkit:\$androidxWebkitVersion"/.test(appGradle), 'the app compiles against androidx.webkit');
   });
 
   console.log(`--- Site Browser Test Suite: ${passed}/${passed + failed} passed ---`);
