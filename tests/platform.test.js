@@ -304,6 +304,36 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
     ['SiteBrowser', 'removeListener', { eventName: 'event', callbackId: 'cb-1' }]
   ]);
   assert.strictEqual(noHttp.Platform.siteBrowser, null, 'no site browser outside the app');
+
+  // A site keeps one identity in the app; when it changes, the site's cookies (a session started
+  // under the old identity) are dropped once. Before this, every site used the desktop identity.
+  const idCalls = [];
+  const idStore = {};
+  const idEnv = {
+    console,
+    setTimeout,
+    clearTimeout,
+    URL,
+    navigator: { userAgent: PHONE_UA },
+    localStorage: { getItem: (k) => (k in idStore ? idStore[k] : null), setItem: (k, v) => { idStore[k] = String(v); }, removeItem: (k) => { delete idStore[k]; } },
+    Capacitor: {
+      PluginHeaders: [{ name: 'SiteBrowser', methods: [] }, { name: 'CapacitorHttp', methods: [] }],
+      nativePromise: async (plugin, method, options) => { idCalls.push(JSON.parse(JSON.stringify([plugin, method, options]))); return {}; }
+    }
+  };
+  idEnv.globalThis = idEnv;
+  vm.createContext(idEnv);
+  vm.runInContext(platformCode, idEnv);
+  const P2 = idEnv.Platform;
+  assert.strictEqual(await P2.useSiteIdentity('https://sangtacviet.com/truyen/uukanshu/1/92019/1122/', 'mobile'), P2.mobileUserAgent());
+  assert.deepStrictEqual(idCalls, [['SiteBrowser', 'clearCookies', { url: 'https://sangtacviet.com/' }]], 'the desktop-era session is dropped once');
+  assert.strictEqual(await P2.useSiteIdentity('https://sangtacviet.com/index.php?ngmar=chapterlist', 'mobile'), P2.mobileUserAgent());
+  assert.strictEqual(idCalls.length, 1, 'only when the identity changes');
+  assert.strictEqual(await P2.useSiteIdentity('https://www.nkwwlkj.cn/book/book_detail/1', 'desktop'), P2.desktopUserAgent());
+  assert.strictEqual(idCalls.length, 1, 'nkwwlkj kept its desktop identity: its login survives');
+  await P2.useSiteIdentity('https://www.sangtacviet.com/', 'desktop');
+  assert.deepStrictEqual(idCalls[1], ['SiteBrowser', 'clearCookies', { url: 'https://sangtacviet.com/' }], 'www and the bare domain are one site');
+  assert.strictEqual(await noHttp.Platform.useSiteIdentity('https://sangtacviet.com/', 'mobile'), noHttp.Platform.mobileUserAgent(), 'outside the app it only names the user agent');
   siteEnv.chrome = fakeChrome().chrome;
   assert.strictEqual(siteEnv.Platform.siteBrowser, null, 'the extension uses tabs and content scripts');
   console.log('✓ App mode: SiteBrowser plugin opens, shows, hides, closes and reports page messages');

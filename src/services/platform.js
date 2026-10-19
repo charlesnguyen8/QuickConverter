@@ -345,6 +345,35 @@
     return `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${found ? found[1] : '130'}.0.0.0 Mobile Safari/537.36`;
   }
 
+  function siteOf(url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // A site keeps one identity (user agent kind) in the app. Until this existed every site used the
+  // desktop one; when a site's kind changes, its cookies (a session started under the old identity)
+  // are dropped once through the SiteBrowser plugin.
+  async function useSiteIdentity(url, kind) {
+    const userAgent = kind === 'desktop' ? desktopUserAgent() : mobileUserAgent();
+    const site = siteOf(url);
+    const cap = nativePlugin('SiteBrowser');
+    if (!site || !cap || isExtension() || !hasLocalStorage()) return userAgent;
+    const key = `qc_site_identity:${site}`;
+    const previous = localStorage.getItem(key) || 'desktop';
+    if (previous !== kind) {
+      try {
+        await cap.nativePromise('SiteBrowser', 'clearCookies', { url: `https://${site}/` });
+      } catch (e) {
+        return userAgent;
+      }
+    }
+    localStorage.setItem(key, kind);
+    return userAgent;
+  }
+
   const appHttp = {
     // A native GET (Capacitor's CapacitorHttp), for headers fetch() may not set such as Referer.
     async getText(url, { headers = {} } = {}) {
@@ -492,6 +521,7 @@
     },
     desktopUserAgent,
     mobileUserAgent,
+    useSiteIdentity,
     storage,
     messaging,
     alarms,

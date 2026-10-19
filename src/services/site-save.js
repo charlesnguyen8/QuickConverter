@@ -189,7 +189,7 @@
         (async () => {
           try {
             const script = login ? '' : await loadScript();
-            const userAgent = userAgentFor(url);
+            const userAgent = await userAgentFor(url);
             await browser.open(url, userAgent ? { script, visible: login, userAgent } : { script, visible: login });
             if (!login && !finished) timer = setTimeout(reveal, hiddenWaitMs);
           } catch (e) {
@@ -219,12 +219,12 @@
     };
   }
 
-  function siteUserAgent(url) {
+  async function siteUserAgent(url) {
     const platform = global.Platform;
-    if (!platform || typeof platform.desktopUserAgent !== 'function') return undefined;
+    if (!platform || typeof platform.useSiteIdentity !== 'function') return undefined;
     const registry = global.ProviderRegistry;
     const provider = registry && typeof registry.getProviderForUrl === 'function' ? registry.getProviderForUrl(url) : null;
-    return provider && provider.appUserAgent === 'desktop' ? platform.desktopUserAgent() : platform.mobileUserAgent();
+    return platform.useSiteIdentity(url, provider && provider.appUserAgent === 'desktop' ? 'desktop' : 'mobile');
   }
 
   let shared = null;

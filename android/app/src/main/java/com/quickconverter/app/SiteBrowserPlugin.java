@@ -97,6 +97,31 @@ public class SiteBrowserPlugin extends Plugin {
         });
     }
 
+    @PluginMethod
+    public void clearCookies(PluginCall call) {
+        String url = call.getString("url", "");
+        String host = Uri.parse(url).getHost();
+        if (host == null || host.isEmpty()) {
+            call.reject("No site to clear");
+            return;
+        }
+        getActivity().runOnUiThread(() -> {
+            CookieManager cookies = CookieManager.getInstance();
+            String current = cookies.getCookie(url);
+            if (current != null) {
+                for (String part : current.split(";")) {
+                    String name = part.split("=", 2)[0].trim();
+                    if (name.isEmpty()) continue;
+                    cookies.setCookie(url, name + "=; Max-Age=0; Path=/");
+                    cookies.setCookie(url, name + "=; Max-Age=0; Path=/; Domain=" + host);
+                    cookies.setCookie(url, name + "=; Max-Age=0; Path=/; Domain=." + host);
+                }
+            }
+            cookies.flush();
+            call.resolve();
+        });
+    }
+
     private void closeSite() {
         if (overlay == null) return;
         script = "";

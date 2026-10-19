@@ -184,9 +184,10 @@ const SangtacvietProvider = (() => {
   }
 
   async function fetchText(url, headers) {
-    const http = headers ? nativeHttp() : null;
+    const http = nativeHttp();
     if (http) {
-      const reply = await http.getText(url, { headers });
+      const userAgent = typeof Platform.useSiteIdentity === 'function' ? await Platform.useSiteIdentity(url, 'mobile') : null;
+      const reply = await http.getText(url, { headers: { ...(userAgent ? { 'User-Agent': userAgent } : {}), ...(headers || {}) } });
       return reply.ok ? reply.text : null;
     }
     const resp = await fetch(url, { credentials: 'include' });

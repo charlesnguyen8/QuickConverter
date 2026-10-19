@@ -174,16 +174,24 @@ const EXPECTED_CHINESE = [
   await test('in the app, the chapter list is a native request that sends the Referer the endpoint requires', async () => {
     const fetched = [];
     const native = [];
+    const identities = [];
     const appEnv = loadEnv({
       fetch: async (url) => { fetched.push(url); return { ok: true, text: async () => CHAPTER_LIST_JSON }; },
-      Platform: { http: { async getText(url, init) { native.push([url, init]); return { ok: true, status: 200, text: CHAPTER_LIST_JSON }; } } }
+      Platform: {
+        http: { async getText(url, init) { native.push([url, init]); return { ok: true, status: 200, text: url.includes('chapterlist') ? CHAPTER_LIST_JSON : BOOK_HTML }; } },
+        async useSiteIdentity(url, kind) { identities.push([url, kind]); return 'PHONE-UA'; }
+      }
     });
     const list = await appEnv.SangtacvietProvider.fetchChapterList('uukanshu-92019', BOOK_URL);
     assert.strictEqual(list.length, 3);
     assert.deepStrictEqual(fetched, [], 'not through fetch(), which cannot set Referer');
     assert.strictEqual(native.length, 1);
     assert.strictEqual(new URL(native[0][0]).searchParams.get('ngmar'), 'chapterlist');
-    assert.deepStrictEqual(plain(native[0][1]), { headers: { Referer: 'https://sangtacviet.com/' } });
+    assert.deepStrictEqual(plain(native[0][1]), { headers: { 'User-Agent': 'PHONE-UA', Referer: 'https://sangtacviet.com/' } }, 'the same phone identity as the site window');
+    assert.strictEqual((await appEnv.SangtacvietProvider.fetchSeriesMetadata('uukanshu-92019', BOOK_URL)).title, 'Ta mới không cần yêu nhau trò chơi');
+    assert.deepStrictEqual(plain(native[1]), [BOOK_URL, { headers: { 'User-Agent': 'PHONE-UA' } }], 'the book page too, never fetch() with the WebView identity');
+    assert.deepStrictEqual(fetched, [], 'nothing through fetch()');
+    assert.deepStrictEqual(plain(identities.map(([, kind]) => kind)), ['mobile', 'mobile']);
 
     const blocked = loadEnv({ Platform: { http: { async getText() { return { ok: false, status: 403, text: '<title>Just a moment...</title>' }; } } } });
     assert.deepStrictEqual(plain(await blocked.SangtacvietProvider.fetchChapterList('uukanshu-92019', BOOK_URL)), [], 'a challenge gives an empty list');
