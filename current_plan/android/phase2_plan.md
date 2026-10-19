@@ -69,6 +69,18 @@ wetriedtls, nkwwlkj and sangtacviet. Parent plan: `overall_plan.md` §3, §6 Pha
 **Done when:** for all three sites the owner can add a book, sync its catalog and save chapters on
 the phone; `npm test` green; `build:ext` extension unchanged.
 
+**Status (2026-10-19):** done except sangtacviet chapters, parked by the owner.
+- Works on the phone: wetriedtls (add, sync, download), nkwwlkj (add, sync, login and coins, Open
+  to save for text and paid image chapters with OCR), sangtacviet add book and Sync Catalog.
+- sangtacviet Open to save: the site answers the chapter request with "Lỗi không xác định … mã báo
+  lỗi: 4005" in the app's WebView, while the same chapter loads in Chrome on the phone. Tried and
+  shipped, none enough: trusting Sectigo R46 for the site (v1.1.6, needed for any request),
+  phone-Chrome user agent, no X-Requested-With, "Google Chrome" client-hint brand (v1.1.7), one
+  identity for sync and the site window with a one-time cookie reset (v1.1.8). The check lives in
+  the site's obfuscated `stv.readinit.js` and its server; the browser pane never sends the request at
+  all, so it cannot be reproduced here. Fallback: save sangtacviet chapters with the extension and
+  bring them to the phone with Drive sync.
+
 ## SiteBrowser choice
 
 | | Custom Java plugin `SiteBrowserPlugin` (recommended) | `cordova-plugin-inappbrowser` |

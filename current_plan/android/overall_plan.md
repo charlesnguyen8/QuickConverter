@@ -3,7 +3,9 @@
 **Goal:** ship QuickConverter as an Android app (Capacitor) while the Chrome extension keeps working.
 One repository, one shared web app, two thin platform shells.
 
-**Status (2026-10-18):** Phase 0 done (platform layer, `extension/` split, `build:app`). Phase 1 in progress (app runs on the phone, v1.1.0 released).
+**Status (2026-10-19):** Phase 0 done. Phase 1 done in practice (its "done when" phone check not run
+as one pass). Phase 2 done except sangtacviet chapters (parked; see `phase2_plan.md`), v1.1.8.
+Phase 3: OCR on device and Drive sync already done; reading UX and background downloads left.
 
 **Rule of engagement:** same as the extension — `npm test` green (test-first where behavior changes),
 `npm run build:css` when new utility classes appear, `npm run build:ext` must keep producing a working
