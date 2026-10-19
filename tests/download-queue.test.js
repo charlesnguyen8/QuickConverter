@@ -1062,6 +1062,86 @@ async function runTests() {
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
   });
 
+  await test('backgroundWorkText says what keeps the app working, and nothing when it can rest', () => {
+    const text = DownloadQueueService.backgroundWorkText;
+    const task = (n) => ({ novelTitle: 'Regressor', chapterNumber: n, chapterTitle: `Chapter ${n}` });
+    assert.strictEqual(text({ activeTask: task(7), queue: [], isPaused: false, cooldown: null }), 'Downloading Regressor · Chapter 7');
+    assert.strictEqual(text({ activeTask: task(7), queue: [task(8), task(9)], isPaused: false, cooldown: null }), 'Downloading Regressor · Chapter 7 · 2 more queued');
+    assert.strictEqual(
+      text({ activeTask: null, queue: [task(8)], isPaused: false, cooldown: { active: true, type: 'normal', nextNovelTitle: 'Regressor', nextChapterTitle: 'Chapter 8' } }),
+      'Waiting before Regressor · Chapter 8 · 1 queued'
+    );
+    assert.strictEqual(text({ activeTask: null, queue: [task(8)], isPaused: false, cooldown: { active: true, type: 'retry' } }), null, 'a 75-minute error backoff does not keep the phone awake');
+    assert.strictEqual(text({ activeTask: null, queue: [task(8)], isPaused: true, cooldown: null }), null, 'paused');
+    assert.strictEqual(text({ activeTask: null, queue: [], isPaused: false, cooldown: null }), null, 'nothing to do');
+  });
+
+  await test('In the app, the queue holds the app awake while it works and lets go when done or failing', async () => {
+    const calls = [];
+    const realPlatform = require('../src/services/platform.js');
+    global.Platform = {
+      storage: { area: () => null, onChanged: () => () => {} },
+      messaging: realPlatform.messaging,
+      alarms: { isNative: () => false },
+      runtime: { isExtension: () => false, ping() {} },
+      background: {
+        hold: async (text) => { calls.push(['hold', text]); },
+        release: async () => { calls.push(['release']); }
+      }
+    };
+    const pageListeners = {};
+    global.window = { StorageService: mockStorageService, addEventListener: (type, fn) => { pageListeners[type] = fn; } };
+    global.document = {};
+    try {
+      DownloadQueueService.clearAll();
+      calls.length = 0;
+      mockDelayMs = 20;
+      mockFailChapter = null;
+      await DownloadQueueService.enqueueBatch([
+        { novelId: 'n-bg', novelTitle: 'Regressor', chapterNumber: 201, chapterTitle: 'Chapter 201' },
+        { novelId: 'n-bg', novelTitle: 'Regressor', chapterNumber: 202, chapterTitle: 'Chapter 202' }
+      ]);
+      await new Promise((resolve) => {
+        const stop = DownloadQueueService.subscribe((s) => { if (s.totalCount === 0 && !s.isProcessing) { stop(); resolve(); } });
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      const holds = calls.filter((c) => c[0] === 'hold').map((c) => c[1]);
+      assert(holds.includes('Downloading Regressor · Chapter 201 · 1 more queued'), JSON.stringify(calls));
+      assert(holds.includes('Downloading Regressor · Chapter 202'), JSON.stringify(calls));
+      assert.deepStrictEqual(calls[calls.length - 1], ['release'], 'lets go once the queue is empty');
+      for (let i = 1; i < calls.length; i++) {
+        assert.notDeepStrictEqual(calls[i], calls[i - 1], 'never repeats the same call');
+      }
+
+      calls.length = 0;
+      DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+      mockFailChapter = 203;
+      await DownloadQueueService.enqueue({ novelId: 'n-bg', novelTitle: 'Regressor', chapterNumber: 203, chapterTitle: 'Chapter 203' });
+      await new Promise((resolve) => {
+        const stop = DownloadQueueService.subscribe((s) => { if (s.cooldown && s.cooldown.active && s.cooldown.type === 'retry') { stop(); resolve(); } });
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      assert.deepStrictEqual(calls[calls.length - 1], ['release'], 'a failed chapter waiting 75 minutes lets the phone rest');
+
+      calls.length = 0;
+      mockFailChapter = null;
+      DownloadQueueService.clearAll();
+      mockDelayMs = 200;
+      await DownloadQueueService.enqueue({ novelId: 'n-bg', novelTitle: 'Regressor', chapterNumber: 204, chapterTitle: 'Chapter 204' });
+      await new Promise((r) => setTimeout(r, 30));
+      assert.strictEqual(calls[calls.length - 1][0], 'hold');
+      assert.strictEqual(typeof pageListeners.pagehide, 'function', 'watches for the page going away');
+      pageListeners.pagehide();
+      assert.deepStrictEqual(calls[calls.length - 1], ['release'], 'leaving the page lets go; the next page holds again if it resumes the queue');
+    } finally {
+      mockFailChapter = null;
+      DownloadQueueService.clearAll();
+      delete global.Platform;
+      delete global.window;
+      delete global.document;
+    }
+  });
+
   console.log(`\n🎉 All ${passedCount} DownloadQueueService tests passed!`);
 }
 

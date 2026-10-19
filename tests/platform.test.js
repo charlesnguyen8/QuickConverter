@@ -397,6 +397,50 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   assert(/registerPlugin\(ScreenPlugin\.class\)/.test(fs.readFileSync(path.join(repoRoot, 'android', 'app', 'src', 'main', 'java', 'com', 'quickconverter', 'app', 'MainActivity.java'), 'utf8')), 'registered');
   console.log('✓ Keeping the screen on: the app plugin, else the browser wake lock');
 
+  // Downloads keep running with the app in the background through the app's foreground service.
+  const bgCalls = [];
+  const bgEnv = {
+    console,
+    setTimeout,
+    clearTimeout,
+    Capacitor: {
+      PluginHeaders: [{ name: 'BackgroundWork', methods: [] }],
+      nativePromise: async (plugin, method, options) => { bgCalls.push(JSON.parse(JSON.stringify([plugin, method, options]))); return {}; }
+    }
+  };
+  bgEnv.globalThis = bgEnv;
+  vm.createContext(bgEnv);
+  vm.runInContext(platformCode, bgEnv);
+  await bgEnv.Platform.background.hold('Downloading Regressor · Chapter 7');
+  await bgEnv.Platform.background.release();
+  assert.deepStrictEqual(bgCalls, [
+    ['BackgroundWork', 'hold', { text: 'Downloading Regressor · Chapter 7' }],
+    ['BackgroundWork', 'release', {}]
+  ]);
+  assert.strictEqual(noScreen.Platform.background, null, 'no background work outside the app');
+  bgEnv.chrome = fakeChrome().chrome;
+  assert.strictEqual(bgEnv.Platform.background, null, 'the extension has its own service worker');
+
+  const javaDir = path.join(repoRoot, 'android', 'app', 'src', 'main', 'java', 'com', 'quickconverter', 'app');
+  const bgPlugin = fs.readFileSync(path.join(javaDir, 'BackgroundWorkPlugin.java'), 'utf8');
+  assert(/@CapacitorPlugin\(name = "BackgroundWork"\)/.test(bgPlugin), 'BackgroundWork plugin');
+  for (const method of ['hold', 'release']) {
+    assert(new RegExp(`@PluginMethod\\s+public void ${method}\\(PluginCall call\\)`).test(bgPlugin), `has ${method}()`);
+  }
+  assert(/POST_NOTIFICATIONS/.test(bgPlugin), 'asks to show its notification (Android 13+)');
+  const service = fs.readFileSync(path.join(javaDir, 'DownloadService.java'), 'utf8');
+  assert(/extends Service/.test(service) && /FOREGROUND_SERVICE_TYPE_DATA_SYNC/.test(service), 'a dataSync foreground service');
+  assert(/onTaskRemoved/.test(service) && /onTimeout/.test(service), 'stops when the app is swiped away or Android ends its time');
+  const activity = fs.readFileSync(path.join(javaDir, 'MainActivity.java'), 'utf8');
+  assert(/registerPlugin\(BackgroundWorkPlugin\.class\)/.test(activity), 'registered');
+  assert(/setRendererPriorityPolicy\(WebView\.RENDERER_PRIORITY_IMPORTANT, false\)/.test(activity), 'the page renderer keeps the app\'s priority in the background');
+  const manifestXml = fs.readFileSync(path.join(repoRoot, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
+  for (const permission of ['FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_DATA_SYNC', 'POST_NOTIFICATIONS']) {
+    assert(manifestXml.includes(`android.permission.${permission}"`), `declares ${permission}`);
+  }
+  assert(/<service[^>]*android:name="\.DownloadService"[^>]*android:foregroundServiceType="dataSync"/.test(manifestXml) || /<service[^>]*android:foregroundServiceType="dataSync"[^>]*android:name="\.DownloadService"/.test(manifestXml), 'declares the service');
+  console.log('✓ App mode: background downloads hold a foreground service');
+
   // Android back button and leaving the app go through @capacitor/app.
   const shellCalls = [];
   let backCallback = null;

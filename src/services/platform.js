@@ -425,6 +425,19 @@
     }
   };
 
+  // --- Background work -----------------------------------------------------------------
+
+  // The app's foreground service: while held, Android keeps the app (and its page) running in
+  // the background, with a notification showing the text.
+  const appBackground = {
+    hold(text) {
+      return nativePlugin('BackgroundWork').nativePromise('BackgroundWork', 'hold', { text: String(text || '') });
+    },
+    release() {
+      return nativePlugin('BackgroundWork').nativePromise('BackgroundWork', 'release', {});
+    }
+  };
+
   // --- Screen --------------------------------------------------------------------------
 
   let wakeSentinel = null;
@@ -562,6 +575,10 @@
     get http() {
       if (isExtension()) return null;
       return nativePlugin('CapacitorHttp') ? appHttp : null;
+    },
+    get background() {
+      if (isExtension()) return null;
+      return nativePlugin('BackgroundWork') ? appBackground : null;
     },
     get siteBrowser() {
       if (isExtension()) return null;

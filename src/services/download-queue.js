@@ -78,6 +78,51 @@
     }
   }
 
+  function chapterLabel(task) {
+    if (!task) return '';
+    return task.chapterTitle || (task.chapterNumber !== undefined && task.chapterNumber !== null ? `Chapter ${task.chapterNumber}` : '');
+  }
+
+  // What keeps the app working in the background (the app's notification text), or null when the
+  // queue can rest: paused, empty, or waiting out a long error backoff.
+  function backgroundWorkText(state) {
+    if (!state || state.isPaused) return null;
+    const queued = (state.queue || []).length;
+    if (state.activeTask) {
+      const task = state.activeTask;
+      const base = `Downloading ${task.novelTitle || 'Novel'} · ${chapterLabel(task)}`;
+      return queued > 0 ? `${base} · ${queued} more queued` : base;
+    }
+    const cooldown = state.cooldown;
+    if (queued > 0 && cooldown && cooldown.active && cooldown.type !== 'retry') {
+      return `Waiting before ${cooldown.nextNovelTitle || 'Novel'} · ${cooldown.nextChapterTitle || ''} · ${queued} queued`;
+    }
+    return null;
+  }
+
+  let heldText = null;
+  let watchingPageHide = false;
+  function updateBackgroundHold(state) {
+    if (!isExecutionOwner) return;
+    const platform = resolvePlatform();
+    const background = platform && platform.background;
+    if (!background) return;
+    const text = backgroundWorkText(state);
+    if (text === heldText) return;
+    heldText = text;
+    const win = typeof window !== 'undefined' ? window : null;
+    if (text && !watchingPageHide && win && typeof win.addEventListener === 'function') {
+      watchingPageHide = true;
+      win.addEventListener('pagehide', () => {
+        if (heldText === null) return;
+        heldText = null;
+        Promise.resolve(background.release()).catch(() => {});
+      });
+    }
+    const call = text ? background.hold(text) : background.release();
+    Promise.resolve(call).catch(() => {});
+  }
+
   class DownloadQueue {
     constructor() {
       this.activeTask = null;
@@ -330,6 +375,7 @@
 
     _notifySubscribers() {
       const state = this.getState();
+      updateBackgroundHold(state);
       this.subscribers.forEach((cb) => {
         try { cb(state); } catch (e) { console.error('[DownloadQueue] Subscriber error:', e); }
       });
@@ -1215,6 +1261,7 @@
 
   // Singleton instance
   const DownloadQueueService = new DownloadQueue();
+  DownloadQueueService.backgroundWorkText = backgroundWorkText;
 
   // Export to global scope
   if (typeof window !== 'undefined') {

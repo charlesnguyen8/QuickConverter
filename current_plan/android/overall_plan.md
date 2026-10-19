@@ -175,6 +175,14 @@ Rough ranges for focused work. The real bottleneck is testing on a phone/emulato
 - Phone reading UX: gestures for next/previous chapter, keep-screen-on while reading, text size.
 - Optional: foreground service / WorkManager for downloads with the app closed (risk 3).
 - **Done when:** feature parity with the extension, minus the popup.
+- **Progress (2026-10-19):** OCR on device (v1.1.5, ~10–11 s per long chapter) and Drive sync done.
+  v1.1.9: swipe between chapters and keep the screen on (reader settings, on by default; text
+  size already existed); the reader settings popover fits a phone. Background downloads built:
+  a dataSync foreground service (`DownloadService`, `BackgroundWork` plugin) with a notification,
+  held by the queue while a chapter downloads or during the short wait between chapters, released
+  when it is paused, empty, in its 75-minute error backoff, or its page goes away. The page renderer
+  keeps the app's priority. Limits: swiping the app away from Recents stops downloads (the queue
+  lives in the page and resumes on the next open); Android 15+ caps dataSync services at 6 h a day.
 
 **Total:** about 3–4 weeks for full features. A useful first version (Phases 0–1: read and convert
 everything already saved, translate, backup) comes much sooner.
