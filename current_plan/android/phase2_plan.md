@@ -62,7 +62,8 @@ wetriedtls, nkwwlkj and sangtacviet. Parent plan: `overall_plan.md` §3, §6 Pha
   the site has drawn it) and posts it as base64; SiteSave closes the site, runs OCR in the app page
   (`window.QCOcr`, installed by the novel and reader entries, lazy-loads `ocrEngine.js`) and saves
   with `saveRecognizedChapter` (untranslated, marked paid). A bottom message reports reading /
-  saving / saved / errors. OCR loads from the app build in a desktop browser; phone speed unmeasured.
+  saving / saved / errors. Released as v1.1.5; on the owner's Galaxy S23 it works and reads a 36,000-character
+  chapter image in about 10–11 s.
   "Save next N" does not exist in the extension either; it stays a later idea.
 
 **Done when:** for all three sites the owner can add a book, sync its catalog and save chapters on

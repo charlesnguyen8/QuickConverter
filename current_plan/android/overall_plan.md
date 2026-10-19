@@ -86,6 +86,7 @@ as `content.js`, sends the result back, saves it and closes the WebView.
    that keeps running with the phone locked needs a native foreground service; the first version only
    downloads while the app is open.
 4. **OCR speed.** Same engine on a phone CPU: seconds per chapter image. Measure before relying on it.
+   **Measured (2026-10-19):** about 10–11 s for a 36,000-character chapter on the Galaxy S23 (v1.1.5).
 
 ## 5. Target structure
 
