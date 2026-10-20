@@ -1,6 +1,6 @@
 # One Download for every site and platform (plan)
 
-**Status (2026-10-20):** proposed, waiting for the owner's review. Nothing built.
+**Status (2026-10-20):** approved by the owner. Phase 1 built (refactor, no behavior change); phases 2–5 to do.
 
 **Goal:** a single `downloadChapter` that the queue calls for every site. Everything around it
 (queue, Download All, cooldowns, retries, AI translation, progress dock, background
@@ -111,6 +111,13 @@ once nothing else calls them).
    `downloadChapter`, `saveOpenedChapter`, `saveRecognizedChapter`; extract `ChapterSources`
    with the `'http'` source; `downloadChapter` accepts a ready `options.source`; the old save
    functions call the pipeline. All existing tests stay green.
+   - **Built:** `StorageService._saveChapterFromSource(novel, n, source, options)` is the one
+     translate-and-save pipeline; `source.origin` (`fetch` | `page` | `ocr`) carries the few
+     differences that remain until phases 2–4 (title/URL choice, minimal record for untranslated
+     page saves, paid marking and OCR flag for `ocr`, announcements for `page`/`ocr`, progress).
+     `fetchChapterSource` is the http source (refuses `fetchMode: 'page'` providers);
+     `downloadChapter` accepts `options.source`. `saveOpenedChapter` and `saveRecognizedChapter`
+     call the pipeline. Locked by `tests/chapter-download.test.js` (7 characterization tests).
 2. **Page source in the app.** `Platform.pageSource` from `site-save.js` (result instead of
    save), queue `needs-user` state and dock UI, Download button for page sites, Download All for
    every site. Two-device-style tests with a fake SiteBrowser.

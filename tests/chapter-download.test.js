@@ -1,0 +1,229 @@
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const { makeDatabase } = require('./helpers/fake-library');
+
+console.log('\n--- Running Chapter Download Pipeline Test Suite ---');
+
+const repoRoot = path.resolve(__dirname, '..');
+const read = (...p) => fs.readFileSync(path.join(repoRoot, ...p), 'utf8');
+const plain = (v) => JSON.parse(JSON.stringify(v));
+
+let passed = 0;
+let failed = 0;
+async function test(name, fn) {
+  try {
+    await fn();
+    passed++;
+    console.log(`  ✓ ${name}`);
+  } catch (e) {
+    failed++;
+    console.error(`  ✗ ${name}\n    ${e.message}`);
+  }
+}
+
+function makeEnv({ provider, translation } = {}) {
+  const db = makeDatabase();
+  const ls = { quickconverter_db_initialized: 'true' };
+  const fetches = [];
+  const aiCalls = [];
+  const theProvider = provider || {
+    id: 'wetriedtls',
+    async fetchChapterContent(slug, chapterSlugOrNumber, opts) {
+      fetches.push([slug, chapterSlugOrNumber, !!(opts && 'signal' in opts)]);
+      return { title: 'Page title', rawText: 'Raw chapter text.' };
+    }
+  };
+  const env = {
+    console: { log() {}, warn() {}, error() {} },
+    URL,
+    setTimeout,
+    clearTimeout,
+    localStorage: {
+      get length() { return Object.keys(ls).length; },
+      key: (i) => Object.keys(ls)[i],
+      getItem: (k) => (k in ls ? ls[k] : null),
+      setItem: (k, v) => { ls[k] = String(v); },
+      removeItem: (k) => { delete ls[k]; }
+    },
+    IDBKeyRange: { only: (value) => ({ only: value }) },
+    indexedDB: { open: db.open },
+    ProviderRegistry: { getProviderForUrl: () => theProvider, getProviderForDomain: () => theProvider },
+    AIService: {
+      async getProviderConfig() { return { provider: 'custom', baseUrl: 'http://127.0.0.1:8000/v1', customUrl: 'http://127.0.0.1:8000/v1' }; },
+      async translateChapter(params) {
+        aiCalls.push(params);
+        return { translatedText: `EN[${params.rawText}]`, modelUsed: 'test-model', costInfo: { formattedCost: '$0.01' }, usage: { total_tokens: 10 }, ...(translation || {}) };
+      }
+    }
+  };
+  env.window = env;
+  env.self = env;
+  env.globalThis = env;
+  vm.createContext(env);
+  for (const file of ['name-matcher.js', 'longest-matcher.js', 'text-processors.js', 'platform.js', 'storage.js']) {
+    vm.runInContext(read('src', 'services', file), env);
+  }
+  const S = env.StorageService;
+  const notices = [];
+  S.subscribeChapterSaved((msg) => notices.push([msg.novelId, msg.chapterNumber]));
+  return { S, stores: db.stores, fetches, aiCalls, notices, provider: theProvider };
+}
+
+async function seed(S, stores, { catalog = true } = {}) {
+  await S.addNovel({ id: 'n1', title: 'Book', slug: 'book', url: 'https://wetriedtls.com/series/book' });
+  if (catalog) {
+    stores.novels.n1.chapterList = [
+      { chapterNumber: 3, slug: 'chapter-3', title: 'Catalog title 3', url: 'https://wetriedtls.com/series/book/chapter-3', locked: false },
+      { chapterNumber: 4, slug: 'chapter-4', title: 'Catalog title 4', url: 'https://wetriedtls.com/series/book/chapter-4' }
+    ];
+  }
+}
+
+const TRANSLATION = { enabled: true, apiKey: 'sk', prompt: 'Translate.', model: 'm1', provider: 'custom', baseUrl: 'http://127.0.0.1:8000/v1' };
+const recordFields = (r) => {
+  const { updatedAt, ...rest } = r;
+  if ('translatedAt' in rest && rest.translatedAt) rest.translatedAt = 'set';
+  return rest;
+};
+
+let finished = false;
+process.on('beforeExit', () => {
+  if (!finished) {
+    console.error('Chapter Download suite stopped before its last test (a promise never settled)');
+    process.exitCode = 1;
+  }
+});
+
+(async () => {
+  // --- Characterization: today's three save paths (locked before merging them) ---
+
+  await test('characterization: downloadChapter fetches through the provider and saves under the catalog title', async () => {
+    const { S, stores, fetches, notices } = makeEnv();
+    await seed(S, stores);
+    const progress = [];
+    const result = await S.downloadChapter('n1', 3, { onProgress: (p) => progress.push(p.phase) });
+    assert.deepStrictEqual(fetches, [['book', 'chapter-3', true]]);
+    assert.deepStrictEqual(plain(recordFields(stores.chapters.n1_ch3)), {
+      id: 'n1_ch3', novelId: 'n1', chapterNumber: 3, title: 'Catalog title 3',
+      url: 'https://wetriedtls.com/series/book/chapter-3', rawText: 'Raw chapter text.', convertedText: '',
+      originalRawText: 'Raw chapter text.', reasoningText: null, isTranslated: false, modelUsed: null,
+      translatedAt: null, translationCost: null, translationUsage: null
+    });
+    assert.deepStrictEqual(progress, ['fetching', 'saving', 'saving', 'completed']);
+    assert.strictEqual(result.translationDelay, 0);
+    assert.deepStrictEqual(notices, [], 'the queue reports its own saves');
+  });
+
+  await test('characterization: without a catalog entry downloadChapter uses the page title and a URL from the book', async () => {
+    const { S, stores, fetches } = makeEnv();
+    await seed(S, stores, { catalog: false });
+    await S.downloadChapter('n1', 7, {});
+    assert.deepStrictEqual(fetches, [['book', 7, true]]);
+    assert.strictEqual(stores.chapters.n1_ch7.title, 'Page title');
+    assert.strictEqual(stores.chapters.n1_ch7.url, 'https://wetriedtls.com/series/book/chapter-7');
+  });
+
+  await test('characterization: downloadChapter translates when asked and keeps the original', async () => {
+    const { S, stores, aiCalls } = makeEnv();
+    await seed(S, stores);
+    await S.downloadChapter('n1', 3, { translation: TRANSLATION });
+    const record = stores.chapters.n1_ch3;
+    assert.strictEqual(aiCalls.length, 1);
+    assert(record.rawText.startsWith('EN['), record.rawText);
+    assert.strictEqual(record.originalRawText, 'Raw chapter text.');
+    assert.strictEqual(record.isTranslated, true);
+    assert.strictEqual(record.modelUsed, 'test-model');
+    assert.strictEqual(record.ocrSource, undefined);
+  });
+
+  await test('characterization: downloadChapter errors (no provider, empty page, cancelled)', async () => {
+    const empty = makeEnv({ provider: { async fetchChapterContent() { return { rawText: '' }; } } });
+    await seed(empty.S, empty.stores);
+    await assert.rejects(() => empty.S.downloadChapter('n1', 3, {}), /Failed to extract chapter content for Chapter 3/);
+    const pageOnly = makeEnv({ provider: { async fetchChapterContent() { throw new Error('独阅读 chapters cannot be downloaded in the background.'); } } });
+    await seed(pageOnly.S, pageOnly.stores);
+    await assert.rejects(() => pageOnly.S.downloadChapter('n1', 3, {}), /cannot be downloaded in the background/);
+    const { S, stores } = makeEnv();
+    await seed(S, stores);
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(() => S.downloadChapter('n1', 3, { signal: controller.signal }), /UserCancelled/);
+    await assert.rejects(() => S.downloadChapter('missing', 3, {}), /Novel not found/);
+  });
+
+  await test('characterization: saveOpenedChapter saves the page as given, by book slug, and announces it', async () => {
+    const { S, stores, notices } = makeEnv();
+    await seed(S, stores);
+    stores.novels.n1.domain = '';
+    const result = await S.saveOpenedChapter({ slug: 'book', chapterNumber: 3, title: 'Page title', url: 'https://page/3', rawText: '原文', domain: 'www.nkwwlkj.cn' });
+    assert.deepStrictEqual(plain(recordFields(stores.chapters.n1_ch3)), {
+      id: 'n1_ch3', novelId: 'n1', chapterNumber: 3, title: 'Page title', url: 'https://page/3', rawText: '原文', convertedText: ''
+    });
+    assert.strictEqual(stores.novels.n1.domain, 'www.nkwwlkj.cn', 'fills in a missing domain');
+    assert.deepStrictEqual(plain(result), { success: true, isSaved: true, chapterId: 'n1_ch3', novelId: 'n1', novelTitle: 'Book' });
+    assert.deepStrictEqual(notices, [['n1', 3]]);
+    assert.deepStrictEqual(plain(await S.saveOpenedChapter({ slug: 'nope', chapterNumber: 1, rawText: 'x' })), { success: false, error: 'Novel is not managed' });
+  });
+
+  await test('characterization: saveRecognizedChapter saves OCR text as a paid chapter and announces it', async () => {
+    const { S, stores, notices } = makeEnv();
+    await seed(S, stores);
+    const progress = [];
+    await S.saveRecognizedChapter('n1', 3, { text: ' 第三章 ', url: 'https://page/3', title: 'Page title', onProgress: (p) => progress.push(p.phase) });
+    assert.deepStrictEqual(plain(recordFields(stores.chapters.n1_ch3)), {
+      id: 'n1_ch3', novelId: 'n1', chapterNumber: 3, title: 'Catalog title 3', url: 'https://page/3', rawText: '第三章', convertedText: '',
+      originalRawText: '第三章', reasoningText: null, ocrSource: true, isTranslated: false, modelUsed: null,
+      translatedAt: null, translationCost: null, translationUsage: null
+    });
+    assert.strictEqual(stores.novels.n1.chapterList[0].locked, true, 'marked paid');
+    assert.deepStrictEqual(progress, ['saving', 'completed']);
+    assert.deepStrictEqual(notices, [['n1', 3]]);
+    await assert.rejects(() => S.saveRecognizedChapter('n1', 4, { text: '  ' }), /No text was recognized/);
+  });
+
+  await test('characterization: saveRecognizedChapter translates OCR text as an OCR source', async () => {
+    const { S, stores, aiCalls } = makeEnv();
+    await seed(S, stores);
+    await S.saveRecognizedChapter('n1', 4, { text: '第四章', translation: TRANSLATION });
+    const record = stores.chapters.n1_ch4;
+    assert.strictEqual(aiCalls.length, 1);
+    assert.strictEqual(record.isTranslated, true);
+    assert.strictEqual(record.originalRawText, '第四章');
+    assert.strictEqual(record.ocrSource, true);
+    assert.strictEqual(record.url, 'https://wetriedtls.com/series/book/chapter-4', 'falls back to the catalog URL');
+  });
+
+  // --- The one pipeline ---
+
+  await test('downloadChapter takes a source that is already in hand and skips fetching', async () => {
+    const { S, stores, fetches, aiCalls } = makeEnv();
+    await seed(S, stores);
+    await S.downloadChapter('n1', 4, { source: { kind: 'text', title: 'From the page', rawText: 'Already here.', url: 'https://page/4' }, translation: TRANSLATION });
+    assert.deepStrictEqual(fetches, [], 'no fetch');
+    assert.strictEqual(aiCalls.length, 1, 'translated like any download');
+    assert.strictEqual(stores.chapters.n1_ch4.originalRawText, 'Already here.');
+    assert.strictEqual(stores.chapters.n1_ch4.title, 'Catalog title 4');
+  });
+
+  await test('the http source is the provider fetch, and pages-only providers say so', async () => {
+    const { S, stores } = makeEnv();
+    await seed(S, stores);
+    const novel = await S.getNovelById('n1');
+    const source = await S.fetchChapterSource(novel, 3, {});
+    assert.deepStrictEqual(plain(source), { kind: 'text', title: 'Page title', rawText: 'Raw chapter text.' });
+    const pageOnly = makeEnv({ provider: { id: 'nkwwlkj', fetchMode: 'page', async fetchChapterContent() { throw new Error('should not be called'); } } });
+    await seed(pageOnly.S, pageOnly.stores);
+    const pageBook = await pageOnly.S.getNovelById('n1');
+    await assert.rejects(() => pageOnly.S.fetchChapterSource(pageBook, 3, {}), /opening its page/i);
+  });
+
+  console.log(`--- Chapter Download Test Suite: ${passed}/${passed + failed} passed ---`);
+  if (failed > 0) {
+    console.error('Chapter Download Test Suite FAILED');
+    process.exit(1);
+  }
+  console.log('Chapter Download Test Suite: ALL TESTS PASSED!');
+  finished = true;
+})();

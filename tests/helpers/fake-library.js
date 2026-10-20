@@ -166,4 +166,4 @@ function makeDevice(drive) {
   return { S: env.StorageService, cloud: env.CloudSyncService, stores: db.stores, reads: db.reads, ls };
 }
 
-module.exports = { makeDrive, makeDevice };
+module.exports = { makeDrive, makeDevice, makeDatabase };

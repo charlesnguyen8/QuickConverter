@@ -388,6 +388,18 @@ function sameNameEntry(a, b) {
   return stableJson(strip(a)) === stableJson(strip(b));
 }
 
+function providerForNovel(novel) {
+  if (!novel || typeof ProviderRegistry === 'undefined') return null;
+  let provider = null;
+  if (novel.url) provider = ProviderRegistry.getProviderForUrl(novel.url);
+  if (!provider && novel.domain) provider = ProviderRegistry.getProviderForDomain(novel.domain);
+  return provider || null;
+}
+
+function catalogItemOf(novel, chapterNumber) {
+  return (novel.chapterList || []).find((c) => Number(c.chapterNumber) === Number(chapterNumber)) || null;
+}
+
 function hasChineseText(text) {
   return typeof text === 'string' && /[㐀-鿿豈-﫿]/.test(text);
 }
@@ -1562,109 +1574,123 @@ const StorageService = {
     return this._translateRaw(novel, rawText, { ...(translation || {}), enabled: true }, options);
   },
 
+  // The http chapter source: the provider fetches the chapter text (wetriedtls). Sites whose
+  // chapters only exist on their own page (fetchMode 'page') are read by opening that page.
+  async fetchChapterSource(novel, chapterNumber, options = {}) {
+    const provider = providerForNovel(novel);
+    if (provider && provider.fetchMode === 'page') {
+      throw new Error(`${provider.shortName || provider.name || 'This site'}: chapters are saved by opening its page.`);
+    }
+    if (!provider || typeof provider.fetchChapterContent !== 'function') {
+      throw new Error(`No provider available to fetch chapter content for ${novel.title}`);
+    }
+    const catalogItem = catalogItemOf(novel, chapterNumber);
+    const chapterSlugOrNumber = catalogItem && catalogItem.slug ? catalogItem.slug : chapterNumber;
+    const content = await provider.fetchChapterContent(novel.slug, chapterSlugOrNumber, { signal: options.signal });
+    if (!content || !content.rawText) {
+      throw new Error(`Failed to extract chapter content for Chapter ${chapterNumber}`);
+    }
+    return { kind: 'text', title: content.title, rawText: content.rawText };
+  },
+
+  // The one download: gets the chapter's source (or uses options.source when it is already in
+  // hand), then translates and saves it through _saveChapterFromSource.
   async downloadChapter(novelId, chapterNumber, options = {}) {
     if (!novelId || chapterNumber === undefined) {
       throw new Error('novelId and chapterNumber are required to download a chapter');
     }
-
     if (options && options.signal && options.signal.aborted) {
       throw new Error('UserCancelled');
     }
-
     const novel = await this.getNovelById(novelId);
     if (!novel) {
       throw new Error(`Novel not found for ID: ${novelId}`);
     }
-
-    let provider = null;
-    if (typeof ProviderRegistry !== 'undefined') {
-      if (novel.url) provider = ProviderRegistry.getProviderForUrl(novel.url);
-      if (!provider && novel.domain) provider = ProviderRegistry.getProviderForDomain(novel.domain);
+    let source = options && options.source ? options.source : null;
+    if (!source) {
+      if (options && typeof options.onProgress === 'function') {
+        options.onProgress({ phase: 'fetching', percent: 5, text: 'Fetching raw chapter...' });
+      }
+      source = await this.fetchChapterSource(novel, chapterNumber, options);
     }
-
-    if (!provider || typeof provider.fetchChapterContent !== 'function') {
-      throw new Error(`No provider available to fetch chapter content for ${novel.title}`);
-    }
-
-    const catalogItem = (novel.chapterList || []).find(
-      (c) => Number(c.chapterNumber) === Number(chapterNumber)
-    );
-    const chapterSlugOrNumber = catalogItem && catalogItem.slug ? catalogItem.slug : chapterNumber;
-
-    if (options && typeof options.onProgress === 'function') {
-      options.onProgress({ phase: 'fetching', percent: 5, text: 'Fetching raw chapter...' });
-    }
-
-    const content = await provider.fetchChapterContent(novel.slug, chapterSlugOrNumber, { signal: options?.signal });
-    if (!content || !content.rawText) {
-      throw new Error(`Failed to extract chapter content for Chapter ${chapterNumber}`);
-    }
-
     if (options && options.signal && options.signal.aborted) {
       throw new Error('UserCancelled');
     }
+    return this._saveChapterFromSource(novel, chapterNumber, { origin: 'fetch', ...source }, options);
+  },
 
-    const chapterTitle = (catalogItem && catalogItem.title) || content.title || `Chapter ${chapterNumber}`;
-    const chapterUrl = (catalogItem && catalogItem.url) || `${novel.url}/chapter-${chapterNumber}`;
+  // Translates (when asked) and saves a chapter's source text. Where the text came from
+  // (source.origin) decides the few things that still differ: 'fetch' (a download), 'page' (a
+  // chapter page the user opened) and 'ocr' (an image chapter read with OCR, which also marks the
+  // chapter as paid).
+  async _saveChapterFromSource(novel, chapterNumber, source, options = {}) {
+    const origin = source.origin || 'fetch';
+    const number = Number(chapterNumber);
+    const report = (update) => {
+      if (options && typeof options.onProgress === 'function') options.onProgress(update);
+    };
+    const catalogItem = catalogItemOf(novel, chapterNumber);
+    const rawText = source.rawText;
+    const title = origin === 'page'
+      ? source.title || `Chapter ${chapterNumber}`
+      : (catalogItem && catalogItem.title) || source.title || `Chapter ${chapterNumber}`;
+    let url;
+    if (origin === 'fetch') url = (catalogItem && catalogItem.url) || `${novel.url}/chapter-${chapterNumber}`;
+    else if (origin === 'page') url = source.url || '';
+    else url = source.url || (catalogItem && catalogItem.url) || '';
 
-    let finalText = content.rawText;
-    let isTranslated = false;
-    let modelUsed = null;
-    let translationCost = null;
-    let translationUsage = null;
-    let reasoningText = null;
-    let capturedNames = [];
-    let capturedLocked = [];
-    let capturedSoft = [];
-    let translationDelay = 0;
+    const translation = options && options.translation;
+    let translated = null;
+    if (translation && translation.enabled) {
+      if (options.signal && options.signal.aborted) throw new Error('UserCancelled');
+      translated = await this._translateRaw(novel, rawText, translation, { ...options, ocrSource: origin === 'ocr' });
+    } else if (origin === 'fetch') {
+      report({ phase: 'saving', percent: 80, text: 'Saving raw chapter...' });
+    }
 
-    // Optional DeepSeek translation pre-download
-    if (options && options.translation && options.translation.enabled) {
-      if (options && options.signal && options.signal.aborted) {
-        throw new Error('UserCancelled');
+    if (origin !== 'page') report({ phase: 'saving', percent: 99, text: 'Saving chapter...' });
+
+    let record;
+    if (origin === 'page' && !translated) {
+      record = { novelId: novel.id, chapterNumber, title, url, rawText: rawText || '' };
+    } else {
+      record = {
+        novelId: novel.id,
+        chapterNumber: number,
+        title,
+        url,
+        rawText: translated ? translated.text : rawText,
+        originalRawText: rawText,
+        reasoningText: null,
+        ...(origin === 'ocr' ? { ocrSource: true } : {}),
+        isTranslated: !!translated,
+        modelUsed: translated ? translated.modelUsed : null,
+        translatedAt: translated ? Date.now() : null,
+        translationCost: translated ? translated.costInfo : null,
+        translationUsage: translated ? translated.usage : null
+      };
+    }
+    const saved = await this.saveChapter(record);
+
+    if (translated) {
+      await this._addCapturedGlossary(novel.id, number, { names: translated.names, locked: translated.locked, soft: translated.soft });
+    }
+
+    if (origin === 'ocr' && catalogItem && catalogItem.locked !== true) {
+      try {
+        await this.updateNovel(novel.id, {
+          chapterList: novel.chapterList.map((c) => (c === catalogItem ? { ...c, locked: true } : c))
+        });
+      } catch (e) {
+        console.warn('[StorageService] Failed to mark the chapter as paid:', e);
       }
-      const translated = await this._translateRaw(novel, content.rawText, options.translation, options);
-      finalText = translated.text;
-      capturedNames = translated.names;
-      capturedLocked = translated.locked;
-      capturedSoft = translated.soft;
-      translationDelay = translated.delaySeconds;
-      // Discard deepthink reasoning process - do not save to storage
-      reasoningText = null;
-      isTranslated = true;
-      modelUsed = translated.modelUsed;
-      translationCost = translated.costInfo;
-      translationUsage = translated.usage;
-    } else if (options && typeof options.onProgress === 'function') {
-      options.onProgress({ phase: 'saving', percent: 80, text: 'Saving raw chapter...' });
     }
 
-    if (options && typeof options.onProgress === 'function') {
-      options.onProgress({ phase: 'saving', percent: 99, text: 'Saving chapter...' });
-    }
+    if (origin === 'page' || origin === 'ocr') this.notifyChapterSaved(novel.id, origin === 'ocr' ? number : chapterNumber);
 
-    const saved = await this.saveChapter({
-      novelId: novel.id,
-      chapterNumber: Number(chapterNumber),
-      title: chapterTitle,
-      url: chapterUrl,
-      rawText: finalText,
-      originalRawText: content.rawText,
-      reasoningText: null, // Discarded: deepthink reasoning process is not saved
-      isTranslated: isTranslated,
-      modelUsed: modelUsed,
-      translatedAt: isTranslated ? Date.now() : null,
-      translationCost: translationCost,
-      translationUsage: translationUsage
-    });
+    if (origin !== 'page') report({ phase: 'completed', percent: 100, text: 'Completed' });
 
-    await this._addCapturedGlossary(novel.id, Number(chapterNumber), { names: capturedNames, locked: capturedLocked, soft: capturedSoft });
-
-    if (options && typeof options.onProgress === 'function') {
-      options.onProgress({ phase: 'completed', percent: 100, text: 'Completed' });
-    }
-
-    return { ...saved, translationDelay };
+    return origin === 'fetch' ? { ...saved, translationDelay: translated ? translated.delaySeconds : 0 } : saved;
   },
 
   async _addCapturedGlossary(novelId, chapterNumber, { names = [], locked = [], soft = [] } = {}) {
@@ -1735,15 +1761,7 @@ const StorageService = {
       await this.updateNovel(novel.id, { domain });
     }
 
-    const savedChapter = await this.saveChapter({
-      novelId: novel.id,
-      chapterNumber,
-      title: title || `Chapter ${chapterNumber}`,
-      url: url || '',
-      rawText: rawText || ''
-    });
-
-    this.notifyChapterSaved(novel.id, chapterNumber);
+    const savedChapter = await this._saveChapterFromSource(novel, chapterNumber, { origin: 'page', title, url, rawText });
 
     return {
       success: true,
@@ -1765,64 +1783,12 @@ const StorageService = {
       throw new Error(`Novel not found for ID: ${novelId}`);
     }
 
-    const catalogItem = (novel.chapterList || []).find(
-      (c) => Number(c.chapterNumber) === Number(chapterNumber)
-    );
-    const chapterTitle = (catalogItem && catalogItem.title) || options.title || `Chapter ${chapterNumber}`;
-    const chapterUrl = options.url || (catalogItem && catalogItem.url) || '';
-    const translation = options.translation;
-
-    let translated = null;
-    if (translation && translation.enabled) {
-      translated = await this._translateRaw(novel, text, translation, {
-        onProgress: options.onProgress,
-        onChunk: options.onChunk,
-        signal: options.signal,
-        ocrSource: true
-      });
-    }
-
-    if (typeof options.onProgress === 'function') {
-      options.onProgress({ phase: 'saving', percent: 99, text: 'Saving chapter...' });
-    }
-
-    const saved = await this.saveChapter({
-      novelId: novel.id,
-      chapterNumber: Number(chapterNumber),
-      title: chapterTitle,
-      url: chapterUrl,
-      rawText: translated ? translated.text : text,
-      originalRawText: text,
-      reasoningText: null,
-      ocrSource: true,
-      isTranslated: !!translated,
-      modelUsed: translated ? translated.modelUsed : null,
-      translatedAt: translated ? Date.now() : null,
-      translationCost: translated ? translated.costInfo : null,
-      translationUsage: translated ? translated.usage : null
+    return this._saveChapterFromSource(novel, chapterNumber, { origin: 'ocr', title: options.title, url: options.url, rawText: text }, {
+      translation: options.translation,
+      onProgress: options.onProgress,
+      onChunk: options.onChunk,
+      signal: options.signal
     });
-
-    if (translated) {
-      await this._addCapturedGlossary(novel.id, Number(chapterNumber), translated);
-    }
-
-    if (catalogItem && catalogItem.locked !== true) {
-      try {
-        await this.updateNovel(novel.id, {
-          chapterList: novel.chapterList.map((c) => (c === catalogItem ? { ...c, locked: true } : c))
-        });
-      } catch (e) {
-        console.warn('[StorageService] Failed to mark the chapter as paid:', e);
-      }
-    }
-
-    this.notifyChapterSaved(novel.id, Number(chapterNumber));
-
-    if (typeof options.onProgress === 'function') {
-      options.onProgress({ phase: 'completed', percent: 100, text: 'Completed' });
-    }
-
-    return saved;
   },
 
   async deleteChapter(novelId, chapterNumber) {

@@ -23,6 +23,7 @@ const testFiles = [
   'site-browser.test.js',
   'library-sync.test.js',
   'drive-sync.test.js',
+  'chapter-download.test.js',
   'ocr-panel.test.js',
   'longest-matcher.test.js',
   'text-processors.test.js',
