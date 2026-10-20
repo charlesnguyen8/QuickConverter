@@ -995,15 +995,15 @@ async function runTests() {
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
   });
 
-  // 21b. Sites that cannot be downloaded in the background pause instead of backing off
-  await test('open-page-only site error pauses the queue with the reason and no retry backoff', async () => {
+  // 21b. Page sites where pages cannot be opened pause instead of backing off
+  await test('a page site without a page source pauses the queue with the reason and no retry backoff', async () => {
     downloadedTasks = [];
     DownloadQueueService.clearAll();
     DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
 
     const originalDownload = mockStorageService.downloadChapter;
     mockStorageService.downloadChapter = async () => {
-      throw new Error('独阅读 chapters cannot be downloaded in the background. Open the chapter page in the browser to save it.');
+      throw new Error('独阅读: chapters are saved by opening its page.');
     };
 
     await DownloadQueueService.enqueue({ novelId: 'novel-manual', chapterNumber: 7 });
@@ -1023,7 +1023,7 @@ async function runTests() {
     assert.strictEqual(state.cooldown, null, 'no retry backoff is started');
     assert.strictEqual(state.queue[0].status, 'paused_error', 'chapter is parked as paused_error at the head');
     assert(!state.queue[0].retryCount, 'retry budget is not consumed');
-    assert(state.pauseError && state.pauseError.includes('cannot be downloaded in the background'), 'pauseError explains why');
+    assert(state.pauseError && state.pauseError.includes('saved by opening its page'), 'pauseError explains why');
 
     mockStorageService.downloadChapter = originalDownload;
     DownloadQueueService.clearAll();

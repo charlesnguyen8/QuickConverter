@@ -4,7 +4,6 @@ import { flushSync } from 'react-dom';
 import ReaderApp from './ReaderApp.jsx';
 import { installBackButton } from '../shared/backButton.js';
 import { refreshOnSync } from '../shared/SyncStatus.jsx';
-import SiteSaveStatus from '../shared/SiteSaveStatus.jsx';
 import { installAppOcr } from '../shared/appOcr.js';
 
 const target = typeof document !== 'undefined' ? document.getElementById('reader-root') : null;
@@ -16,9 +15,3 @@ if (target) {
 installBackButton();
 refreshOnSync(window, 'reader-chapter-refresh');
 installAppOcr();
-
-if (typeof document !== 'undefined' && document.body) {
-  const statusHost = document.createElement('div');
-  document.body.appendChild(statusHost);
-  createRoot(statusHost).render(<SiteSaveStatus />);
-}

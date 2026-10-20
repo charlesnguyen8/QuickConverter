@@ -594,7 +594,7 @@
       return nativePlugin('BackgroundWork') ? appBackground : null;
     },
     // Opens a chapter page and returns what it shows (the download queue's page source). The app
-    // uses its SiteBrowser through SiteSave; the extension gets its own in a later phase.
+    // uses its SiteBrowser through SiteSave; the extension's worker provides a background tab.
     get pageSource() {
       if (provided.pageSource) return provided.pageSource;
       if (isExtension()) return null;
@@ -608,11 +608,6 @@
       const engine = global.QCOcr;
       if (!engine || typeof engine.recognize !== 'function') return null;
       return { recognize: (bytes, mimeType, base64) => engine.recognize(bytes, mimeType, base64) };
-    },
-    // Whether downloads here can open chapter pages: the app's site window, or the extension,
-    // whose downloads run in its worker.
-    get canOpenPages() {
-      return isExtension() || !!this.pageSource;
     },
     // The extension's worker hands in its own page source and OCR.
     provide(services) {

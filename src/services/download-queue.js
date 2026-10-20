@@ -1179,7 +1179,6 @@
               errLower.includes('top up') ||
               errLower.includes('401') ||
               errLower.includes('402') ||
-              errLower.includes('cannot be downloaded in the background') ||
               errLower.includes('saved by opening its page') ||
               errLower.includes('closed before the chapter loaded') ||
               errLower.includes("not in the book's chapter list") ||

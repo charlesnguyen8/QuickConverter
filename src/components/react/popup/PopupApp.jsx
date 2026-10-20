@@ -247,11 +247,6 @@ export default function PopupApp() {
     const fresh = await S.getNovelById(novel.id);
     if (fresh) { novel = fresh; activeNovelRef.current = fresh; }
 
-    if (typeof ProviderRegistry !== 'undefined' && typeof ProviderRegistry.canBulkDownload === 'function' && !ProviderRegistry.canBulkDownload(novel)) {
-      alert("This site can't be downloaded in the background. Open each chapter page to save it.");
-      return;
-    }
-
     const catalog = novel.chapterList || [];
     if (catalog.length === 0) { alert('No chapters found in catalog.'); return; }
 

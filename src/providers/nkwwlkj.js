@@ -216,7 +216,6 @@ const NkwwlkjProvider = (() => {
     id: 'nkwwlkj',
     name: '独阅读 (nkwwlkj.cn)',
     domains: ['www.nkwwlkj.cn', 'nkwwlkj.cn'],
-    supportsBulkDownload: false,
     shortName: '独阅读',
     appUserAgent: 'desktop',
     fetchMode: 'page',
@@ -329,10 +328,6 @@ const NkwwlkjProvider = (() => {
         console.warn('[nkwwlkj Provider] Error fetching chapter list:', e);
         return [];
       }
-    },
-
-    async fetchChapterContent() {
-      throw new Error('独阅读 chapters cannot be downloaded in the background. Open the chapter page in the browser to save it.');
     },
 
     parseLoginState,

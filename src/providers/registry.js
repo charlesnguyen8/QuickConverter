@@ -52,17 +52,6 @@ const ProviderRegistry = (() => {
     return (novel.url && getProviderForUrl(novel.url)) || (novel.domain && getProviderForDomain(novel.domain)) || null;
   }
 
-  // Every site can download through the queue; sites whose chapters only exist on their own page
-  // need a platform that can open pages (the app's site window, or the extension's worker).
-  function canBulkDownload(novel) {
-    const provider = getProviderForNovel(novel);
-    if (!provider) return true;
-    const pageOnly = provider.fetchMode === 'page' || provider.supportsBulkDownload === false;
-    if (!pageOnly) return true;
-    const platform = globalScope && globalScope.Platform;
-    return !!(platform && (platform.canOpenPages || platform.pageSource));
-  }
-
   // Auto-register default providers available in the current environment
   const globalScope = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : self);
   if (globalScope && globalScope.WetriedtlsProvider) {
@@ -82,8 +71,7 @@ const ProviderRegistry = (() => {
     getProviderById,
     getAllProviders,
     getAllSupportedDomains,
-    getProviderForNovel,
-    canBulkDownload
+    getProviderForNovel
   };
 })();
 

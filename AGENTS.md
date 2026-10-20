@@ -23,6 +23,10 @@ build, so the repo root is no longer a loadable target. `npm run dev` is for UI 
 `rules/`) and are copied into `dist/`; `build-targets.mjs` lists what each build contains.
 Services and components reach `chrome.*` only through `src/services/platform.js` (a test enforces it).
 
+**Downloads:** there is one `StorageService.downloadChapter` for every site and platform; the platforms
+differ only in `Platform.pageSource` (app: SiteBrowser; extension: background tab) and `Platform.ocr`
+(app: in-page engine; extension: offscreen document). There is no separate "Open to save" path.
+
 **Android app (Capacitor 8):** `npm run build:app`, then `npx cap sync android`, then build the
 APK with `android\gradlew assembleDebug` with `JAVA_HOME` set to a JDK 21–24 (Gradle 8.14 cannot
 run on Java 25, which Android Studio bundles; this machine uses `C:\Program Files\Java\jdk-23`).

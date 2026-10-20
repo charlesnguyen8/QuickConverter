@@ -114,10 +114,9 @@ const EXPECTED_CHINESE = [
     assert.strictEqual(env.ProviderRegistry.getProviderForDomain('sangtacviet.com').id, 'sangtacviet');
   });
 
-  await test('the site is open-page only: no background chapter downloads', async () => {
-    assert.strictEqual(P.supportsBulkDownload, false);
-    assert.strictEqual(env.ProviderRegistry.canBulkDownload({ url: BOOK_URL }), false);
-    await assert.rejects(() => P.fetchChapterContent('uukanshu-92019', '1122'), /open the chapter page/i);
+  await test('chapters download by opening their page', async () => {
+    assert.strictEqual(P.fetchMode, 'page');
+    assert.strictEqual(P.supportsBulkDownload, undefined, 'queueable like every site');
   });
 
   await test('parseUrl reads book and chapter pages; the slug is host-bookId', () => {

@@ -722,8 +722,7 @@ async function testAsync(name, fn) {
     assert(!unsaved.includes('Delete'), 'reader row must not offer delete');
   });
 
-  // --- Open-page-only sites (no background download) ---
-  const ManualChapterAction = (await loadComponent('components/react/shared/ManualChapterAction.jsx')).default;
+  // --- Page sites (nkwwlkj): chapter rows and paid badges ---
   const manualChapter = { chapterNumber: 3, title: 'Ch 3', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043460' };
   const lockedChapter = { chapterNumber: 5, title: 'Ch 5', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100659849', locked: true };
   const cover = await loadComponent('components/react/shared/novelCover.js');
@@ -905,27 +904,14 @@ async function testAsync(name, fn) {
     assert(html.indexOf('../services/platform.js') > -1 && html.indexOf('ocr-offscreen-entry.js') > html.indexOf('../services/platform.js'), 'the page loads the platform, then the OCR entry');
   });
 
-  const { SiteSaveStatusView } = await loadComponent('components/react/shared/SiteSaveStatus.jsx');
-  test('the Open to save message says what the app is doing with the chapter', () => {
-    assert.strictEqual(render(h(SiteSaveStatusView, { status: null })), '');
-    const reading = render(h(SiteSaveStatusView, { status: { status: 'reading', chapterNumber: 7 } }));
-    assert(/role="status"/.test(reading), 'announced');
-    assert(reading.includes('Reading the image of chapter 7'), reading);
-    assert(render(h(SiteSaveStatusView, { status: { status: 'saving', chapterNumber: 7 } })).includes('Saving chapter 7'));
-    assert(render(h(SiteSaveStatusView, { status: { status: 'saved', chapterNumber: 7 } })).includes('Saved chapter 7'));
-    const failed = render(h(SiteSaveStatusView, { status: { status: 'error', chapterNumber: 7, error: 'No text was found.' } }));
-    assert(failed.includes('Chapter 7 was not saved') && failed.includes('No text was found.'), failed);
-  });
-
   const { installAppOcr } = await loadComponent('components/react/shared/appOcr.js');
-  test('the novel and reader pages give Open to save an OCR reader', () => {
+  test('the novel and reader pages give downloads an OCR reader', () => {
     const win = {};
     installAppOcr(win);
     assert.strictEqual(typeof win.QCOcr.recognize, 'function');
     for (const entry of ['novel/novel-entry.jsx', 'reader/reader-entry.jsx']) {
       const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'components', 'react', ...entry.split('/')), 'utf8');
       assert(/installAppOcr\(/.test(src), `${entry} installs the OCR reader`);
-      assert(/SiteSaveStatus/.test(src), `${entry} shows the Open to save message`);
     }
   });
 
@@ -991,54 +977,10 @@ async function testAsync(name, fn) {
     assert.strictEqual(render(h(ProviderLoginBanner, { novel: null })), '');
   });
 
-  const { handleOpenToSave } = await loadComponent('components/react/shared/ManualChapterAction.jsx');
-  const fakeClick = (extra = {}) => {
-    const calls = [];
-    return { calls, event: { button: 0, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...extra, preventDefault: () => calls.push('prevent'), stopPropagation: () => calls.push('stop') } };
-  };
-
-  test('Open to save opens the chapter in the background instead of switching tabs', () => {
-    const opened = [];
-    const storage = { openChapterInBackground: (url) => { opened.push(url); return true; } };
-    const { calls, event } = fakeClick();
-    handleOpenToSave(event, manualChapter.url, storage);
-    assert.deepStrictEqual(opened, [manualChapter.url]);
-    assert(calls.includes('prevent'), 'the normal new-tab link is cancelled');
-    assert(calls.includes('stop'), 'the row behind the link is not clicked');
-  });
-
-  test('Open to save falls back to the plain link when it cannot open in the background', () => {
-    const declined = fakeClick();
-    handleOpenToSave(declined.event, manualChapter.url, { openChapterInBackground: () => false });
-    assert(!declined.calls.includes('prevent'), 'the link opens normally');
-    const noService = fakeClick();
-    handleOpenToSave(noService.event, manualChapter.url, null);
-    assert(!noService.calls.includes('prevent'));
-    const opened = [];
-    for (const extra of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { button: 1 }]) {
-      const modified = fakeClick(extra);
-      handleOpenToSave(modified.event, manualChapter.url, { openChapterInBackground: (url) => { opened.push(url); return true; } });
-      assert(!modified.calls.includes('prevent'), `a ${Object.keys(extra)[0]} click keeps the browser's own behavior`);
-    }
-    assert.deepStrictEqual(opened, []);
-  });
-
-  test('ManualChapterAction links free and paid chapters to the page to save them', () => {
-    const open = render(h(ManualChapterAction, { chapter: manualChapter }));
-    assert(open.includes('Open to save'), 'unlocked chapter offers Open to save');
-    assert(open.includes(`href="${manualChapter.url}"`), 'link opens the chapter page');
-    assert(open.includes('target="_blank"'), 'link opens in a new tab');
-    const paid = render(h(ManualChapterAction, { chapter: lockedChapter }));
-    assert(paid.includes('Open to save'), 'paid chapter also offers Open to save');
-    assert(paid.includes(`href="${lockedChapter.url}"`) && paid.includes('target="_blank"'), 'paid chapter opens its page in a new tab');
-    const tip = paid.match(/<a[^>]*title="([^"]*)"/);
-    assert(tip && /unlock/i.test(tip[1]) && /OCR/.test(tip[1]), 'explains: unlock it on the site, then it is saved with OCR');
-  });
-
   const { ChapterRow: NovelChapterRow } = await loadComponent('components/react/novel/NovelChapters.jsx');
   const { ChapterRow: PopupChapterRow } = await loadComponent('components/react/popup/PopupNovelView.jsx');
   const rowNovel = { id: 'n1', title: 'N' };
-  const { ChapterAccessBadge } = await loadComponent('components/react/shared/ManualChapterAction.jsx');
+  const { ChapterAccessBadge } = await loadComponent('components/react/shared/ChapterAccessBadge.jsx');
   const accessOf = (html) => {
     const m = html.match(/data-chapter-access="(\w+)"[^>]*>((?:<span[^>]*>[^<]*<\/span>|[^<])*)<\/span>/);
     return m ? { kind: m[1], text: m[2].replace(/<[^>]+>/g, '').trim() } : null;
@@ -1071,47 +1013,37 @@ async function testAsync(name, fn) {
   test('every chapter list shows whether each chapter is free or paid', () => {
     const freeChapter = { ...manualChapter, locked: false };
     const rows = [
-      ['novel', (props) => render(h(NovelChapterRow, { novel: rowNovel, chNum: props.chapter.chapterNumber, onDelete() {}, manualOnly: true, ...props }))],
-      ['reader', (props) => render(h(ReaderChapterRow, { novel: rowNovel, chNum: props.chapter.chapterNumber, manualOnly: true, ...props }))],
-      ['popup', (props) => render(h(PopupChapterRow, { novel: rowNovel, onOpen() {}, onDelete() {}, onDownload() {}, manualOnly: true, ...props }))]
+      ['novel', (props) => render(h(NovelChapterRow, { novel: rowNovel, chNum: props.chapter.chapterNumber, onDelete() {}, ...props }))],
+      ['reader', (props) => render(h(ReaderChapterRow, { novel: rowNovel, chNum: props.chapter.chapterNumber, ...props }))],
+      ['popup', (props) => render(h(PopupChapterRow, { novel: rowNovel, onOpen() {}, onDelete() {}, onDownload() {}, ...props }))]
     ];
     for (const [name, renderRow] of rows) {
       assert.strictEqual((accessOf(renderRow({ chapter: freeChapter })) || {}).kind, 'free', `${name} row marks free chapters`);
       assert.strictEqual((accessOf(renderRow({ chapter: lockedChapter })) || {}).kind, 'paid', `${name} row marks paid chapters`);
       const saved = renderRow({ chapter: lockedChapter, downloadedChapter: { chapterNumber: 5, title: 'Ch 5' } });
       assert.strictEqual((accessOf(saved) || {}).kind, 'paid', `${name} row keeps the paid mark once saved`);
-      assert.strictEqual(accessOf(renderRow({ chapter: manualChapter, manualOnly: false })), null, `${name} row adds nothing on sites without paid chapters`);
+      assert.strictEqual(accessOf(renderRow({ chapter: manualChapter })), null, `${name} row adds nothing on sites without paid chapters`);
     }
   });
-  test('chapter rows swap Download for the open-page action on open-page-only sites', () => {
+  test('chapter rows offer Download on every site, also for page sites and paid chapters', () => {
+    const pageNovel = { ...rowNovel, url: 'https://www.nkwwlkj.cn/book/book_detail/100181750' };
     const rows = [
-      ['novel', (props) => render(h(NovelChapterRow, { novel: rowNovel, chNum: props.chapter.chapterNumber, onDelete() {}, ...props }))],
-      ['reader', (props) => render(h(ReaderChapterRow, { novel: rowNovel, chNum: props.chapter.chapterNumber, ...props }))],
-      ['popup', (props) => render(h(PopupChapterRow, { novel: rowNovel, onOpen() {}, onDelete() {}, onDownload() {}, ...props }))]
+      ['novel', (props) => render(h(NovelChapterRow, { novel: pageNovel, chNum: props.chapter.chapterNumber, onDelete() {}, ...props }))],
+      ['reader', (props) => render(h(ReaderChapterRow, { novel: pageNovel, chNum: props.chapter.chapterNumber, ...props }))],
+      ['popup', (props) => render(h(PopupChapterRow, { novel: pageNovel, onOpen() {}, onDelete() {}, onDownload() {}, ...props }))]
     ];
     for (const [name, renderRow] of rows) {
-      const normal = renderRow({ chapter: manualChapter });
-      assert(normal.includes('title="Download Chapter 3"'), `${name} row keeps Download by default`);
-      const manual = renderRow({ chapter: manualChapter, manualOnly: true });
-      assert(!manual.includes('title="Download Chapter 3"'), `${name} row hides Download on open-page-only sites`);
-      assert(manual.includes('Open to save'), `${name} row offers Open to save`);
-      const locked = renderRow({ chapter: lockedChapter, manualOnly: true });
-      assert(locked.includes('Open to save') && locked.includes(`href="${lockedChapter.url}"`) && !locked.includes('title="Download Chapter 5"'), `${name} row offers Open to save for paid chapters`);
-      const lockedDownloadable = renderRow({ chapter: lockedChapter });
-      assert(lockedDownloadable.includes('title="Download Chapter 5"') && !lockedDownloadable.includes('Open to save'), `${name} row offers Download for a paid chapter where downloads can open pages (the queue stops at the page if it is not unlocked)`);
+      const free = renderRow({ chapter: manualChapter, manualOnly: true });
+      assert(free.includes('title="Download Chapter 3"') && !free.includes('Open to save'), `${name} row offers Download, never Open to save`);
+      const paid = renderRow({ chapter: lockedChapter, manualOnly: true });
+      assert(paid.includes('title="Download Chapter 5"') && !paid.includes('Open to save'), `${name} row offers Download for a paid chapter (the queue stops at the page if it is not unlocked)`);
     }
   });
 
-  test('ReaderNotSaved points to the chapter page instead of downloading on open-page-only sites', () => {
-    const manual = render(h(ReaderNotSaved, { onDownload: () => {}, manualChapter }));
-    assert(!manual.includes('id="reader-download-btn"'), 'no background download button');
-    assert(manual.includes('id="reader-open-source-link"') && manual.includes(`href="${manualChapter.url}"`), 'links to the chapter page');
-    const locked = render(h(ReaderNotSaved, { onDownload: () => {}, manualChapter: lockedChapter }));
-    assert(!locked.includes('id="reader-download-btn"'), 'no download button for a locked chapter');
-    assert(locked.includes('Paid Chapter'), 'says the chapter is paid');
-    assert(/unlock/i.test(locked) && /OCR/.test(locked), 'explains: unlock it on the site, then it is saved with OCR');
-    assert(locked.includes('id="reader-open-source-link"') && locked.includes(`href="${lockedChapter.url}"`), 'links to the paid chapter page');
-    assert(!/cannot be saved/i.test(locked), 'no longer claims paid chapters cannot be saved');
+  test('ReaderNotSaved offers Download for page-site chapters too', () => {
+    const page = render(h(ReaderNotSaved, { onDownload: () => {}, manualChapter }));
+    assert(page.includes('id="reader-download-btn"'), 'the download button');
+    assert(!page.includes('id="reader-open-source-link"') && !page.includes('Open chapter page'), 'no Open chapter page link');
   });
 
   // --- OCR reading panel (image-only chapters, read-only) ---

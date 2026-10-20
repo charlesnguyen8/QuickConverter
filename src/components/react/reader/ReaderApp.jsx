@@ -6,7 +6,6 @@ import ReaderSourceDrawer from './ReaderSourceDrawer.jsx';
 import ReaderNotSaved from './ReaderNotSaved.jsx';
 import ReaderToast from './ReaderToast.jsx';
 import ReaderChapterList from './ReaderChapterList.jsx';
-import { canBulkDownload } from '../shared/ManualChapterAction.jsx';
 import NameListDrawer from '../novel/NameListDrawer.jsx';
 import { adjacentChapter, navigateToChapter, useReaderSearch } from './readerLocation.js';
 import { installSwipe } from './readerGestures.js';
@@ -311,7 +310,6 @@ export default function ReaderApp() {
             model={model}
             onDownload={handleDownload}
             deepseekRef={panelRef}
-            manualChapter={catalogItem && !canBulkDownload(novel) ? catalogItem : null}
             novel={novel}
           />
         ) : null}

@@ -181,9 +181,6 @@ export default function OcrPanelApp() {
       recognize: recognizeWithEngine,
       getTranslation,
       sourceText: recognizedRef.current,
-      onSaved: () => {
-        if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'QC_OCR_SAVED' }, '*');
-      },
       onStatus: (update) => {
         if (update.sourceText) {
           setSourceText(update.sourceText);

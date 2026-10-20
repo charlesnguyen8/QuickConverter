@@ -12,8 +12,8 @@ Supported sites:
 | Site | What works |
 |---|---|
 | [wetriedtls.com](https://wetriedtls.com) | Add a book, sync its chapter list, download chapters in the background (one at a time, with optional AI translation) |
-| [nkwwlkj.cn](https://www.nkwwlkj.cn) (独阅读) | Add a book, sync its chapter list, save chapters by opening them ("Open to save"), paid image chapters read with built-in OCR, login and coin balance shown |
-| [sangtacviet.com](https://sangtacviet.com) | Add a book, sync its chapter list, save the original Chinese of chapters you open |
+| [nkwwlkj.cn](https://www.nkwwlkj.cn) (独阅读) | Add a book, sync its chapter list, download chapters (each opens in a background tab), paid image chapters read with built-in OCR, login and coin balance shown |
+| [sangtacviet.com](https://sangtacviet.com) | Add a book, sync its chapter list, download chapters in their original Chinese (each opens in a background tab) |
 
 ## Build the extension
 
@@ -70,17 +70,18 @@ library lists your books with their download progress.
 
 ### Save chapters
 
-- **wetriedtls**: press **Download** on a chapter or **Download All**. Chapters download one at a
+- Press **Download** on a chapter or **Download All**, on every site. Chapters download one at a
   time in the background (you can close the tab); the dock at the bottom shows the queue, and you
   can pause, cancel or retry. Turn on **DeepSeek Translation on Download** to save translated
   chapters instead of the raw text.
-- **nkwwlkj and sangtacviet**: these sites only show chapters to a real browser, so press
-  **Open to save** on a chapter. It opens in a background tab, is saved as soon as the text has
-  loaded, and the tab closes by itself. Simply reading a chapter of a book in your library also
+- **nkwwlkj and sangtacviet** only show chapters to a real browser, so each download opens the
+  chapter in a background tab, which closes once the chapter is read. If the page needs you (a
+  login, a check, a chapter you have not unlocked), the queue waits and brings the tab forward;
+  the dock says **Waiting for you**. Simply reading a chapter of a book in your library also
   saves it.
   - nkwwlkj: log in on the site (the book page shows your login state and coins) to save chapters
-    you have unlocked. Paid chapters are images: a panel reads them with OCR (offline, a few
-    seconds) and saves the text.
+    you have unlocked. Paid chapters are images: downloads read them with OCR (offline, a few
+    seconds) and save the text, translated like any other chapter.
   - sangtacviet: chapters are saved in their original Chinese, ready for dictionary conversion.
 
 ### Read

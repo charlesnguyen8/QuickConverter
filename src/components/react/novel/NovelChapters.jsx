@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ProgressRing } from '../shared/QueueDock.jsx';
-import ManualChapterAction, { ChapterAccessBadge, canBulkDownload } from '../shared/ManualChapterAction.jsx';
+import { ChapterAccessBadge } from '../shared/ChapterAccessBadge.jsx';
 import { LastReadBadge } from '../shared/lastRead.jsx';
 
 function getNovelId() {
@@ -27,7 +27,7 @@ function rowClass(isDownloaded) {
     : 'flex items-center justify-between p-3.5 rounded-lg bg-slate-800/60 border border-slate-700/50 hover:border-slate-600 transition group';
 }
 
-export function ChapterRow({ novel, chapter, chNum, downloadedChapter, queueStatus, onDelete, manualOnly = false }) {
+export function ChapterRow({ novel, chapter, chNum, downloadedChapter, queueStatus, onDelete }) {
   const isDownloaded = !!downloadedChapter;
   const queueService = getQueueService();
 
@@ -131,8 +131,6 @@ export function ChapterRow({ novel, chapter, chNum, downloadedChapter, queueStat
         <span className="text-amber-400 group-hover/qbtn:text-rose-300 font-bold ml-0.5 group-hover/qbtn:hidden">✕</span>
       </button>
     );
-  } else if (manualOnly) {
-    action = <ManualChapterAction chapter={chapter} />;
   } else {
     action = (
       <button
@@ -329,7 +327,6 @@ export default function NovelChapters() {
     );
   }
 
-  const manualOnly = !canBulkDownload(novel);
 
   return (
     <div className="flex flex-col gap-2">
@@ -348,7 +345,6 @@ export default function NovelChapters() {
             downloadedChapter={downloadedChapter}
             queueStatus={queueStatus}
             onDelete={handleDelete}
-            manualOnly={manualOnly}
           />
         );
       })}

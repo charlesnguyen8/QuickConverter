@@ -3,7 +3,6 @@ import NovelHero from './NovelHero.jsx';
 import NovelDeepseekCard from './NovelDeepseekCard.jsx';
 import NovelChapters from './NovelChapters.jsx';
 import NameListDrawer from './NameListDrawer.jsx';
-import { canBulkDownload } from '../shared/ManualChapterAction.jsx';
 import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
 import { ConversionModeToggle } from './ConversionModeToggle.jsx';
 
@@ -148,10 +147,6 @@ export default function NovelApp() {
       alert('No novel loaded. Please select a novel first.');
       return;
     }
-    if (!canBulkDownload(novel)) {
-      alert("This site can't be downloaded in the background. Open each chapter page to save it.");
-      return;
-    }
     const catalog = novel.chapterList || [];
     if (catalog.length === 0) {
       alert('No chapters found in catalog. Please click "Sync Catalog" first.');
@@ -234,13 +229,10 @@ export default function NovelApp() {
   const settingsHref = novelId
     ? `settings.html?from=novel&id=${encodeURIComponent(novelId)}`
     : 'settings.html?from=novel';
-  const manualOnly = !!novel && !canBulkDownload(novel);
-  const downloadAllDisabled = manualOnly || (stats ? (!stats.hasCatalog || stats.unqueuedMissing === 0) : false);
-  const downloadAllTitle = manualOnly
-    ? "This site can't be downloaded in the background. Open each chapter page to save it."
-    : stats
-      ? (downloadAllDisabled ? 'All chapters are already downloaded or queued' : `Download and translate all ${stats.unqueuedMissing} missing chapters`)
-      : 'Download and translate all missing chapters';
+  const downloadAllDisabled = stats ? (!stats.hasCatalog || stats.unqueuedMissing === 0) : false;
+  const downloadAllTitle = stats
+    ? (downloadAllDisabled ? 'All chapters are already downloaded or queued' : `Download and translate all ${stats.unqueuedMissing} missing chapters`)
+    : 'Download and translate all missing chapters';
 
   return (
     <>

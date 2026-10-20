@@ -148,8 +148,9 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     assert(!P.matches('https://wetriedtls.com/series/x'));
   });
 
-  await test('bulk downloads are disabled for this site', () => {
-    assert.strictEqual(P.supportsBulkDownload, false);
+  await test('chapters download by opening their page', () => {
+    assert.strictEqual(P.fetchMode, 'page');
+    assert.strictEqual(P.supportsBulkDownload, undefined, 'queueable like every site');
   });
 
   await test('parseUrl resolves a book page to its numeric book id', () => {
@@ -266,37 +267,16 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     assert.deepStrictEqual(inits.map((i) => i.credentials), ['omit', 'omit'], 'the logged-in view hides the lock on bought chapters, so cookies are never sent');
   });
 
-  await test('fetchChapterContent never fetches and explains that chapters are captured from the open page', async () => {
-    let fetched = false;
-    const fetchEnv = loadEnv({ fetch: async () => { fetched = true; return { ok: true, text: async () => '' }; } });
-    await assert.rejects(
-      () => fetchEnv.NkwwlkjProvider.fetchChapterContent('100181750', '100043460'),
-      /open/i
-    );
-    assert.strictEqual(fetched, false);
-  });
-
   await test('formatTitle drops the site suffix from page titles', () => {
     assert.strictEqual(P.formatTitle('100181750', '门户最新章节(守玄独阅读),门户无弹窗全文阅读'), '门户');
     assert.strictEqual(P.formatTitle('100181750', '门户'), '门户');
   });
 
-  await test('registry registers the provider and reports bulk-download support per novel', () => {
+  await test('registry registers the provider', () => {
     const R = env.ProviderRegistry;
     assert.strictEqual(R.getProviderForUrl(BOOK_URL).id, 'nkwwlkj');
     assert.strictEqual(R.getProviderForDomain('nkwwlkj.cn').id, 'nkwwlkj');
-    assert.strictEqual(R.canBulkDownload({ url: BOOK_URL }), false);
-    assert.strictEqual(R.canBulkDownload({ domain: 'www.nkwwlkj.cn' }), false);
-    assert.strictEqual(R.canBulkDownload({ url: 'https://wetriedtls.com/series/x' }), true);
-    assert.strictEqual(R.canBulkDownload({ url: 'https://unknown.example/x' }), true);
-    assert.strictEqual(R.canBulkDownload(null), true);
-  });
-
-  await test('page sites download through the queue wherever the platform can open their pages', () => {
-    const pageEnv = loadEnv({ Platform: { pageSource: { fetch: async () => null } } });
-    assert.strictEqual(pageEnv.NkwwlkjProvider.fetchMode, 'page');
-    assert.strictEqual(pageEnv.ProviderRegistry.canBulkDownload({ url: BOOK_URL }), true, 'with a page source (the app)');
-    assert.strictEqual(env.ProviderRegistry.canBulkDownload({ url: BOOK_URL }), false, 'without one (the extension, until phase 3)');
+    assert.strictEqual(R.getProviderForNovel({ domain: 'www.nkwwlkj.cn' }).id, 'nkwwlkj');
   });
 
   await test('StorageService.getCatalogChapterNumber maps a chapter id to its catalog number', () => {
@@ -352,46 +332,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     unsubscribe();
   });
 
-  function loadTracker() {
-    const trackerEnv = { console, URL, Promise };
-    trackerEnv.globalThis = trackerEnv;
-    vm.createContext(trackerEnv);
-    vm.runInContext(read('src', 'services', 'open-to-save.js'), trackerEnv);
-    return trackerEnv.OpenToSave;
-  }
-  function fakeTabs() {
-    const created = [];
-    const removed = [];
-    let next = 100;
-    return {
-      created,
-      removed,
-      api: {
-        create: async (props) => { const tab = { id: next++, ...props }; created.push(tab); return tab; },
-        remove: async (id) => { removed.push(id); }
-      }
-    };
-  }
-  function memoryStore() {
-    let ids = [];
-    return { get: async () => ids.slice(), set: async (list) => { ids = list.slice(); } };
-  }
   const OPEN_URL = 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100374104';
-
-  const HAND_OFF = 'chrome-extension://abc/views/open-to-save.html';
-  const pageFor = (url) => `${HAND_OFF}?url=${encodeURIComponent(url)}`;
-
-  await test('Open to save opens the chapter in a background tab and closes it once the chapter is saved', async () => {
-    const tabs = fakeTabs();
-    const tracker = loadTracker().createTracker({ tabs: tabs.api, store: memoryStore(), pageFor });
-    const tab = await tracker.open(OPEN_URL);
-    assert.strictEqual(tabs.created.length, 1);
-    assert.strictEqual(tabs.created[0].url, pageFor(OPEN_URL), 'opens the hand-off page, which then loads the chapter like a clicked link');
-    assert.strictEqual(tabs.created[0].active, false, 'the new tab does not take focus');
-    assert.strictEqual(await tracker.done(tab.id), true);
-    assert.deepStrictEqual(tabs.removed, [tab.id], 'the tab is closed after the save');
-    assert.strictEqual(await tracker.done(tab.id), false, 'closed only once');
-  });
 
   function runHandOff(search) {
     const replaced = [];
@@ -429,48 +370,8 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     assert(/<script src="\.\.\/scripts\/open-to-save-page\.js"><\/script>/.test(html), 'loads its script from the extension (CSP forbids inline scripts)');
   });
 
-  await test('tabs the user opened are never closed', async () => {
-    const tabs = fakeTabs();
-    const tracker = loadTracker().createTracker({ tabs: tabs.api, store: memoryStore() });
-    assert.strictEqual(await tracker.done(55), false);
-    const tab = await tracker.open(OPEN_URL);
-    await tracker.forget(tab.id);
-    assert.strictEqual(await tracker.done(tab.id), false, 'a tab the user closed or reused is forgotten');
-    assert.deepStrictEqual(tabs.removed, []);
-  });
-
-  await test('opened tabs are remembered across a background restart', async () => {
-    const tabs = fakeTabs();
-    const store = memoryStore();
-    const OpenToSave = loadTracker();
-    const tab = await OpenToSave.createTracker({ tabs: tabs.api, store }).open(OPEN_URL);
-    const restarted = OpenToSave.createTracker({ tabs: tabs.api, store });
-    assert.strictEqual(await restarted.done(tab.id), true);
-    assert.deepStrictEqual(tabs.removed, [tab.id]);
-  });
-
-  await test('Open to save only opens web pages', async () => {
-    const tabs = fakeTabs();
-    const tracker = loadTracker().createTracker({ tabs: tabs.api, store: memoryStore() });
-    for (const url of ['javascript:alert(1)', 'chrome://settings', 'file:///C:/x', '', 'not a url']) {
-      await assert.rejects(() => tracker.open(url), /web page/i, url);
-    }
-    assert.strictEqual(tabs.created.length, 0);
-  });
-
-  await test('background opens Open to save tabs and closes them when the page reports the save', () => {
-    const bg = read('extension', 'scripts', 'background.js');
-    assert(/importScripts\([^)]*'\.\.\/services\/open-to-save\.js'/.test(bg), 'the worker loads open-to-save.js');
-    const handler = (name) => {
-      const at = bg.indexOf(`message.action === '${name}'`);
-      assert(at >= 0, `handles ${name}`);
-      return bg.slice(at, bg.indexOf("message.action ===", at + 10));
-    };
-    assert(/openToSave\.open\(message\.url\)/.test(handler('OPEN_TO_SAVE')));
-    assert(/pageFor:[\s\S]{0,120}views\/open-to-save\.html/.test(bg), 'tabs open on the hand-off page');
-    assert(/openToSave\.done\(sender\.tab\.id\)/.test(handler('PAGE_CHAPTER_DONE')));
-    assert(/openToSave\.done\(sender\.tab\.id\)/.test(handler('SAVE_CHAPTER')), 'a text save closes its tab');
-    assert(/chrome\.tabs\.onRemoved\.addListener\([\s\S]{0,80}openToSave\.forget/.test(bg), 'closed tabs are forgotten');
+  await test('background opens download tabs on the hand-off page', () => {
+    assert(/pageFor:[\s\S]{0,120}views\/open-to-save\.html/.test(read('extension', 'scripts', 'background.js')), 'download tabs open on the hand-off page');
   });
 
   await test('background announces each chapter saved from an open page', () => {

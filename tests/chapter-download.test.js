@@ -167,11 +167,11 @@ process.on('beforeExit', () => {
     assert.deepStrictEqual(plain(await S.saveOpenedChapter({ slug: 'nope', chapterNumber: 1, rawText: 'x' })), { success: false, error: 'Novel is not managed' });
   });
 
-  await test('characterization: saveRecognizedChapter saves OCR text as a paid chapter and announces it', async () => {
+  await test('characterization: an already-read image chapter is saved as a paid chapter and announced', async () => {
     const { S, stores, notices } = makeEnv();
     await seed(S, stores);
     const progress = [];
-    await S.saveRecognizedChapter('n1', 3, { text: ' 第三章 ', url: 'https://page/3', title: 'Page title', onProgress: (p) => progress.push(p.phase) });
+    await S.downloadChapter('n1', 3, { source: { kind: 'image', text: ' 第三章 ', url: 'https://page/3', title: 'Page title' }, onProgress: (p) => progress.push(p.phase) });
     assert.deepStrictEqual(plain(recordFields(stores.chapters.n1_ch3)), {
       id: 'n1_ch3', novelId: 'n1', chapterNumber: 3, title: 'Catalog title 3', url: 'https://page/3', rawText: '第三章', convertedText: '',
       originalRawText: '第三章', reasoningText: null, ocrSource: true, isTranslated: false, modelUsed: null,
@@ -180,13 +180,13 @@ process.on('beforeExit', () => {
     assert.strictEqual(stores.novels.n1.chapterList[0].locked, true, 'marked paid');
     assert.deepStrictEqual(progress, ['saving', 'completed']);
     assert.deepStrictEqual(notices, [['n1', 3]]);
-    await assert.rejects(() => S.saveRecognizedChapter('n1', 4, { text: '  ' }), /No text was recognized/);
+    await assert.rejects(() => S.downloadChapter('n1', 4, { source: { kind: 'image', text: '  ' } }), /No text was found/);
   });
 
-  await test('characterization: saveRecognizedChapter translates OCR text as an OCR source', async () => {
+  await test('characterization: an already-read image chapter is translated as an OCR source', async () => {
     const { S, stores, aiCalls } = makeEnv();
     await seed(S, stores);
-    await S.saveRecognizedChapter('n1', 4, { text: '第四章', translation: TRANSLATION });
+    await S.downloadChapter('n1', 4, { source: { kind: 'image', text: '第四章' }, translation: TRANSLATION });
     const record = stores.chapters.n1_ch4;
     assert.strictEqual(aiCalls.length, 1);
     assert.strictEqual(record.isTranslated, true);

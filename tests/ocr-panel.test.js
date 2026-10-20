@@ -224,12 +224,12 @@ process.on('beforeExit', () => {
     assert.deepStrictEqual(Object.keys(stores.chapters), []);
   });
 
-  await test('saveRecognizedChapter saves OCR text with the catalog title, order and the page URL when translation is off', async () => {
+  await test('downloadChapter saves an already-read image chapter with the catalog title, order and the page URL when translation is off', async () => {
     const { S, stores, aiCalls } = makeStorageEnv();
     await seedCatalogNovel(S, stores);
     const announced = [];
     S.notifyChapterSaved = (novelId, chapterNumber) => announced.push([novelId, chapterNumber, !!stores.chapters['novel-1_ch7']]);
-    const saved = await S.saveRecognizedChapter('novel-1', 7, { text: OCR_TEXT, url: PAGE_URL, translation: { ...TRANSLATION, enabled: false } });
+    const saved = await S.downloadChapter('novel-1', 7, { source: { kind: 'image', text: OCR_TEXT, url: PAGE_URL }, translation: { ...TRANSLATION, enabled: false } });
     assert.strictEqual(aiCalls.length, 0, 'translation stays off when the user has it off');
     const record = stores.chapters['novel-1_ch7'];
     assert(record, 'chapter is saved');
@@ -245,11 +245,11 @@ process.on('beforeExit', () => {
     assert.deepStrictEqual(announced, [['novel-1', 7, true]], 'announces the chapter only after it is stored');
   });
 
-  await test('saveRecognizedChapter translates OCR text with the user settings and the OCR note when translation is on', async () => {
+  await test('downloadChapter translates an already-read image chapter with the user settings and the OCR note when translation is on', async () => {
     const { S, stores, aiCalls } = makeStorageEnv();
     await seedCatalogNovel(S, stores);
     const progress = [];
-    await S.saveRecognizedChapter('novel-1', 7, { text: 'Lin Dong walked into Qingyang Town.', url: PAGE_URL, translation: { ...TRANSLATION }, onProgress: (p) => progress.push(p.phase) });
+    await S.downloadChapter('novel-1', 7, { source: { kind: 'image', text: 'Lin Dong walked into Qingyang Town.', url: PAGE_URL }, translation: { ...TRANSLATION }, onProgress: (p) => progress.push(p.phase) });
     assert.strictEqual(aiCalls.length, 1);
     assert.strictEqual(aiCalls[0].model, 'm1', 'uses the configured model');
     assert.strictEqual(aiCalls[0].provider, 'custom', 'uses the configured provider');
@@ -266,12 +266,12 @@ process.on('beforeExit', () => {
     assert(names.some((n) => n.original === 'Wang Lin'), 'captured names are added like a normal download');
   });
 
-  await test('saveRecognizedChapter marks the chapter as paid in the catalog (image-only pages are paid chapters)', async () => {
+  await test('downloadChapter marks an image chapter as paid in the catalog (image-only pages are paid chapters)', async () => {
     const { S, stores } = makeStorageEnv();
     await seedCatalogNovel(S, stores);
     stores.novels['novel-1'].chapterList[1].locked = false;
     S.updateNovel = async (id, updates) => (stores.novels[id] = { ...stores.novels[id], ...updates });
-    await S.saveRecognizedChapter('novel-1', 7, { text: OCR_TEXT, url: PAGE_URL, translation: { enabled: false } });
+    await S.downloadChapter('novel-1', 7, { source: { kind: 'image', text: OCR_TEXT, url: PAGE_URL }, translation: { enabled: false } });
     const list = stores.novels['novel-1'].chapterList;
     assert.strictEqual(list.find((c) => c.chapterNumber === 7).locked, true, 'the OCR-saved chapter is paid');
     assert.strictEqual(list.find((c) => c.chapterNumber === 6).locked, undefined, 'other chapters are untouched');
@@ -293,11 +293,11 @@ process.on('beforeExit', () => {
     assert.strictEqual(stores.novels['novel-1'].chapterList.find((c) => c.slug === '100043459').locked, true, 'a chapter the site starts charging for becomes paid');
   });
 
-  await test('saveRecognizedChapter never saves an empty chapter', async () => {
+  await test('downloadChapter never saves an empty image chapter', async () => {
     const { S, stores } = makeStorageEnv();
     await seedCatalogNovel(S, stores);
     for (const text of ['', '   \n\n  ', null]) {
-      await assert.rejects(() => S.saveRecognizedChapter('novel-1', 7, { text, url: PAGE_URL }), /no text/i);
+      await assert.rejects(() => S.downloadChapter('novel-1', 7, { source: { kind: 'image', text, url: PAGE_URL } }), /no text/i);
     }
     assert.deepStrictEqual(Object.keys(stores.chapters), [], 'nothing is saved');
   });
@@ -539,55 +539,6 @@ process.on('beforeExit', () => {
     assert.strictEqual(save.rawText, '正文第一段。');
     assert.strictEqual(save.url, PAGE_URL);
     assert(!appended.some((el) => el.tagName === 'IFRAME'), 'no OCR panel for text chapters');
-  });
-
-  await test('content script: reports a chapter that is already saved, so a background tab can close', async () => {
-    const image = `<script>${SD}</script>${BREAD}<div class="article-title">第七章</div><div class="read-bd" id="J_ImgRead"><div id="J_BookImage"></div></div>`;
-    const text = `<script>${SD}</script>${BREAD}<div class="article-title">第七章</div><div class="read-bd" id="J_BookRead"><p class="chapter">正文。</p></div>`;
-    for (const html of [image, text]) {
-      const { sent } = runContentScript({ html, check: { isManaged: true, isSaved: true, chapterNumber: 7, novelId: 'novel-1' } });
-      await flush();
-      assert(sent.some((m) => m.action === 'PAGE_CHAPTER_DONE'), 'tells the background the chapter is done');
-    }
-    const { sent } = runContentScript({ html: text, check: { isManaged: false } });
-    await flush();
-    assert(!sent.some((m) => m.action === 'PAGE_CHAPTER_DONE'), 'an unmanaged novel is not reported');
-  });
-
-  await test('content script: reports an OCR save from the panel, and ignores other frames', async () => {
-    const html = `<script>${SD}</script>${BREAD}<div class="article-title">第七章</div><div class="read-bd" id="J_ImgRead"><div id="J_BookImage"></div></div>`;
-    const { sent, appended, listeners } = runContentScript({ html, check: { isManaged: true, isSaved: false, chapterNumber: 7, novelId: 'novel-1' } });
-    await flush();
-    const frame = appended.find((el) => el.tagName === 'IFRAME');
-    listeners.message({ source: frame.contentWindow, origin: 'https://evil.example', data: { type: 'QC_OCR_SAVED' } });
-    assert(!sent.some((m) => m.action === 'PAGE_CHAPTER_DONE'), 'messages from other origins are ignored');
-    listeners.message({ source: frame.contentWindow, origin: new URL(frame.src).origin, data: { type: 'QC_OCR_SAVED' } });
-    assert(sent.some((m) => m.action === 'PAGE_CHAPTER_DONE'), 'the panel\'s saved message is passed on');
-  });
-
-  await test('StorageService.openChapterInBackground asks the background to open the page', async () => {
-    const { env, S } = makeStorageEnv();
-    assert.strictEqual(S.openChapterInBackground(PAGE_URL), false, 'without the extension runtime the link opens normally');
-    const sent = [];
-    env.chrome = { runtime: { sendMessage: (msg, cb) => { sent.push(msg); cb({ ok: true }); } } };
-    assert.strictEqual(S.openChapterInBackground(PAGE_URL), true);
-    assert.deepStrictEqual(plain(sent), [{ action: 'OPEN_TO_SAVE', url: PAGE_URL }]);
-    assert.strictEqual(S.openChapterInBackground(''), false, 'nothing to open');
-  });
-
-  await test('StorageService.openChapterInBackground falls back to a normal new tab if the background cannot', async () => {
-    const { env, S } = makeStorageEnv();
-    const opened = [];
-    env.open = (url, target) => opened.push([url, target]);
-    env.chrome = { runtime: { lastError: undefined, sendMessage: (msg, cb) => cb({ ok: false, error: 'no' }) } };
-    assert.strictEqual(S.openChapterInBackground(PAGE_URL), true);
-    await new Promise((r) => setTimeout(r, 0));
-    assert.deepStrictEqual(opened, [[PAGE_URL, '_blank']]);
-    env.chrome = { runtime: { get lastError() { return { message: 'Receiving end does not exist.' }; }, sendMessage: (msg, cb) => cb(undefined) } };
-    opened.length = 0;
-    S.openChapterInBackground(PAGE_URL);
-    await new Promise((r) => setTimeout(r, 0));
-    assert.deepStrictEqual(opened, [[PAGE_URL, '_blank']], 'also when no background worker answers');
   });
 
   await test('saveImageChapter calls onSaved once, only after the chapter is stored', async () => {

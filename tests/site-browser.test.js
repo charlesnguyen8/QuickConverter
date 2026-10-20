@@ -223,175 +223,14 @@ process.on('beforeExit', () => {
     assert(/tainted canvas/.test(posted[0].error), 'says why');
   });
 
-  // --- SiteSave: the app-side Open to save on top of Platform.siteBrowser ---
+  // --- SiteSave: the app's site window on top of Platform.siteBrowser ---
 
-  await test('Open to save loads the chapter hidden, saves what the page reports and closes it', async () => {
+  await test('the site window handles one page at a time', async () => {
     const { createSiteSave } = loadSiteSave().SiteSave;
     const browser = fakeBrowser();
-    const storage = fakeStorage();
-    const save = createSiteSave({ browser, storage, loadScript: async () => 'SCRIPT' });
-    const done = save.open(NK_CHAPTER_URL);
-    await tick(); await tick();
-    assert.deepStrictEqual(browser.calls, [['open', NK_CHAPTER_URL, { script: 'SCRIPT', visible: false }]]);
-    await browser.emit(CHAPTER_MSG);
-    const result = plain(await done);
-    assert.strictEqual(result.status, 'saved');
-    assert.strictEqual(result.chapterNumber, 1);
-    const saveCall = storage.calls.find((c) => c[0] === 'saveOpenedChapter');
-    assert.deepStrictEqual(saveCall[1], {
-      slug: '100181750',
-      chapterNumber: 1,
-      title: '第一章 张角',
-      url: NK_CHAPTER_URL,
-      rawText: 'First line of the chapter.\n\nSecond line.',
-      domain: 'www.nkwwlkj.cn'
-    });
-    assert.deepStrictEqual(browser.calls.slice(1), [['close']], 'closed once saved, never shown');
-    assert.strictEqual(browser.subscribed, false, 'stops listening');
-  });
-
-  await test('Open to save syncs the catalog once when the chapter is new', async () => {
-    const { createSiteSave } = loadSiteSave().SiteSave;
-    const browser = fakeBrowser();
-    const storage = fakeStorage();
-    const done = createSiteSave({ browser, storage, loadScript: async () => '' }).open(NK_CHAPTER_URL);
-    await tick(); await tick();
-    await browser.emit({ ...CHAPTER_MSG, chapterSlug: '100043461' });
-    const result = plain(await done);
-    assert.strictEqual(result.status, 'saved');
-    assert.strictEqual(result.chapterNumber, 2);
-    assert(storage.calls.some((c) => c[0] === 'syncNovelChapters'), 'catalog synced');
-  });
-
-  await test('Open to save does not save a chapter twice or for a book that is not in the library', async () => {
-    const { createSiteSave } = loadSiteSave().SiteSave;
-    let browser = fakeBrowser();
-    let storage = fakeStorage({ saved: [1] });
-    let done = createSiteSave({ browser, storage, loadScript: async () => '' }).open(NK_CHAPTER_URL);
-    await tick(); await tick();
-    await browser.emit(CHAPTER_MSG);
-    assert.strictEqual((await done).status, 'already-saved');
-    assert(!storage.calls.some((c) => c[0] === 'saveOpenedChapter'));
-    assert.deepStrictEqual(browser.calls.slice(-1), [['close']]);
-
-    browser = fakeBrowser();
-    storage = fakeStorage({ managed: false });
-    done = createSiteSave({ browser, storage, loadScript: async () => '' }).open(NK_CHAPTER_URL);
-    await tick(); await tick();
-    await browser.emit(CHAPTER_MSG);
-    assert.strictEqual((await done).status, 'not-managed');
-    assert(!storage.calls.some((c) => c[0] === 'saveOpenedChapter'));
-  });
-
-  await test('Open to save shows the page when it needs the user, then saves once the chapter appears', async () => {
-    const { createSiteSave } = loadSiteSave().SiteSave;
-    for (const type of ['empty', 'other', 'image']) {
-      const browser = fakeBrowser();
-      const storage = fakeStorage();
-      const done = createSiteSave({ browser, storage, loadScript: async () => '' }).open(NK_CHAPTER_URL);
-      await tick(); await tick();
-      await browser.emit({ type, url: NK_CHAPTER_URL });
-      assert.deepStrictEqual(browser.calls.slice(1), [['show']], `${type}: shown to the user`);
-      await browser.emit(CHAPTER_MSG);
-      assert.strictEqual((await done).status, 'saved', `${type}: saved after the user's step`);
-      assert.deepStrictEqual(browser.calls.slice(-1), [['close']]);
-    }
-  });
-
-  const IMAGE_MSG = (() => {
-    const { rawText, title, novelTitle, ...rest } = CHAPTER_MSG;
-    return { ...rest, type: 'image', image: { base64: 'AQID', mimeType: 'image/png', width: 939, height: 4200 } };
-  })();
-
-  await test('Open to save reads an image chapter with OCR in the app and saves it as a paid chapter', async () => {
-    const { createSiteSave } = loadSiteSave().SiteSave;
-    const browser = fakeBrowser();
-    const storage = fakeStorage();
-    const recognized = [];
-    const save = createSiteSave({
-      browser,
-      storage,
-      loadScript: async () => '',
-      recognize: async (bytes, mimeType) => {
-        recognized.push([Array.from(new Uint8Array(bytes)), mimeType, browser.calls.some((c) => c[0] === 'close')]);
-        return '第一章 张角\n\n正文';
-      }
-    });
-    const statuses = [];
-    save.onStatus((s) => statuses.push(plain(s)));
-    const done = save.open(NK_CHAPTER_URL);
-    await tick(); await tick();
-    await browser.emit(IMAGE_MSG);
-    const result = plain(await done);
-    assert.strictEqual(result.status, 'saved');
-    assert.strictEqual(result.chapterNumber, 1);
-    assert.deepStrictEqual(recognized, [[[1, 2, 3], 'image/png', true]], 'the image bytes are read after the site window closed');
-    const saveCall = storage.calls.find((c) => c[0] === 'saveRecognizedChapter');
-    assert.deepStrictEqual(saveCall, ['saveRecognizedChapter', 'novel-1', 1, { text: '第一章 张角\n\n正文', url: NK_CHAPTER_URL }]);
-    assert(!browser.calls.some((c) => c[0] === 'show'), 'never shown');
-    assert.deepStrictEqual(statuses.map((s) => s.status), ['reading', 'saving', 'saved']);
-    assert.strictEqual(statuses[0].chapterNumber, 1);
-  });
-
-  await test('Open to save does not OCR a chapter that is already saved', async () => {
-    const { createSiteSave } = loadSiteSave().SiteSave;
-    const browser = fakeBrowser();
-    let read = 0;
-    const done = createSiteSave({ browser, storage: fakeStorage({ saved: [1] }), loadScript: async () => '', recognize: async () => { read++; return 'x'; } }).open(NK_CHAPTER_URL);
-    await tick(); await tick();
-    await browser.emit(IMAGE_MSG);
-    assert.strictEqual((await done).status, 'already-saved');
-    assert.strictEqual(read, 0);
-  });
-
-  await test('Open to save reports OCR that finds nothing or fails, and saves nothing', async () => {
-    const { createSiteSave } = loadSiteSave().SiteSave;
-    for (const recognize of [async () => '   ', async () => { throw new Error('model failed to load'); }, null]) {
-      const browser = fakeBrowser();
-      const storage = fakeStorage();
-      const save = createSiteSave({ browser, storage, loadScript: async () => '', recognize });
-      const statuses = [];
-      save.onStatus((s) => statuses.push(plain(s)));
-      const done = save.open(NK_CHAPTER_URL);
-      await tick(); await tick();
-      await browser.emit(IMAGE_MSG);
-      const result = plain(await done);
-      assert.strictEqual(result.status, 'error');
-      assert(result.error, 'says why');
-      assert(!storage.calls.some((c) => c[0] === 'saveRecognizedChapter'), 'nothing saved');
-      assert.strictEqual(statuses[statuses.length - 1].status, 'error');
-    }
-  });
-
-  await test('Open to save reports a saved text chapter too', async () => {
-    const { createSiteSave } = loadSiteSave().SiteSave;
-    const browser = fakeBrowser();
-    const save = createSiteSave({ browser, storage: fakeStorage(), loadScript: async () => '' });
-    const statuses = [];
-    save.onStatus((s) => statuses.push(plain(s)));
-    const done = save.open(NK_CHAPTER_URL);
-    await tick(); await tick();
-    await browser.emit(CHAPTER_MSG);
-    await done;
-    assert.deepStrictEqual(statuses.map((s) => [s.status, s.chapterNumber]), [['saved', 1]]);
-  });
-
-  await test('Open to save shows the page if nothing arrives in time, and ends when the user closes it', async () => {
-    const { createSiteSave } = loadSiteSave().SiteSave;
-    const browser = fakeBrowser();
-    const done = createSiteSave({ browser, storage: fakeStorage(), loadScript: async () => '', hiddenWaitMs: 20 }).open(NK_CHAPTER_URL);
-    await new Promise((r) => setTimeout(r, 50));
-    assert.deepStrictEqual(browser.calls.slice(1), [['show']]);
-    await browser.emit({ type: 'closed' });
-    assert.strictEqual((await done).status, 'cancelled');
-  });
-
-  await test('Open to save handles one page at a time', async () => {
-    const { createSiteSave } = loadSiteSave().SiteSave;
-    const browser = fakeBrowser();
-    const save = createSiteSave({ browser, storage: fakeStorage(), loadScript: async () => '' });
-    const first = save.open(NK_CHAPTER_URL);
-    const second = save.open('https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043461');
+    const save = createSiteSave({ browser, loadScript: async () => '' });
+    const first = save.fetchPage(NK_CHAPTER_URL);
+    const second = save.fetchPage('https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043461');
     await tick(); await tick();
     assert.strictEqual(browser.calls.filter((c) => c[0] === 'open').length, 1, 'second waits');
     await browser.emit(CHAPTER_MSG);
@@ -399,18 +238,18 @@ process.on('beforeExit', () => {
     await tick(); await tick();
     assert.strictEqual(browser.calls.filter((c) => c[0] === 'open').length, 2, 'second starts after the first');
     await browser.emit({ ...CHAPTER_MSG, chapterSlug: '100043461', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043461' });
-    assert.strictEqual((await second).status, 'saved');
+    assert.strictEqual((await second).kind, 'text');
   });
 
   await test('each site opens with the user agent it needs (nkwwlkj desktop, sangtacviet phone Chrome)', async () => {
     const env = loadSiteSave();
     const { createSiteSave } = env.SiteSave;
     const browser = fakeBrowser();
-    const save = createSiteSave({ browser, storage: fakeStorage(), loadScript: async () => '', userAgentFor: async (url) => (url.includes('sangtacviet') ? 'PHONE' : 'DESKTOP') });
-    const first = save.open('https://sangtacviet.com/truyen/uukanshu/1/92019/1122/');
+    const save = createSiteSave({ browser, loadScript: async () => '', userAgentFor: async (url) => (url.includes('sangtacviet') ? 'PHONE' : 'DESKTOP') });
+    const first = save.fetchPage('https://sangtacviet.com/truyen/uukanshu/1/92019/1122/');
     await tick(); await tick();
     await browser.emit({ type: 'closed' });
-    await first;
+    await assert.rejects(first, /Closed before the chapter loaded/);
     const login = save.openLogin('https://www.nkwwlkj.cn/signup/login');
     await tick(); await tick();
     await browser.emit({ type: 'closed' });
@@ -700,30 +539,7 @@ process.on('beforeExit', () => {
 
   // --- Wiring in the app ---
 
-  await test('in the app, Open to save goes through SiteSave instead of a browser tab', async () => {
-    const opened = [];
-    const env = {
-      console: { log() {}, warn() {}, error() {} },
-      URL,
-      setTimeout,
-      clearTimeout,
-      localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
-      SiteSave: { available: () => true, open: (url) => { opened.push(url); return Promise.resolve({ status: 'saved' }); } },
-      open: () => { throw new Error('no new window in the app'); }
-    };
-    env.window = env;
-    env.self = env;
-    env.globalThis = env;
-    vm.createContext(env);
-    vm.runInContext(read('src', 'services', 'platform.js'), env);
-    vm.runInContext(read('src', 'services', 'storage.js'), env);
-    assert.strictEqual(env.StorageService.openChapterInBackground(NK_CHAPTER_URL), true);
-    assert.deepStrictEqual(opened, [NK_CHAPTER_URL]);
-    env.SiteSave.available = () => false;
-    assert.strictEqual(env.StorageService.openChapterInBackground(NK_CHAPTER_URL), false, 'no site browser: the link opens normally');
-  });
-
-  await test('views that offer Open to save load the site saver after storage', () => {
+  await test('views that download load the site saver after storage', () => {
     for (const view of ['novel', 'reader']) {
       const html = read('src', 'views', `${view}.html`);
       const storageAt = html.indexOf('../services/storage.js');
@@ -749,6 +565,27 @@ process.on('beforeExit', () => {
     assert(/isFeatureSupported\(WebViewFeature\.REQUESTED_WITH_HEADER_ALLOW_LIST\)/.test(plugin) && /isFeatureSupported\(WebViewFeature\.USER_AGENT_METADATA\)/.test(plugin), 'only where the WebView supports it');
     const appGradle = read('android', 'app', 'build.gradle');
     assert(/implementation "androidx\.webkit:webkit:\$androidxWebkitVersion"/.test(appGradle), 'the app compiles against androidx.webkit');
+  });
+
+  await test('Download is the only way to save a chapter from the library: Open to save is gone', () => {
+    const env = loadSiteSave();
+    const saver = env.SiteSave.createSiteSave({ browser: fakeBrowser() });
+    assert.deepStrictEqual(Object.keys(saver).sort(), ['fetchPage', 'openLogin'], 'the app site window only fetches pages for downloads and opens logins');
+    assert(!('open' in env.SiteSave) && !('onStatus' in env.SiteSave), 'no Open to save sessions or status');
+    const storage = read('src', 'services', 'storage.js');
+    assert(!/openChapterInBackground\(/.test(storage) && !/saveRecognizedChapter\(/.test(storage), 'storage has no Open to save or separate OCR save');
+    const bg = read('extension', 'scripts', 'background.js');
+    assert(!/OPEN_TO_SAVE|PAGE_CHAPTER_DONE|OpenToSave/.test(bg), 'the worker has no Open to save tracker or messages');
+    assert(!/PAGE_CHAPTER_DONE|QC_OCR_SAVED/.test(read('extension', 'scripts', 'content.js')), 'the content script reports no Open to save tabs');
+    assert(!fs.existsSync(path.join(repoRoot, 'src', 'services', 'open-to-save.js')), 'no tracker file');
+    assert(!fs.existsSync(path.join(repoRoot, 'src', 'components', 'react', 'shared', 'ManualChapterAction.jsx')), 'no Open to save link');
+    assert(!fs.existsSync(path.join(repoRoot, 'src', 'components', 'react', 'shared', 'SiteSaveStatus.jsx')), 'no Open to save status');
+    assert(!/canBulkDownload/.test(read('src', 'providers', 'registry.js')), 'every site is queueable');
+    for (const site of ['nkwwlkj.js', 'sangtacviet.js']) {
+      const src = read('src', 'providers', site);
+      assert(!/supportsBulkDownload|fetchChapterContent/.test(src) && /fetchMode: 'page'/.test(src), `${site} downloads through its page`);
+    }
+    assert(!/cannot be downloaded in the background/.test(read('src', 'services', 'download-queue.js')), 'the queue has no special case for it');
   });
 
   console.log(`--- Site Browser Test Suite: ${passed}/${passed + failed} passed ---`);

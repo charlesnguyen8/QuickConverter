@@ -1,6 +1,6 @@
 # One Download for every site and platform (plan)
 
-**Status (2026-10-20):** approved by the owner. Phases 1–4 built (phases 2–4 not yet checked on the phone or in the extension); phase 5 to do.
+**Status (2026-10-20):** approved by the owner. All five phases built. Phases 3–4 checked in the extension; phases 2 and 5 not yet checked on the phone.
 
 **Goal:** a single `downloadChapter` that the queue calls for every site. Everything around it
 (queue, Download All, cooldowns, retries, AI translation, progress dock, background
@@ -158,6 +158,16 @@ once nothing else calls them).
 5. **Remove the old paths.** `OPEN_TO_SAVE`/`SAVE_CHAPTER` messages, `site-save.js` sessions,
    `supportsBulkDownload`, the queue's "cannot be downloaded in the background" special case;
    update `context.md`, `AGENTS.md`, README.
+   - **Built:** removed the Open to save tracker (`open-to-save.js`, `OPEN_TO_SAVE`,
+     `PAGE_CHAPTER_DONE`, `QC_OCR_SAVED`), `StorageService.openChapterInBackground` and
+     `saveRecognizedChapter`, the rows' Open to save link (`ManualChapterAction.jsx`; the paid/free
+     badge moved to `ChapterAccessBadge.jsx`) and the reader's Open chapter page view, the app's
+     save sessions and their status toast (`SiteSaveStatus.jsx`; `SiteSave` now only fetches pages
+     for downloads and opens logins), `supportsBulkDownload`, `canBulkDownload`,
+     `Platform.canOpenPages`, the page providers' throwing `fetchChapterContent` and the queue's
+     "cannot be downloaded in the background" case. Every row and the reader offer Download on
+     every site. Kept: the hand-off page (download tabs open through it), and manual reading
+     auto-save (`SAVE_CHAPTER`, the OCR panel), pending the open point below. Docs updated.
 
 Each phase ends with `npm test` green, `build:ext` and `build:app`, and an owner check on the
 phone and in the extension.

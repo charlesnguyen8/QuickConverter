@@ -1,40 +1,8 @@
 import React from 'react';
 import ReaderDeepseekCard from './ReaderDeepseekCard.jsx';
 import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
-import { handleOpenToSave } from '../shared/ManualChapterAction.jsx';
 
-export default function ReaderNotSaved({ downloading = false, failed = false, translating = false, model = 'deepseek-flash', onDownload, deepseekRef, manualChapter = null, novel = null }) {
-  if (manualChapter) {
-    const locked = !!manualChapter.locked;
-    return (
-      <div id="reader-not-saved" className="flex flex-col items-center justify-center py-10 px-4 sm:px-8 text-center gap-6 bg-slate-800/40 border border-slate-700/60 rounded-xl shadow-sm">
-        <div className="w-14 h-14 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-2xl text-indigo-400">
-          {locked ? '🔒' : '📖'}
-        </div>
-        <div className="flex flex-col gap-1 items-center">
-          <h2 className="text-lg font-bold text-slate-100">{locked ? 'Paid Chapter' : 'Chapter Not Saved Yet'}</h2>
-          <p className="text-sm text-slate-400 max-w-md">
-            {locked
-              ? 'Unlock this chapter with coins on the source site, then open the chapter page. It opens in a background tab, its image is read with OCR and saved, the tab closes and the chapter shows up here.'
-              : "This site can't be downloaded directly. Open the chapter page: it opens in a background tab, is saved automatically, the tab closes and the chapter shows up here."}
-          </p>
-        </div>
-        <ProviderLoginBanner novel={novel} compact />
-        <a
-          id="reader-open-source-link"
-          href={manualChapter.url || '#'}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(e) => handleOpenToSave(e, manualChapter.url)}
-          className="inline-flex items-center gap-2 px-6 py-2.5 min-h-10 rounded-lg text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-        >
-          <span>Open chapter page</span>
-          <span aria-hidden="true">↗</span>
-        </a>
-      </div>
-    );
-  }
-
+export default function ReaderNotSaved({ downloading = false, failed = false, translating = false, model = 'deepseek-flash', onDownload, deepseekRef, novel = null }) {
   let label = 'Download Chapter';
   if (failed) label = 'Failed. Click to Retry';
   else if (downloading) label = translating ? `Translating (${model})...` : 'Downloading Chapter...';
@@ -50,6 +18,8 @@ export default function ReaderNotSaved({ downloading = false, failed = false, tr
           This chapter hasn't been saved to your local storage yet. Configure your translation options below and download directly.
         </p>
       </div>
+
+      <ProviderLoginBanner novel={novel} compact />
 
       <ReaderDeepseekCard ref={deepseekRef} />
 

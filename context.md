@@ -13,6 +13,7 @@ QuickConverter is an offline-first web novel reader, downloader, and AI translat
 - **View apps**: Popup (`PopupApp`), Settings (`SettingsView`), Reader (`ReaderApp`) and Novel (`NovelApp`) are fully React; each HTML file is a shell mounting one `src/components/react/<view>/<view>-entry.jsx` into `#<view>-root`.
 - **Persistent Storage**: W3C **IndexedDB** (`src/services/storage.js`) for novel metadata and chapter texts.
 - **Queue & Background**: Centralized sequential FIFO queue (`src/services/download-queue.js`) with concurrency control (strictly 1 task at a time), pause/resume, individual item cancellation, and live circular progress.
+- **One Download for every site**: `StorageService.downloadChapter` gets a chapter's source and translates and saves it (`_saveChapterFromSource`). Sites with `fetchMode: 'page'` (nkwwlkj, sangtacviet) are read through `Platform.pageSource`: in the app the SiteBrowser (`src/services/site-save.js`), in the extension a background tab the worker opens (`src/services/tab-page-source.js`); both share the page rules in `src/services/page-session.js`. Image chapters are read with `Platform.ocr` (app: the in-page engine; extension: an offscreen document, `src/services/offscreen-ocr.js`). When a page needs the user, the queue shows "Waiting for you" with Show page. Reading a chapter of a library book on the site still saves it (`SAVE_CHAPTER` / the OCR panel).
 - **Dock UI**: Reusable solid, opaque floating dock React component (`src/components/react/shared/QueueDock.jsx`) with expanded/collapsed modes, mounted via `src/components/react/shared/queue-dock-entry.jsx`.
 - **AI Translation Coordinator**: `src/services/ai-service.js` routing between `src/services/deepseek.js` (Official Cloud API) and `src/services/custom-api.js` (Local Web Bridge / Custom OpenAI-compatible endpoints) with SSE streaming delta accumulation and DeepThink reasoning extraction/discarding.
 - **Shared View Modules**: `src/components/react/shared/AiConfigPanel.jsx` is the single DeepSeek / AI-provider configuration panel (provider, API key, model, prompt, cooldown, balance) used by the novel, popup and reader views — each view wraps it and passes `variant`/`ids`/`hooks`, and reads it back via an imperative ref (`getDownloadOptions`, `refreshBalance`). The Settings view has its own React DeepSeek controller (`src/components/react/settings/SettingsDeepSeekTab.jsx`). `src/components/react/shared/AddBookButton.jsx` is the reusable "Add Book by Link" button + modal used by the library and popup.
@@ -37,10 +38,10 @@ QuickConverter/
 │   │                    #   platform.js is the only place that touches chrome.*
 │   ├── styles/          # input.css and tailwind.css build output
 │   └── views/           # Page shells (library, novel, reader, settings; extension-only: popup,
-│                        #   ocr-panel, open-to-save)
+│                        #   ocr-panel, ocr-offscreen, open-to-save hand-off)
 ├── extension/           # Chrome-only files, copied into dist/ by build:ext
 │   ├── manifest.json    # MV3 manifest (paths match dist/)
-│   ├── scripts/         # background service worker, content script, Open-to-save hand-off
+│   ├── scripts/         # background service worker, content script, download-tab hand-off
 │   └── rules/           # declarativeNetRequest rules (sangtacviet Referer)
 ├── tests/               # Automated unit & integration tests
 ├── dist/                # Built extension (npm run build:ext; load unpacked from here)

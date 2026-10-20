@@ -1,7 +1,6 @@
-// QuickConverter "Open to save" in the app: opens a chapter in the native SiteBrowser (hidden
-// behind the app), runs the page script there and saves the chapter it reports. The page is
-// shown when the user has to act (log in, pass a check, an image chapter, a slow page); it
-// closes itself once the chapter is saved. One page at a time.
+// The app's site window: downloads of page sites open the chapter in the native SiteBrowser
+// (hidden behind the app), run the page script there and get back what the page shows; the page
+// is shown when the user has to act. Log in opens the site visibly. One page at a time.
 (function (global) {
   'use strict';
 
@@ -41,157 +40,29 @@
     return cachedScript;
   }
 
-  function fromBase64(text) {
-    const binary = global.atob(text);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes.buffer;
-  }
-
-  function errorText(err) {
-    return err && err.message ? err.message : String(err);
-  }
-
-  function createSiteSave({ browser, storage, loadScript = loadPageScript, hiddenWaitMs = 45000, recognize = null, userAgentFor = () => undefined }) {
+  function createSiteSave({ browser, loadScript = loadPageScript, hiddenWaitMs = 45000, userAgentFor = () => undefined }) {
     let chain = Promise.resolve();
-    const statusListeners = new Set();
 
-    function report(update) {
-      statusListeners.forEach((handler) => {
-        try {
-          handler(update);
-        } catch (e) {}
-      });
-    }
-
-    async function chapterNumberOf(novel, message) {
-      if (message.chapterNumber !== null && message.chapterNumber !== undefined) {
-        return { novel, number: Number(message.chapterNumber) };
-      }
-      let number = storage.getCatalogChapterNumber(novel, message.chapterSlug);
-      if (number === null) {
-        novel = (await storage.syncNovelChapters(novel.id)) || novel;
-        number = storage.getCatalogChapterNumber(novel, message.chapterSlug);
-      }
-      return { novel, number };
-    }
-
-    async function targetOf(message) {
-      const managed = await storage.getNovelBySlug(message.slug);
-      if (!managed) return { outcome: { status: 'not-managed' } };
-      const { novel, number } = await chapterNumberOf(managed, message);
-      if (number === null || Number.isNaN(number)) return { outcome: { status: 'not-in-catalog', novelId: novel.id } };
-      if (await storage.isChapterSaved(novel.id, number)) {
-        return { outcome: { status: 'already-saved', novelId: novel.id, chapterNumber: number } };
-      }
-      return { novel, number };
-    }
-
-    async function saveImageChapter(message, novel, number) {
-      const where = { novelId: novel.id, chapterNumber: number };
-      const fail = (error) => {
-        report({ status: 'error', ...where, error });
-        return { status: 'error', ...where, error };
-      };
-      if (typeof recognize !== 'function') return fail('Reading chapter images is not available on this page.');
-      report({ status: 'reading', ...where });
-      let text;
-      try {
-        text = String((await recognize(fromBase64(message.image.base64), message.image.mimeType)) || '').trim();
-      } catch (e) {
-        return fail(`Could not read the chapter image: ${errorText(e)}`);
-      }
-      if (!text) return fail('No text was found in the chapter image.');
-      report({ status: 'saving', ...where });
-      try {
-        await storage.saveRecognizedChapter(novel.id, number, { text, url: message.url });
-      } catch (e) {
-        return fail(`Could not save the chapter: ${errorText(e)}`);
-      }
-      report({ status: 'saved', ...where });
-      return { status: 'saved', ...where, ocr: true };
-    }
-
-    async function saveChapter(message) {
-      const { novel, number, outcome } = await targetOf(message);
-      if (outcome) return outcome;
-      const result = await storage.saveOpenedChapter({
-        slug: message.slug,
-        chapterNumber: number,
-        title: message.title,
-        url: message.url,
-        rawText: message.rawText,
-        domain: message.domain
-      });
-      const saved = { status: result && result.success ? 'saved' : 'error', novelId: novel.id, chapterNumber: number };
-      if (result && !result.success) saved.error = result.error;
-      report(saved);
-      return saved;
-    }
-
-    function session(url, { login = false } = {}) {
+    function loginSession(url) {
       return new Promise((resolve) => {
         let finished = false;
-        let timer = null;
         let unsubscribe = () => {};
 
-        const finish = async (outcome, { alreadyClosed = false } = {}) => {
+        const finish = (outcome) => {
           if (finished) return;
           finished = true;
-          clearTimeout(timer);
           unsubscribe();
-          if (!alreadyClosed && outcome.status !== 'cancelled' && outcome.status !== 'closed') {
-            try {
-              await browser.close();
-            } catch (e) {}
-          }
           resolve(outcome);
         };
 
-        const reveal = () => {
-          clearTimeout(timer);
-          Promise.resolve(browser.show()).catch(() => {});
-        };
-
-        unsubscribe = browser.subscribe(async (message) => {
-          if (finished || !message) return;
-          if (message.type === 'closed') {
-            finish({ status: login ? 'closed' : 'cancelled' });
-            return;
-          }
-          if (login) return;
-          if (message.type === 'chapter') {
-            try {
-              finish(await saveChapter(message));
-            } catch (e) {
-              finish({ status: 'error', error: e && e.message ? e.message : String(e) });
-            }
-          } else if (message.type === 'image' && message.image && message.image.base64) {
-            clearTimeout(timer);
-            try {
-              const { novel, number, outcome } = await targetOf(message);
-              if (outcome) {
-                finish(outcome);
-                return;
-              }
-              try {
-                await browser.close();
-              } catch (e) {}
-              finish(await saveImageChapter(message, novel, number), { alreadyClosed: true });
-            } catch (e) {
-              finish({ status: 'error', error: errorText(e) });
-            }
-          } else if (message.type === 'empty' || message.type === 'other' || message.type === 'image') {
-            reveal();
-          }
+        unsubscribe = browser.subscribe((message) => {
+          if (!finished && message && message.type === 'closed') finish({ status: 'closed' });
         });
 
         (async () => {
           try {
-            const script = login ? '' : await loadScript();
             const userAgent = await userAgentFor(url);
-            await browser.open(url, userAgent ? { script, visible: login, userAgent } : { script, visible: login });
-            if (!login && !finished) timer = setTimeout(reveal, hiddenWaitMs);
+            await browser.open(url, userAgent ? { script: '', visible: true, userAgent } : { script: '', visible: true });
           } catch (e) {
             finish({ status: 'error', error: e && e.message ? e.message : String(e) });
           }
@@ -199,10 +70,10 @@
       });
     }
 
-    function enqueue(url, options) {
-      const run = chain.then(() => session(url, options));
-      chain = run.catch(() => {});
-      return run;
+    function enqueue(run) {
+      const next = chain.then(run);
+      chain = next.catch(() => {});
+      return next;
     }
 
     // The app's page source for downloads: opens the chapter page hidden, and resolves with what
@@ -256,20 +127,11 @@
     }
 
     return {
-      open(url) {
-        return enqueue(url);
-      },
       fetchPage(url, options) {
-        const run = chain.then(() => fetchSession(url, options));
-        chain = run.catch(() => {});
-        return run;
+        return enqueue(() => fetchSession(url, options));
       },
       openLogin(url) {
-        return enqueue(url, { login: true });
-      },
-      onStatus(handler) {
-        statusListeners.add(handler);
-        return () => statusListeners.delete(handler);
+        return enqueue(() => loginSession(url));
       }
     };
   }
@@ -287,19 +149,9 @@
   function sharedSiteSave() {
     const platform = global.Platform;
     const browser = platform && platform.siteBrowser;
-    const storage = global.StorageService;
-    if (!browser || !storage) return null;
+    if (!browser) return null;
     if (!shared) {
-      shared = createSiteSave({
-        browser,
-        storage,
-        userAgentFor: siteUserAgent,
-        recognize: (bytes, mimeType) => {
-          const ocr = global.QCOcr;
-          if (!ocr || typeof ocr.recognize !== 'function') throw new Error('Reading chapter images is not available on this page.');
-          return ocr.recognize(bytes, mimeType);
-        }
-      });
+      shared = createSiteSave({ browser, userAgentFor: siteUserAgent });
     }
     return shared;
   }
@@ -312,10 +164,6 @@
     available() {
       return !!sharedSiteSave();
     },
-    open(url) {
-      const saver = sharedSiteSave();
-      return saver ? saver.open(url) : Promise.resolve({ status: 'unavailable' });
-    },
     openLogin(url) {
       const saver = sharedSiteSave();
       return saver ? saver.openLogin(url) : Promise.resolve({ status: 'unavailable' });
@@ -323,10 +171,6 @@
     fetchPage(url, options) {
       const saver = sharedSiteSave();
       return saver ? saver.fetchPage(url, options) : Promise.reject(new Error('Opening chapter pages is not available here.'));
-    },
-    onStatus(handler) {
-      const saver = sharedSiteSave();
-      return saver ? saver.onStatus(handler) : () => {};
     }
   };
 

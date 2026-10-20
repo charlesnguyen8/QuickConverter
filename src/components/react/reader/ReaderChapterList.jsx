@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProgressRing } from '../shared/QueueDock.jsx';
-import ManualChapterAction, { ChapterAccessBadge, canBulkDownload } from '../shared/ManualChapterAction.jsx';
+import { ChapterAccessBadge } from '../shared/ChapterAccessBadge.jsx';
 import { LastReadBadge } from '../shared/lastRead.jsx';
 import ReaderDeepseekCard from './ReaderDeepseekCard.jsx';
 import { navigateToChapter, useReaderSearch } from './readerLocation.js';
@@ -23,7 +23,7 @@ function Spinner({ className }) {
   );
 }
 
-export function ReaderChapterRow({ novel, chapter, chNum, downloadedChapter, queueStatus, onDownload, isCurrent = false, manualOnly = false }) {
+export function ReaderChapterRow({ novel, chapter, chNum, downloadedChapter, queueStatus, onDownload, isCurrent = false }) {
   const isDownloaded = !!downloadedChapter;
   const queueService = getQueueService();
 
@@ -89,8 +89,6 @@ export function ReaderChapterRow({ novel, chapter, chNum, downloadedChapter, que
         <span className="hidden group-hover/q:inline">Remove ✕</span>
       </button>
     );
-  } else if (manualOnly) {
-    action = <ManualChapterAction chapter={chapter} compact />;
   } else {
     action = (
       <button
@@ -301,7 +299,6 @@ export default function ReaderChapterList({ open = false, onClose }) {
                     queueStatus={queueStatus}
                     onDownload={handleDownload}
                     isCurrent={chNum === ch}
-                    manualOnly={!canBulkDownload(novel)}
                   />
                 );
               })

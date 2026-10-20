@@ -987,23 +987,6 @@ const StorageService = {
     platform.messaging.send({ action: 'CHAPTER_SAVED', novelId, chapterNumber }).catch(() => {});
   },
 
-  openChapterInBackground(url) {
-    const siteSave = typeof SiteSave !== 'undefined' ? SiteSave : null;
-    if (url && siteSave && siteSave.available()) {
-      siteSave.open(url).catch(() => {});
-      return true;
-    }
-    const platform = storagePlatform();
-    if (!url || !platform || !platform.messaging.isNative()) return false;
-    const fallback = () => {
-      const scope = typeof window !== 'undefined' ? window : null;
-      if (scope && typeof scope.open === 'function') scope.open(url, '_blank');
-    };
-    platform.messaging.send({ action: 'OPEN_TO_SAVE', url })
-      .then((response) => { if (!response || !response.ok) fallback(); }, fallback);
-    return true;
-  },
-
   subscribeChapterSaved(handler) {
     const platform = storagePlatform();
     if (!platform) return () => {};
@@ -1631,8 +1614,8 @@ const StorageService = {
     }
     if (source.kind === 'image') {
       let text;
-      if (typeof source.text === 'string') {
-        text = source.text.trim();
+      if (source.text !== undefined) {
+        text = String(source.text || '').trim();
       } else {
         const platform = storagePlatform();
         const ocr = platform && platform.ocr;
@@ -1800,21 +1783,6 @@ const StorageService = {
       novelId: novel.id,
       novelTitle: novel.title
     };
-  },
-
-  async saveRecognizedChapter(novelId, chapterNumber, options = {}) {
-    const text = typeof options.text === 'string' ? options.text.trim() : '';
-    if (!text) {
-      throw new Error('No text was recognized in the chapter image. The chapter was not saved.');
-    }
-
-    return this.downloadChapter(novelId, chapterNumber, {
-      source: { kind: 'image', text, title: options.title, url: options.url },
-      translation: options.translation,
-      onProgress: options.onProgress,
-      onChunk: options.onChunk,
-      signal: options.signal
-    });
   },
 
   async deleteChapter(novelId, chapterNumber) {

@@ -200,7 +200,6 @@ const SangtacvietProvider = (() => {
     name: 'Sáng Tác Việt (sangtacviet.com)',
     shortName: 'Sáng Tác Việt',
     domains: ['sangtacviet.com', 'www.sangtacviet.com'],
-    supportsBulkDownload: false,
     contentWaitMs: 20000,
     appUserAgent: 'mobile',
     fetchMode: 'page',
@@ -289,10 +288,6 @@ const SangtacvietProvider = (() => {
         console.warn('[sangtacviet Provider] Could not load the chapter list (open the book page and try again):', e);
         return [];
       }
-    },
-
-    async fetchChapterContent() {
-      throw new Error('Sáng Tác Việt chapters cannot be downloaded in the background. Open the chapter page in the browser to save it.');
     },
 
     formatTitle(slug, rawTitle) {
