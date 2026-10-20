@@ -62,7 +62,7 @@ export default function NovelHero({ novel: givenNovel = null } = {}) {
         />
       </div>
 
-      <div className="flex flex-col gap-3 flex-1 w-full justify-between self-stretch">
+      <div className="flex flex-col gap-3 flex-1 min-w-0 w-full justify-between self-stretch">
         <div>
           <div className="flex items-center justify-between gap-2 mb-2">
             <div className="flex items-center gap-2">

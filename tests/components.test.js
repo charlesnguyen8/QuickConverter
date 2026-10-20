@@ -668,6 +668,17 @@ async function testAsync(name, fn) {
     assert(html.includes('893'), 'total from the given book');
   });
 
+  test('a long chapter title in Continue reading shrinks instead of pushing the header past its card', () => {
+    const longTitle = 'Chapter 36 - Five Energies Converging to the Origin and the Changes that Followed';
+    const html = render(h(NovelHero, { novel: { id: 'n1', title: 'A Regressor’s Tale of Cultivation', totalChapters: 893, lastRead: { chapterNumber: 36, title: longTitle } } }));
+    const column = html.match(/<div class="([^"]*flex-1[^"]*)"><div><div class="flex items-center justify-between gap-2 mb-2">/);
+    assert(column && /(^| )min-w-0( |$)/.test(column[1]), `the text column may shrink (${column ? column[1] : 'not found'})`);
+    const button = html.match(/<a id="novel-continue-btn"[^>]*>([\s\S]*?)<\/a>/);
+    assert(button, 'continue button');
+    const titleSpan = button[1].match(/<span class="([^"]*)">Chapter 36 - Five Energies/);
+    assert(titleSpan && /truncate/.test(titleSpan[1]) && /(^| )min-w-0( |$)/.test(titleSpan[1]), 'the title truncates (needs min-w-0 inside the inline-flex button)');
+  });
+
   test('NovelApp has a per-novel dictionary conversion toggle, off by default', () => {
     assert(/id="conversion-mode-toggle"[^>]*role="switch"/.test(novelApp) || /role="switch"[^>]*id="conversion-mode-toggle"/.test(novelApp), 'toggle is a switch');
     assert(/id="conversion-mode-toggle"[^>]*aria-checked="false"/.test(novelApp) || /aria-checked="false"[^>]*id="conversion-mode-toggle"/.test(novelApp), 'off by default');

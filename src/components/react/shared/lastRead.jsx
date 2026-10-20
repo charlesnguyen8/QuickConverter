@@ -75,7 +75,7 @@ export function ContinueReadingButton({ novel, id, compact = false, target }) {
     >
       <span aria-hidden="true">▶</span>
       <span className="whitespace-nowrap">Continue reading · {lastReadLabel(novel)}</span>
-      {lastRead.title && !compact ? <span className="font-normal text-indigo-100 truncate">{lastRead.title}</span> : null}
+      {lastRead.title && !compact ? <span className="font-normal text-indigo-100 truncate min-w-0">{lastRead.title}</span> : null}
     </a>
   );
 }
