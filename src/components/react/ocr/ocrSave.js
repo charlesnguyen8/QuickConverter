@@ -44,10 +44,8 @@ export async function saveImageChapter({ image, target, storage, recognize, getT
   let translatedText = '';
   report({ status: translating ? 'translating' : 'saving', sourceText: text });
   try {
-    const saved = await storage.saveRecognizedChapter(target.novelId, target.chapterNumber, {
-      text,
-      url: target.url,
-      title: target.title,
+    const saved = await storage.downloadChapter(target.novelId, target.chapterNumber, {
+      source: { kind: 'image', text, url: target.url, title: target.title },
       translation,
       onProgress: (p) => {
         if (!p) return;

@@ -329,6 +329,18 @@ process.on('beforeExit', () => {
     assert.strictEqual(stores.chapters['novel-1_ch7'].url, PAGE_URL);
   });
 
+  await test('saveImageChapter saves through the one download, handing it the image with the text already read', async () => {
+    const calls = [];
+    const storage = { downloadChapter: async (id, n, options) => { calls.push([id, n, options.source, typeof options.onProgress, typeof options.onChunk]); return { rawText: OCR_TEXT, isTranslated: false }; } };
+    const result = await saveImageChapter({
+      image: IMAGE, target: { ...TARGET, title: 'Page title' }, storage,
+      recognize: async () => OCR_TEXT,
+      getTranslation: () => ({ ...TRANSLATION, enabled: false })
+    });
+    assert.strictEqual(result.ok, true);
+    assert.deepStrictEqual(calls, [['novel-1', 7, { kind: 'image', text: OCR_TEXT, url: PAGE_URL, title: 'Page title' }, 'function', 'function']]);
+  });
+
   await test('saveImageChapter translates with ocrSource and shows translation progress when the user has translation on', async () => {
     const { S, stores, aiCalls } = makeStorageEnv();
     await seedCatalogNovel(S, stores);
@@ -411,7 +423,7 @@ process.on('beforeExit', () => {
   await test('saveImageChapter keeps the recognized text when saving fails, so a retry does not re-run OCR', async () => {
     const { S, stores } = makeStorageEnv();
     await seedCatalogNovel(S, stores);
-    const failing = { saveRecognizedChapter: async () => { throw new Error('QuotaExceededError'); } };
+    const failing = { downloadChapter: async () => { throw new Error('QuotaExceededError'); } };
     const first = await saveImageChapter({
       image: IMAGE, target: TARGET, storage: failing,
       recognize: async () => OCR_TEXT,

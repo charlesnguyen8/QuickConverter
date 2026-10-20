@@ -1630,13 +1630,18 @@ const StorageService = {
       throw new Error('UserCancelled');
     }
     if (source.kind === 'image') {
-      const platform = storagePlatform();
-      const ocr = platform && platform.ocr;
-      if (!ocr) throw new Error('Reading chapter images is not available here.');
-      if (options && typeof options.onProgress === 'function') {
-        options.onProgress({ phase: 'reading', percent: 20, text: 'Reading the chapter image...' });
+      let text;
+      if (typeof source.text === 'string') {
+        text = source.text.trim();
+      } else {
+        const platform = storagePlatform();
+        const ocr = platform && platform.ocr;
+        if (!ocr) throw new Error('Reading chapter images is not available here.');
+        if (options && typeof options.onProgress === 'function') {
+          options.onProgress({ phase: 'reading', percent: 20, text: 'Reading the chapter image...' });
+        }
+        text = String((await ocr.recognize(source.image.bytes, source.image.mimeType, source.image.base64)) || '').trim();
       }
-      const text = String((await ocr.recognize(source.image.bytes, source.image.mimeType, source.image.base64)) || '').trim();
       if (!text) throw new Error('No text was found in the chapter image. The chapter was not saved.');
       if (options && options.signal && options.signal.aborted) throw new Error('UserCancelled');
       return this._saveChapterFromSource(novel, chapterNumber, { origin: 'ocr', title: source.title, url: source.url, rawText: text }, options);
@@ -1803,12 +1808,8 @@ const StorageService = {
       throw new Error('No text was recognized in the chapter image. The chapter was not saved.');
     }
 
-    const novel = await this.getNovelById(novelId);
-    if (!novel) {
-      throw new Error(`Novel not found for ID: ${novelId}`);
-    }
-
-    return this._saveChapterFromSource(novel, chapterNumber, { origin: 'ocr', title: options.title, url: options.url, rawText: text }, {
+    return this.downloadChapter(novelId, chapterNumber, {
+      source: { kind: 'image', text, title: options.title, url: options.url },
       translation: options.translation,
       onProgress: options.onProgress,
       onChunk: options.onChunk,

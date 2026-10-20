@@ -276,6 +276,21 @@ process.on('beforeExit', () => {
     assert(progress.includes('reading'), 'reports reading the image');
   });
 
+  await test('an image chapter whose text was already read is saved as paid without running OCR again', async () => {
+    const env = makeEnv({ provider: pageProvider() });
+    await seedPageBook(env);
+    let ocrRuns = 0;
+    env.global.QCOcr = { recognize: async () => { ocrRuns++; return 'other'; } };
+    await env.S.downloadChapter('n1', 1, { source: { kind: 'image', text: ' 第一章 张角\n\n正文 ', url: 'https://page/1' } });
+    assert.strictEqual(ocrRuns, 0, 'OCR is not repeated');
+    const record = env.stores.chapters.n1_ch1;
+    assert.strictEqual(record.ocrSource, true);
+    assert.strictEqual(record.originalRawText, '第一章 张角\n\n正文');
+    assert.strictEqual(record.url, 'https://page/1');
+    assert.strictEqual(env.stores.novels.n1.chapterList[0].locked, true, 'marked paid');
+    await assert.rejects(() => env.S.downloadChapter('n1', 1, { source: { kind: 'image', text: '  ' } }), /No text was found/);
+  });
+
   await test('without a page source or OCR the download says why', async () => {
     const none = makeEnv({ provider: pageProvider() });
     await seedPageBook(none);

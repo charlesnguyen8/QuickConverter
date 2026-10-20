@@ -1,6 +1,6 @@
 # One Download for every site and platform (plan)
 
-**Status (2026-10-20):** approved by the owner. Phases 1–3 built (phases 2–3 not yet checked on the phone or in the extension), with the extension half of phase 4; phases 4 (OCR panel) and 5 to do.
+**Status (2026-10-20):** approved by the owner. Phases 1–4 built (phases 2–4 not yet checked on the phone or in the extension); phase 5 to do.
 
 **Goal:** a single `downloadChapter` that the queue calls for every site. Everything around it
 (queue, Download All, cooldowns, retries, AI translation, progress dock, background
@@ -151,6 +151,10 @@ once nothing else calls them).
      Show page button does nothing in the extension yet (the tab is already brought forward).
 4. **Image chapters.** `Platform.ocr` (app engine; extension offscreen document), OCR + translation
    in the pipeline, paid marking. OCR panel saving routed through `downloadChapter`.
+   - **Built:** `downloadChapter` takes an image source whose text is already read
+     (`{ kind: 'image', text, url, title }`) and saves it as an OCR chapter without running OCR
+     again. The OCR panel (`ocrSave.js`) saves through it, and `saveRecognizedChapter` is now a
+     thin caller of it (still used by the app's Open to save until phase 5).
 5. **Remove the old paths.** `OPEN_TO_SAVE`/`SAVE_CHAPTER` messages, `site-save.js` sessions,
    `supportsBulkDownload`, the queue's "cannot be downloaded in the background" special case;
    update `context.md`, `AGENTS.md`, README.
