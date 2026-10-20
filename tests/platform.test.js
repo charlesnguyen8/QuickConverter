@@ -452,6 +452,27 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   assert(/<service[^>]*android:name="\.DownloadService"[^>]*android:foregroundServiceType="dataSync"/.test(manifestXml) || /<service[^>]*android:foregroundServiceType="dataSync"[^>]*android:name="\.DownloadService"/.test(manifestXml), 'declares the service');
   console.log('✓ App mode: background downloads hold a foreground service');
 
+  // The extension's worker provides its own page source and OCR; extension pages know that the
+  // worker can open pages, so page sites download there too.
+  const provEnv = { console, setTimeout, clearTimeout };
+  provEnv.globalThis = provEnv;
+  vm.createContext(provEnv);
+  vm.runInContext(platformCode, provEnv);
+  assert.strictEqual(provEnv.Platform.canOpenPages, false, 'a plain page cannot open chapter pages');
+  const tabSource = { fetch: async () => null };
+  const offscreen = { recognize: async () => 'text' };
+  provEnv.Platform.provide({ pageSource: tabSource, ocr: offscreen });
+  assert.strictEqual(provEnv.Platform.pageSource, tabSource, 'the provided page source wins');
+  assert.strictEqual(provEnv.Platform.ocr, offscreen, 'and the provided OCR');
+  assert.strictEqual(provEnv.Platform.canOpenPages, true);
+  const extPage = { console, setTimeout, clearTimeout, chrome: fakeChrome().chrome };
+  extPage.globalThis = extPage;
+  vm.createContext(extPage);
+  vm.runInContext(platformCode, extPage);
+  assert.strictEqual(extPage.Platform.pageSource, null, 'an extension page has no page source of its own');
+  assert.strictEqual(extPage.Platform.canOpenPages, true, 'but its downloads run in the worker, which can open pages');
+  console.log('✓ Page source and OCR can be provided; extension pages can download page sites');
+
   // Android back button and leaving the app go through @capacitor/app.
   const shellCalls = [];
   let backCallback = null;
@@ -613,7 +634,7 @@ const Platform = require(path.join(repoRoot, 'src', 'services', 'platform.js'));
   const app = targets.buildTarget('app');
   assert.strictEqual(ext.outDir, '../dist');
   assert.strictEqual(app.outDir, '../dist-app');
-  assert.deepStrictEqual(Object.keys(ext.inputs).sort(), ['library', 'novel', 'ocr', 'opentosave', 'popup', 'reader', 'settings']);
+  assert.deepStrictEqual(Object.keys(ext.inputs).sort(), ['library', 'novel', 'ocr', 'ocroffscreen', 'opentosave', 'popup', 'reader', 'settings']);
   assert.deepStrictEqual(Object.keys(app.inputs).sort(), ['library', 'novel', 'reader', 'settings'], 'the app has no popup, site OCR panel or Open-to-save hand-off page');
   const copiedTo = (target) => target.copies.map(([, to]) => to);
   for (const dir of ['providers', 'services', 'styles', 'fonts', 'icons', 'ocr', 'dict']) {

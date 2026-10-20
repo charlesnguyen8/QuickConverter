@@ -524,6 +524,148 @@ process.on('beforeExit', () => {
     assert.deepStrictEqual(plain(fetched), [['https://x/1', { a: 1 }]]);
   });
 
+  // --- Extension: the same page source over a background tab ---
+
+  function loadTabSource() {
+    const env = { console: { log() {}, warn() {}, error() {} }, setTimeout, clearTimeout, URL, atob, btoa };
+    env.globalThis = env;
+    vm.createContext(env);
+    vm.runInContext(read('src', 'services', 'page-session.js'), env);
+    vm.runInContext(read('src', 'services', 'tab-page-source.js'), env);
+    return env.TabPageSource;
+  }
+
+  function fakeTabs() {
+    const calls = [];
+    let seq = 40;
+    return {
+      calls,
+      create: async (props) => { calls.push(['create', props.url, props.active]); return { id: ++seq, windowId: 1 }; },
+      remove: async (id) => { calls.push(['remove', id]); },
+      activate: async (id) => { calls.push(['activate', id]); }
+    };
+  }
+
+  await test('extension: a download opens the chapter in a background tab and returns what its page reports', async () => {
+    const tabs = fakeTabs();
+    const source = loadTabSource().create({ tabs, pageFor: (url) => `ext://open-to-save?url=${url}` });
+    const done = source.fetch(NK_CHAPTER_URL, { expect: EXPECT });
+    await tick(); await tick();
+    assert.deepStrictEqual(tabs.calls, [['create', `ext://open-to-save?url=${NK_CHAPTER_URL}`, false]], 'in the background, through the hand-off page');
+    assert.deepStrictEqual(plain(source.sessionFor(41)), { expect: EXPECT }, 'the content script can ask whether its tab is a download');
+    assert.strictEqual(source.sessionFor(99), null, 'other tabs are not');
+    source.onTabMessage(41, CHAPTER_MSG);
+    const result = plain(await done);
+    assert.deepStrictEqual(result, { kind: 'text', title: '第一章 张角', rawText: 'First line of the chapter.\n\nSecond line.', url: NK_CHAPTER_URL });
+    assert.deepStrictEqual(tabs.calls.slice(1), [['remove', 41]], 'the tab closes');
+    assert.strictEqual(source.sessionFor(41), null);
+  });
+
+  await test('extension: when the page needs you the tab comes forward; closing it ends the download', async () => {
+    const tabs = fakeTabs();
+    const source = loadTabSource().create({ tabs, pageFor: (url) => url });
+    const asks = [];
+    let done = source.fetch(NK_CHAPTER_URL, { expect: EXPECT, onNeedsUser: (r) => asks.push(r) });
+    await tick(); await tick();
+    source.onTabMessage(41, { type: 'empty', url: NK_CHAPTER_URL });
+    assert.strictEqual(asks.length, 1);
+    assert.deepStrictEqual(tabs.calls.slice(1), [['activate', 41]]);
+    source.onTabRemoved(41);
+    await assert.rejects(() => done, /Closed before the chapter loaded/);
+    assert(!tabs.calls.some((c) => c[0] === 'remove'), 'not removed again');
+
+    const slow = fakeTabs();
+    const timed = loadTabSource().create({ tabs: slow, pageFor: (url) => url, hiddenWaitMs: 20 });
+    const waits = [];
+    done = timed.fetch(NK_CHAPTER_URL, { expect: EXPECT, onNeedsUser: (r) => waits.push(r) });
+    await new Promise((r) => setTimeout(r, 50));
+    assert.strictEqual(waits.length, 1, 'a silent page (login, check) asks for you too');
+    timed.onTabMessage(41, { ...CHAPTER_MSG, type: 'image', rawText: undefined, image: { base64: 'AQID', mimeType: 'image/png', width: 1, height: 1 } });
+    const image = await done;
+    assert.strictEqual(image.kind, 'image');
+    assert.strictEqual(image.image.base64, 'AQID', 'keeps the picture as text for the OCR page');
+    assert.deepStrictEqual(Array.from(new Uint8Array(image.image.bytes)), [1, 2, 3]);
+  });
+
+  await test('extension: a cancelled download closes its tab', async () => {
+    const tabs = fakeTabs();
+    const source = loadTabSource().create({ tabs, pageFor: (url) => url });
+    const controller = new AbortController();
+    const done = source.fetch(NK_CHAPTER_URL, { expect: EXPECT, signal: controller.signal });
+    await tick(); await tick();
+    controller.abort();
+    await assert.rejects(() => done, /UserCancelled/);
+    assert.deepStrictEqual(tabs.calls.slice(-1), [['remove', 41]]);
+  });
+
+  await test('extension: in a download tab the content script reports the page instead of saving it', async () => {
+    const sent = [];
+    const document = { documentElement: { outerHTML: NK_RENDERED }, getElementById: () => null, createElement: () => ({ style: {} }), body: { appendChild() {} } };
+    const env = {
+      console: { log() {}, warn() {}, error() {} },
+      URL, URLSearchParams, setTimeout, clearTimeout, btoa,
+      MutationObserver: class { observe() {} },
+      document,
+      chrome: {
+        runtime: {
+          lastError: undefined,
+          getURL: (p) => `chrome-extension://abc/${p}`,
+          sendMessage: (msg, cb) => {
+            sent.push(JSON.parse(JSON.stringify(msg)));
+            if (msg.action === 'PAGE_SOURCE_QUERY') setTimeout(() => cb({ expect: EXPECT }), 0);
+            else if (cb) setTimeout(() => cb({ success: true }), 0);
+          }
+        }
+      }
+    };
+    env.window = { location: { href: NK_CHAPTER_URL }, addEventListener() {}, removeEventListener() {} };
+    env.location = env.window.location;
+    env.globalThis = env;
+    vm.createContext(env);
+    for (const file of [['src', 'providers', 'nkwwlkj.js'], ['src', 'providers', 'registry.js'], ['src', 'services', 'site-page.js'], ['extension', 'scripts', 'content.js']]) {
+      vm.runInContext(read(...file), env);
+    }
+    await new Promise((r) => setTimeout(r, 50));
+    assert.deepStrictEqual(sent.map((m) => m.action), ['PAGE_SOURCE_QUERY', 'PAGE_SOURCE_RESULT']);
+    assert.strictEqual(sent[1].message.type, 'chapter');
+    assert.strictEqual(sent[1].message.chapterSlug, '100043460');
+    assert(!sent.some((m) => m.action === 'SAVE_CHAPTER' || m.action === 'CHECK_CHAPTER'), 'the download pipeline saves, not the content script');
+  });
+
+  await test('extension: the worker answers download tabs, offers the page source and reads images offscreen', () => {
+    const manifest = JSON.parse(read('extension', 'manifest.json'));
+    const pageSites = manifest.content_scripts.filter((c) => c.matches.some((m) => /nkwwlkj|sangtacviet/.test(m)));
+    assert.strictEqual(pageSites.length, 2);
+    pageSites.forEach((c) => {
+      assert(c.js.indexOf('services/site-page.js') > -1 && c.js.indexOf('services/site-page.js') < c.js.indexOf('scripts/content.js'), 'the page runner is injected before the content script');
+    });
+    assert(manifest.permissions.includes('offscreen'), 'offscreen permission for OCR');
+    const background = read('extension', 'scripts', 'background.js');
+    for (const file of ['../services/page-session.js', '../services/tab-page-source.js', '../services/offscreen-ocr.js']) {
+      assert(background.includes(`'${file}'`), `the worker loads ${file}`);
+    }
+    for (const action of ['PAGE_SOURCE_QUERY', 'PAGE_SOURCE_RESULT']) assert(background.includes(`'${action}'`), `the worker handles ${action}`);
+    assert(/Platform\.provide\(\{[\s\S]*pageSource[\s\S]*ocr[\s\S]*\}\)/.test(background), 'and provides the page source and OCR to the platform');
+    assert(/ocroffscreen:\s*'views\/ocr-offscreen\.html'/.test(read('build-targets.mjs')), 'the offscreen OCR page is built for the extension');
+  });
+
+  await test('extension: OCR requests go to the offscreen page and come back as text', async () => {
+    const env = { console: { log() {}, warn() {}, error() {} }, btoa };
+    env.globalThis = env;
+    vm.createContext(env);
+    vm.runInContext(read('src', 'services', 'offscreen-ocr.js'), env);
+    const sent = [];
+    let ensured = 0;
+    const ocr = env.OffscreenOcr.create({
+      ensureDocument: async () => { ensured++; },
+      send: async (msg) => { sent.push(msg); return msg.base64 === 'AQID' ? { text: '第一章' } : { error: 'model failed to load' }; }
+    });
+    assert.strictEqual(await ocr.recognize(new Uint8Array([1, 2, 3]).buffer, 'image/png'), '第一章');
+    assert.deepStrictEqual(plain(sent[0]), { action: 'OCR_RECOGNIZE', target: 'offscreen', base64: 'AQID', mimeType: 'image/png' });
+    assert.strictEqual(ensured, 1, 'makes sure the offscreen page exists');
+    await assert.rejects(() => ocr.recognize(new Uint8Array([9]).buffer, 'image/png'), /model failed to load/);
+  });
+
   await test('Log in opens the site visibly without the page script and ends when closed', async () => {
     const { createSiteSave } = loadSiteSave().SiteSave;
     const browser = fakeBrowser();

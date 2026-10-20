@@ -310,7 +310,7 @@ const EXPECTED_CHINESE = [
     const cs = manifest.content_scripts.find((c) => c.matches.some((m) => m.includes('sangtacviet.com')));
     assert(cs, 'a content script entry must match sangtacviet.com');
     assert(cs.matches.includes('*://sangtacviet.com/truyen/*') && cs.matches.includes('*://*.sangtacviet.com/truyen/*'));
-    assert.deepStrictEqual(cs.js, ['providers/sangtacviet.js', 'providers/registry.js', 'scripts/content.js']);
+    assert.deepStrictEqual(cs.js, ['providers/sangtacviet.js', 'providers/registry.js', 'services/site-page.js', 'scripts/content.js']);
   });
 
   await test('a Chrome request rule adds the Referer the chapter-list endpoint requires, for the extension only', async () => {

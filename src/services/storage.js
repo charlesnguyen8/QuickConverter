@@ -1636,7 +1636,7 @@ const StorageService = {
       if (options && typeof options.onProgress === 'function') {
         options.onProgress({ phase: 'reading', percent: 20, text: 'Reading the chapter image...' });
       }
-      const text = String((await ocr.recognize(source.image.bytes, source.image.mimeType)) || '').trim();
+      const text = String((await ocr.recognize(source.image.bytes, source.image.mimeType, source.image.base64)) || '').trim();
       if (!text) throw new Error('No text was found in the chapter image. The chapter was not saved.');
       if (options && options.signal && options.signal.aborted) throw new Error('UserCancelled');
       return this._saveChapterFromSource(novel, chapterNumber, { origin: 'ocr', title: source.title, url: source.url, rawText: text }, options);

@@ -262,9 +262,35 @@
     }
   }
 
-  function handlePage() {
+  // A tab the download queue opened: report what the page shows and let the queue save it.
+  function askDownloadTab() {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ action: 'PAGE_SOURCE_QUERY' }, (response) => {
+          void chrome.runtime.lastError;
+          resolve(response && response.expect ? response : null);
+        });
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  async function handlePage() {
     const provider = getActiveProvider();
     if (!provider) return;
+
+    if (provider.fetchMode === 'page' && typeof QCSitePage !== 'undefined') {
+      const download = await askDownloadTab();
+      if (download) {
+        QCSitePage.run({
+          window,
+          document,
+          post: (message) => chrome.runtime.sendMessage({ action: 'PAGE_SOURCE_RESULT', message }, () => { void chrome.runtime.lastError; })
+        });
+        return;
+      }
+    }
 
     let urlInfo = provider.parseUrl(window.location.href);
     if (!urlInfo) return;

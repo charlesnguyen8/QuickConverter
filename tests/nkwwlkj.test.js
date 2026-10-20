@@ -695,7 +695,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     assert(cs, 'a content script entry must match nkwwlkj.cn');
     assert(cs.matches.includes('*://*.nkwwlkj.cn/chapter/book_chapter_detail/*'));
     assert(cs.matches.includes('*://*.nkwwlkj.cn/book/book_detail/*'));
-    assert.deepStrictEqual(cs.js, ['providers/nkwwlkj.js', 'providers/registry.js', 'scripts/content.js']);
+    assert.deepStrictEqual(cs.js, ['providers/nkwwlkj.js', 'providers/registry.js', 'services/site-page.js', 'scripts/content.js']);
   });
 
   await test('every view and the background worker load the provider before the registry', () => {

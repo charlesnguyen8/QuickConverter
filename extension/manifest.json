@@ -24,11 +24,16 @@
     "unlimitedStorage",
     "alarms",
     "identity",
-    "declarativeNetRequestWithHostAccess"
+    "declarativeNetRequestWithHostAccess",
+    "offscreen"
   ],
   "declarative_net_request": {
     "rule_resources": [
-      { "id": "sangtacviet", "enabled": true, "path": "rules/sangtacviet.json" }
+      {
+        "id": "sangtacviet",
+        "enabled": true,
+        "path": "rules/sangtacviet.json"
+      }
     ]
   },
   "oauth2": {
@@ -76,6 +81,7 @@
       "js": [
         "providers/nkwwlkj.js",
         "providers/registry.js",
+        "services/site-page.js",
         "scripts/content.js"
       ],
       "run_at": "document_idle"
@@ -88,6 +94,7 @@
       "js": [
         "providers/sangtacviet.js",
         "providers/registry.js",
+        "services/site-page.js",
         "scripts/content.js"
       ],
       "run_at": "document_idle"
@@ -100,8 +107,13 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["fonts/*", "views/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "fonts/*",
+        "views/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }

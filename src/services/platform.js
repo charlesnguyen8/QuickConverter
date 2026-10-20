@@ -568,6 +568,8 @@
     }
   };
 
+  const provided = {};
+
   const Platform = {
     get name() {
       return isExtension() ? 'chrome' : 'web';
@@ -594,6 +596,7 @@
     // Opens a chapter page and returns what it shows (the download queue's page source). The app
     // uses its SiteBrowser through SiteSave; the extension gets its own in a later phase.
     get pageSource() {
+      if (provided.pageSource) return provided.pageSource;
       if (isExtension()) return null;
       const siteSave = global.SiteSave;
       if (!siteSave || typeof siteSave.available !== 'function' || typeof siteSave.fetchPage !== 'function' || !siteSave.available()) return null;
@@ -601,9 +604,19 @@
     },
     // Reads the text of an image chapter (the app's in-page OCR engine).
     get ocr() {
+      if (provided.ocr) return provided.ocr;
       const engine = global.QCOcr;
       if (!engine || typeof engine.recognize !== 'function') return null;
-      return { recognize: (bytes, mimeType) => engine.recognize(bytes, mimeType) };
+      return { recognize: (bytes, mimeType, base64) => engine.recognize(bytes, mimeType, base64) };
+    },
+    // Whether downloads here can open chapter pages: the app's site window, or the extension,
+    // whose downloads run in its worker.
+    get canOpenPages() {
+      return isExtension() || !!this.pageSource;
+    },
+    // The extension's worker hands in its own page source and OCR.
+    provide(services) {
+      Object.assign(provided, services || {});
     },
     get siteBrowser() {
       if (isExtension()) return null;

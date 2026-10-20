@@ -892,6 +892,19 @@ async function testAsync(name, fn) {
     assert(/<SyncStatusBadge \/>/.test(library) && /'library-synced'/.test(library), 'the library shows the sync status and reloads after a sync');
   });
 
+  const offscreenOcr = await loadComponent('components/react/ocr/ocrOffscreen.js');
+  await testAsync('the offscreen OCR page reads pictures sent by the worker and answers with text or the error', async () => {
+    const seen = [];
+    const recognize = async (bytes, mime) => { seen.push([Array.from(new Uint8Array(bytes)), mime]); return '第一章'; };
+    assert.deepStrictEqual(await offscreenOcr.handleOcrMessage({ action: 'OCR_RECOGNIZE', target: 'offscreen', base64: 'AQID', mimeType: 'image/png' }, recognize), { text: '第一章' });
+    assert.deepStrictEqual(seen, [[[1, 2, 3], 'image/png']]);
+    assert.strictEqual(await offscreenOcr.handleOcrMessage({ action: 'QUEUE_PROGRESS' }, recognize), null, 'ignores other messages');
+    const failing = async () => { throw new Error('model failed to load'); };
+    assert.deepStrictEqual(await offscreenOcr.handleOcrMessage({ action: 'OCR_RECOGNIZE', target: 'offscreen', base64: 'AQID', mimeType: 'image/png' }, failing), { error: 'model failed to load' });
+    const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'views', 'ocr-offscreen.html'), 'utf8');
+    assert(html.indexOf('../services/platform.js') > -1 && html.indexOf('ocr-offscreen-entry.js') > html.indexOf('../services/platform.js'), 'the page loads the platform, then the OCR entry');
+  });
+
   const { SiteSaveStatusView } = await loadComponent('components/react/shared/SiteSaveStatus.jsx');
   test('the Open to save message says what the app is doing with the chapter', () => {
     assert.strictEqual(render(h(SiteSaveStatusView, { status: null })), '');

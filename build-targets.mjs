@@ -15,7 +15,8 @@ const EXTENSION_PAGES = {
   ...APP_PAGES,
   popup: 'views/popup.html',
   ocr: 'views/ocr-panel.html',
-  opentosave: 'views/open-to-save.html'
+  opentosave: 'views/open-to-save.html',
+  ocroffscreen: 'views/ocr-offscreen.html'
 };
 
 const APP_INDEX = `<!DOCTYPE html>

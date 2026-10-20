@@ -1,6 +1,6 @@
 # One Download for every site and platform (plan)
 
-**Status (2026-10-20):** approved by the owner. Phases 1–2 built (phase 2 not yet checked on the phone); phases 3–5 to do.
+**Status (2026-10-20):** approved by the owner. Phases 1–3 built (phases 2–3 not yet checked on the phone or in the extension), with the extension half of phase 4; phases 4 (OCR panel) and 5 to do.
 
 **Goal:** a single `downloadChapter` that the queue calls for every site. Everything around it
 (queue, Download All, cooldowns, retries, AI translation, progress dock, background
@@ -138,6 +138,17 @@ once nothing else calls them).
 3. **Page source in the extension.** Background-tab source in the service worker, content
    script result channel, tab activation on needs-user. Tests with fake `chrome.tabs` and content
    script messages.
+   - **Built:** `PageSession` (`src/services/page-session.js`) holds the page rules both
+     platforms share (right chapter, image or text, which reasons need the user); `SiteSave` now
+     uses it. In the extension the worker provides `TabPageSource` (`tab-page-source.js`):
+     it opens the chapter in a background tab (through `open-to-save.html`), the content script
+     asks `PAGE_SOURCE_QUERY` whether its tab is a download tab and, if so, runs `QCSitePage`
+     and posts `PAGE_SOURCE_RESULT`; the tab closes when the chapter is read and is brought to
+     the front when the user is needed. The worker also provides `OffscreenOcr`
+     (`offscreen-ocr.js`), which reads image chapters in `views/ocr-offscreen.html` (an
+     offscreen document, `offscreen` permission). `Platform.provide` hands both in;
+     `Platform.canOpenPages` lets the extension's views show Download for page sites. The dock's
+     Show page button does nothing in the extension yet (the tab is already brought forward).
 4. **Image chapters.** `Platform.ocr` (app engine; extension offscreen document), OCR + translation
    in the pipeline, paid marking. OCR panel saving routed through `downloadChapter`.
 5. **Remove the old paths.** `OPEN_TO_SAVE`/`SAVE_CHAPTER` messages, `site-save.js` sessions,

@@ -1,7 +1,7 @@
 // QuickConverter Background Service Worker
 // Coordinates tab listeners, automated popup triggering via providers, and IndexedDB message bus.
 
-importScripts('../providers/wetriedtls.js', '../providers/nkwwlkj.js', '../providers/sangtacviet.js', '../providers/registry.js', '../services/platform.js', '../services/custom-api.js', '../services/deepseek.js', '../services/ai-service.js', '../services/name-matcher.js', '../services/longest-matcher.js', '../services/qt-numbers.js', '../services/luat-nhan.js', '../services/text-processors.js', '../services/han-viet.js', '../services/qt-dictionaries.js', '../services/storage.js', '../services/download-queue.js', '../services/open-to-save.js');
+importScripts('../providers/wetriedtls.js', '../providers/nkwwlkj.js', '../providers/sangtacviet.js', '../providers/registry.js', '../services/platform.js', '../services/custom-api.js', '../services/deepseek.js', '../services/ai-service.js', '../services/name-matcher.js', '../services/longest-matcher.js', '../services/qt-numbers.js', '../services/luat-nhan.js', '../services/text-processors.js', '../services/han-viet.js', '../services/qt-dictionaries.js', '../services/storage.js', '../services/download-queue.js', '../services/open-to-save.js', '../services/page-session.js', '../services/tab-page-source.js', '../services/offscreen-ocr.js');
 
 const OPEN_TO_SAVE_KEY = 'qcOpenToSaveTabs';
 const openToSave = OpenToSave.createTracker({
@@ -22,7 +22,44 @@ const openToSave = OpenToSave.createTracker({
   }
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => { openToSave.forget(tabId); });
+// Downloads of page sites open the chapter in a background tab (the content script reports the
+// page back); image chapters are read with OCR in an offscreen page.
+const tabPageSource = TabPageSource.create({
+  pageFor: (url) => `${chrome.runtime.getURL('views/open-to-save.html')}?url=${encodeURIComponent(url)}`,
+  tabs: {
+    create: (props) => chrome.tabs.create(props),
+    remove: (tabId) => chrome.tabs.remove(tabId),
+    activate: async (tabId) => {
+      const tab = await chrome.tabs.update(tabId, { active: true });
+      if (tab && chrome.windows && typeof chrome.windows.update === 'function') {
+        await chrome.windows.update(tab.windowId, { focused: true });
+      }
+    }
+  }
+});
+
+const offscreenOcr = OffscreenOcr.create({
+  ensureDocument: async () => {
+    if (chrome.offscreen && typeof chrome.offscreen.hasDocument === 'function' && await chrome.offscreen.hasDocument()) return;
+    try {
+      await chrome.offscreen.createDocument({
+        url: 'views/ocr-offscreen.html',
+        reasons: ['BLOBS'],
+        justification: 'Read image chapters with OCR while downloading them.'
+      });
+    } catch (e) {
+      if (!/single offscreen|already/i.test(e && e.message ? e.message : '')) throw e;
+    }
+  },
+  send: (message) => chrome.runtime.sendMessage(message)
+});
+
+Platform.provide({ pageSource: tabPageSource, ocr: offscreenOcr });
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  openToSave.forget(tabId);
+  tabPageSource.onTabRemoved(tabId);
+});
 
 function shouldOpenPopup(urlStr) {
   if (!urlStr) return false;
@@ -53,6 +90,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Runtime message listener for content script requests
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'PAGE_SOURCE_QUERY') {
+    sendResponse(sender.tab ? tabPageSource.sessionFor(sender.tab.id) : null);
+    return false;
+  }
+
+  if (message.action === 'PAGE_SOURCE_RESULT') {
+    if (sender.tab) tabPageSource.onTabMessage(sender.tab.id, message.message);
+    return false;
+  }
+
   if (message.action === 'CHECK_CHAPTER') {
     (async () => {
       try {

@@ -262,12 +262,12 @@ process.on('beforeExit', () => {
   await test('an image chapter from the page is read with OCR, saved as paid and translated', async () => {
     const env = makeEnv({ provider: pageProvider() });
     await seedPageBook(env);
-    withPageSource(env, { kind: 'image', image: { bytes: new Uint8Array([1, 2]).buffer, mimeType: 'image/png' }, url: 'https://page/1' }).install(env.global);
+    withPageSource(env, { kind: 'image', image: { bytes: new Uint8Array([1, 2]).buffer, base64: 'AQI=', mimeType: 'image/png' }, url: 'https://page/1' }).install(env.global);
     const read = [];
-    env.global.QCOcr = { recognize: async (bytes, mime) => { read.push([Array.from(new Uint8Array(bytes)), mime]); return '第一章 张角\n\n正文'; } };
+    env.global.QCOcr = { recognize: async (bytes, mime, base64) => { read.push([Array.from(new Uint8Array(bytes)), mime, base64]); return '第一章 张角\n\n正文'; } };
     const progress = [];
     await env.S.downloadChapter('n1', 1, { translation: TRANSLATION, onProgress: (p) => progress.push(p.phase) });
-    assert.deepStrictEqual(read, [[[1, 2], 'image/png']]);
+    assert.deepStrictEqual(read, [[[1, 2], 'image/png', 'AQI=']], 'the OCR also gets the base64, which the extension sends to its offscreen page');
     const record = env.stores.chapters.n1_ch1;
     assert.strictEqual(record.ocrSource, true);
     assert.strictEqual(record.originalRawText, '第一章 张角\n\n正文');
