@@ -23,14 +23,18 @@ async function test(name, fn) {
 }
 
 function makeEnv() {
-  const stores = { novels: {}, chapters: {} };
+  const stores = { novels: {}, chapters: {}, syncState: {} };
+  const reads = { chapterGetAll: 0 };
   const request = (result) => {
     const req = { result, onsuccess: null, onerror: null };
     setTimeout(() => { if (req.onsuccess) req.onsuccess({ target: req }); }, 0);
     return req;
   };
   const store = (name) => ({
-    getAll: () => request(Object.values(stores[name]).map((r) => ({ ...r }))),
+    getAll: () => {
+      if (name === 'chapters') reads.chapterGetAll++;
+      return request(Object.values(stores[name]).map((r) => ({ ...r })));
+    },
     get: (id) => request(stores[name][id] ? { ...stores[name][id] } : null),
     put: (record) => { stores[name][record.id] = { ...record }; },
     delete: (id) => { delete stores[name][id]; },
@@ -86,7 +90,7 @@ function makeEnv() {
   vm.createContext(env);
   vm.runInContext(read('src', 'services', 'platform.js'), env);
   vm.runInContext(read('src', 'services', 'storage.js'), env);
-  return { S: env.StorageService, stores, ls };
+  return { S: env.StorageService, stores, ls, reads };
 }
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -141,7 +145,7 @@ process.on('beforeExit', () => {
     const exported = await S.exportAll();
     const book = exported.novels.find((b) => b.id === 'n1');
     assert.strictEqual(book.listsUpdatedAt.namelist, stores.novels['namelist::n1'].updatedAt, 'exported with each list\'s time');
-    assert.deepStrictEqual(plain(exported.deleted), { novels: {}, chapters: {} }, 'and the deletion markers');
+    assert.deepStrictEqual(plain(exported.deleted), { novels: {}, chapters: {}, names: {} }, 'and the deletion markers');
   });
 
   await test('deleting a book or a chapter leaves a marker that sync carries to other devices', async () => {
@@ -155,6 +159,91 @@ process.on('beforeExit', () => {
     const { deleted } = await S.exportAll();
     assert(deleted.novels.n1 >= before, 'book marker with its time');
     assert(deleted.chapters.n2_ch3 >= before, 'chapter marker with its time');
+  });
+
+  // --- Name list entries: their own times and deletion markers ---
+
+  await test('each name entry records when it was added or edited; removing one leaves a marker', async () => {
+    const { S, stores } = makeEnv();
+    await S.addNovel({ id: 'n1', title: 'One', slug: 'one' });
+    const a = await S.addNameEntry('n1', { original: 'Lin Dong', translation: 'Lâm Động' });
+    const b = await S.addNameEntry('n1', { original: 'Wang Lin', translation: 'Vương Lâm' });
+    const listOf = () => stores.novels['namelist::n1'].list;
+    const timeOf = (id) => listOf().find((e) => e.id === id).updatedAt;
+    assert(timeOf(a.id) > 0 && timeOf(b.id) > 0, 'new entries are stamped');
+    const aTime = timeOf(a.id);
+    await wait(5);
+    await S.updateNameEntry('n1', b.id, { translation: 'Vương Lâm!' });
+    assert.strictEqual(timeOf(a.id), aTime, 'untouched entries keep their time');
+    assert(timeOf(b.id) > aTime, 'an edit moves its time forward');
+    const bTime = timeOf(b.id);
+    await wait(5);
+    await S.saveNameList('n1', listOf().map((e) => ({ ...e, isNew: false })));
+    assert.strictEqual(timeOf(b.id), bTime, 'marking names as seen is not an edit');
+    await S.deleteNameEntry('n1', a.id);
+    const { deleted } = await S.exportAll();
+    assert(deleted.names.n1.namelist[a.id] >= bTime, 'a removed entry leaves a marker');
+  });
+
+  await test('moving a term between glossaries removes it from one list and adds it to the other', async () => {
+    const { S } = makeEnv();
+    await S.addNovel({ id: 'n1', title: 'One', slug: 'one' });
+    const soft = await S.addNameEntry('n1', { original: 'Thanh Dương', translation: 'Qingyang' }, 'soft');
+    const moved = await S.moveNameEntry('n1', soft.id, 'soft', 'locked');
+    const { deleted, novels } = await S.exportAll();
+    assert(deleted.names.n1.soft[soft.id], 'marker in the source list');
+    const book = novels.find((n) => n.id === 'n1');
+    assert(book.glossaries.locked.some((e) => e.id === moved.id && e.updatedAt > 0), 'stamped entry in the target list');
+  });
+
+  // --- Sync summaries: what sync reads instead of every chapter ---
+
+  await test('each book keeps a summary of its chapters (id, number, change time) through every write', async () => {
+    const { S, stores } = makeEnv();
+    await S.addNovel({ id: 'n1', title: 'One', slug: 'one' });
+    const c1 = await S.saveChapter({ novelId: 'n1', chapterNumber: 1, title: 'x', rawText: 'x' });
+    const c2 = await S.saveChapter({ novelId: 'n1', chapterNumber: 51, title: 'y', rawText: 'y' });
+    await wait(5);
+    const c1b = await S.updateChapter('n1', 1, { rawText: 'x2' });
+    await S.deleteChapter('n1', 51);
+    assert.deepStrictEqual(plain(stores.syncState.n1.chapters), { n1_ch1: [c1b.updatedAt, 1] }, 'save, update and delete keep it current');
+    assert(c1b.updatedAt > c1.updatedAt && c2.updatedAt);
+
+    await S.applySync({ novels: [], chapters: [chapter('n1', 7, 77)], deleteNovels: [], deleteChapters: ['n1_ch1'], preferences: {} }, null);
+    assert.deepStrictEqual(plain(stores.syncState.n1.chapters), { n1_ch7: [77, 7] }, 'and changes a sync applies');
+
+    await S.deleteNovel('n1');
+    assert.strictEqual(stores.syncState.n1, undefined, 'a deleted book loses its summary');
+  });
+
+  await test('the sync snapshot has every book and its chapter times without reading any chapter text', async () => {
+    const { S, reads } = makeEnv();
+    await S.addNovel({ id: 'n1', title: 'One', slug: 'one' });
+    await S.saveNameList('n1', [{ id: 'a', original: 'A', translation: 'Á', addedAt: 1 }]);
+    const c = await S.saveChapter({ novelId: 'n1', chapterNumber: 3, title: 'x', rawText: 'x' });
+    reads.chapterGetAll = 0;
+    const snapshot = await S.getSyncSnapshot();
+    assert.strictEqual(reads.chapterGetAll, 0, 'no chapter read');
+    assert.deepStrictEqual(plain(snapshot.chapterTimes), { n1: { n1_ch3: [c.updatedAt, 3] } });
+    assert.strictEqual(snapshot.novels[0].nameList[0].original, 'A', 'books come with their name lists');
+    assert(snapshot.deleted && snapshot.preferences, 'and the markers and settings');
+    const loaded = await S.getChaptersByIds(['n1_ch3', 'missing']);
+    assert.deepStrictEqual(plain(loaded.map((ch) => ch.rawText)), ['x'], 'chapters are loaded by id only when needed');
+  });
+
+  await test('a library from before summaries gets them built once', async () => {
+    const { S, stores, reads } = makeEnv();
+    stores.novels.n1 = { id: 'n1', title: 'Old', slug: 'old', updatedAt: 5 };
+    stores.chapters.n1_ch1 = { id: 'n1_ch1', novelId: 'n1', chapterNumber: 1, rawText: 'old', updatedAt: 6 };
+    stores.novels.n2 = { id: 'n2', title: 'Empty', slug: 'empty', updatedAt: 5 };
+    const first = await S.getSyncSnapshot();
+    assert.deepStrictEqual(plain(first.chapterTimes), { n1: { n1_ch1: [6, 1] }, n2: {} });
+    assert.strictEqual(reads.chapterGetAll, 1, 'one full read to build them');
+    await S.getSyncSnapshot();
+    assert.strictEqual(reads.chapterGetAll, 1, 'never again');
+    await S.importAll(library({ novels: [novel('n3', 1)], chapters: [chapter('n3', 2, 9)] }), { replace: true });
+    const afterImport = await S.getSyncSnapshot();
+    assert.deepStrictEqual(plain(afterImport.chapterTimes), { n3: { n3_ch2: [9, 2] } }, 'an import rebuilds them');
   });
 
   // --- Change tracking (what triggers an automatic sync) ---
@@ -420,17 +509,92 @@ process.on('beforeExit', () => {
     assert.strictEqual(apply.novels.length, 1, 'written here because the position changed');
   });
 
-  await test('each name list and glossary follows its own newer copy', () => {
+  await test('each name list and glossary combines both copies; its time is the newest of either', () => {
     const { S } = makeEnv();
     const names = (label) => [{ id: label, original: label, translation: label, addedAt: 1 }];
     const local = library({ novels: [novel('n1', 10, { nameList: names('local-names'), glossaries: { locked: names('local-locked'), soft: [] }, listsUpdatedAt: { namelist: 50, locked: 10, soft: 0 } })] });
     const remote = library({ novels: [novel('n1', 10, { nameList: names('remote-names'), glossaries: { locked: names('remote-locked'), soft: names('remote-soft') }, listsUpdatedAt: { namelist: 40, locked: 30, soft: 5 } })] });
     const { library: merged } = S.mergeLibraries(local, remote);
     const book = merged.novels[0];
-    assert.strictEqual(book.nameList[0].id, 'local-names');
-    assert.strictEqual(book.glossaries.locked[0].id, 'remote-locked');
-    assert.strictEqual(book.glossaries.soft[0].id, 'remote-soft');
+    assert.deepStrictEqual(plain(book.nameList.map((e) => e.id).sort()), ['local-names', 'remote-names']);
+    assert.deepStrictEqual(plain(book.glossaries.locked.map((e) => e.id).sort()), ['local-locked', 'remote-locked']);
+    assert.deepStrictEqual(plain(book.glossaries.soft.map((e) => e.id)), ['remote-soft']);
     assert.deepStrictEqual(plain(book.listsUpdatedAt), { namelist: 50, locked: 30, soft: 5 });
+  });
+
+  const entry = (id, original, translation, updatedAt, extra = {}) => ({ id, original, translation, addedAt: 1, updatedAt, ...extra });
+  const withNames = (id, lists, times = {}) => novel(id, 10, {
+    nameList: lists.namelist || [],
+    glossaries: { locked: lists.locked || [], soft: lists.soft || [] },
+    listsUpdatedAt: { namelist: times.namelist || 0, locked: times.locked || 0, soft: times.soft || 0 }
+  });
+
+  await test('name lists merge entry by entry: additions and edits from both devices are kept', () => {
+    const { S } = makeEnv();
+    const local = library({ novels: [withNames('n1', { namelist: [entry('a', 'Lin Dong', 'Lâm Động', 50), entry('c', 'Xiao Yan', 'Tiêu Viêm', 10)] }, { namelist: 50 })] });
+    const remote = library({ novels: [withNames('n1', { namelist: [entry('b', 'Wang Lin', 'Vương Lâm', 60), entry('c', 'Xiao Yan', 'Tiêu Viêm (edited)', 40)] }, { namelist: 60 })] });
+    const { library: merged, apply } = S.mergeLibraries(local, remote);
+    const names = merged.novels[0].nameList;
+    assert.deepStrictEqual(plain(names.map((e) => e.id).sort()), ['a', 'b', 'c'], 'both additions');
+    assert.strictEqual(names.find((e) => e.id === 'c').translation, 'Tiêu Viêm (edited)', 'the newer edit of the same entry');
+    assert.strictEqual(merged.novels[0].listsUpdatedAt.namelist, 60, 'the list time follows its newest entry');
+    assert.strictEqual(apply.novels.length, 1, 'written here because it gained entries');
+  });
+
+  await test('a removed name stays removed on the other device, unless it was edited after', () => {
+    const { S } = makeEnv();
+    const local = library({ novels: [withNames('n1', { namelist: [entry('a', 'Lin Dong', 'Lâm Động', 10), entry('b', 'Wang Lin', 'Vương Lâm', 90)] }, { namelist: 90 })] });
+    const remote = library({
+      novels: [withNames('n1', { namelist: [] }, { namelist: 50 })],
+      deleted: { novels: {}, chapters: {}, names: { n1: { namelist: { a: 50, b: 50 } } } }
+    });
+    const { library: merged } = S.mergeLibraries(local, remote);
+    assert.deepStrictEqual(plain(merged.novels[0].nameList.map((e) => e.id)), ['b'], 'a removed; b edited after the removal stays');
+    assert.deepStrictEqual(plain(merged.deleted.names.n1.namelist), { a: 50 }, 'the outdated marker for b is dropped');
+  });
+
+  await test('the same name added on both devices ends up once; old entries without times simply combine', () => {
+    const { S } = makeEnv();
+    const local = library({ novels: [withNames('n1', { namelist: [entry('x1', 'Lin Dong', 'Lâm Động', 30), { id: 'old1', original: 'Old A', translation: 'A', addedAt: 1 }] })] });
+    const remote = library({ novels: [withNames('n1', { namelist: [entry('x2', 'lin dong ', 'Lâm Động (fixed)', 70), { id: 'old2', original: 'Old B', translation: 'B', addedAt: 1 }] })] });
+    const { library: merged } = S.mergeLibraries(local, remote);
+    const names = merged.novels[0].nameList;
+    const lin = names.filter((e) => e.original.trim().toLowerCase() === 'lin dong');
+    assert.strictEqual(lin.length, 1, 'one entry');
+    assert.strictEqual(lin[0].translation, 'Lâm Động (fixed)', 'the newer one');
+    assert.deepStrictEqual(plain(names.map((e) => e.id).filter((id) => id.startsWith('old')).sort()), ['old1', 'old2']);
+  });
+
+  await test('a glossary move made on one device arrives as a move', () => {
+    const { S } = makeEnv();
+    const local = library({ novels: [withNames('n1', { soft: [entry('s1', 'Thanh Dương', 'Qingyang', 10)] }, { soft: 10 })] });
+    const remote = library({
+      novels: [withNames('n1', { locked: [entry('l1', 'Thanh Dương', 'Qingyang', 80)] }, { locked: 80, soft: 80 })],
+      deleted: { novels: {}, chapters: {}, names: { n1: { soft: { s1: 80 } } } }
+    });
+    const { library: merged } = S.mergeLibraries(local, remote);
+    assert.deepStrictEqual(plain(merged.novels[0].glossaries.soft), []);
+    assert.deepStrictEqual(plain(merged.novels[0].glossaries.locked.map((e) => e.id)), ['l1']);
+  });
+
+  await test('both devices reach the same merge, so they never keep re-uploading each other\'s copy', () => {
+    const { S } = makeEnv();
+    const one = library({ novels: [withNames('n1', { namelist: [entry('a', 'A', 'a', 30, { addedAt: 3 }), entry('c', 'C', 'c', 10, { addedAt: 1 })] }, { namelist: 30 })] });
+    const two = library({ novels: [withNames('n1', { namelist: [entry('b', 'B', 'b', 20, { addedAt: 2 }), entry('c', 'C', 'c', 10, { addedAt: 1 })] }, { namelist: 20 })] });
+    const ab = S.mergeLibraries(one, two).library.novels[0];
+    const ba = S.mergeLibraries(two, one).library.novels[0];
+    assert.deepStrictEqual(plain(ab.nameList), plain(ba.nameList), 'same list in the same order, whichever side merges');
+    assert.deepStrictEqual(plain(ab.nameList.map((e) => e.id)), ['a', 'b', 'c'], 'newest first');
+
+    const oldA = library({ novels: [novel('n2', 0, { title: 'Cover A' })] });
+    const oldB = library({ novels: [novel('n2', 0, { title: 'Cover B' })] });
+    assert.strictEqual(S.mergeLibraries(oldA, oldB).library.novels[0].title, S.mergeLibraries(oldB, oldA).library.novels[0].title, 'equal times: the same copy wins on both sides');
+    const sameName = (title) => library({ novels: [withNames('n3', { namelist: [entry('x', 'Lin', title, 0)] })] });
+    assert.strictEqual(
+      S.mergeLibraries(sameName('Lâm'), sameName('Lam')).library.novels[0].nameList[0].translation,
+      S.mergeLibraries(sameName('Lam'), sameName('Lâm')).library.novels[0].nameList[0].translation,
+      'old entries without times: the same edit wins on both sides'
+    );
   });
 
   await test('a book deleted on one device is deleted on the other, unless it was changed after', () => {
@@ -494,7 +658,7 @@ process.on('beforeExit', () => {
     assert.strictEqual(stores.novels.gone, undefined);
     assert.strictEqual(stores.chapters.gone_ch1, undefined);
     assert.strictEqual(ls.quickconverter_reader_theme, 'sepia');
-    assert.deepStrictEqual(plain((await S.exportAll()).deleted), { novels: { gone: 99 }, chapters: {} }, 'markers kept for the next sync');
+    assert.deepStrictEqual(plain((await S.exportAll()).deleted), { novels: { gone: 99 }, chapters: {}, names: {} }, 'markers kept for the next sync');
     assert(stores.novels.n1, 'untouched books stay');
   });
 

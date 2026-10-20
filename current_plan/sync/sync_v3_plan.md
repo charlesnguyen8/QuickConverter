@@ -1,6 +1,7 @@
 # Drive sync v3 — fine-grained, name-list aware (plan)
 
-**Status (2026-10-19):** planned, not started. Current sync is v2 (released in v1.2.1).
+**Status (2026-10-19):** steps 1–3 built (not yet released or checked on the phone). Released
+Drive layout is v2 (v1.2.1); the built code writes v3.
 
 **Goal:** a sync transfers only the small piece that changed, never loses name-list edits made on
 two devices, and does not read the whole library on the device to find out what changed.
@@ -58,6 +59,11 @@ test changes in commits. Build on the two-device harness (`tests/helpers/fake-li
 - **Tests:** add/edit/delete on two devices between syncs keeps both sides' changes; a deletion on
   one device removes the entry on the other; the same name added on both ends as one entry; a move
   Locked→Soft arrives as a move; old entries without times merge as a union.
+- **Built:** `saveNameList` (every list write path goes through it) diffs the stored list against
+  the new one: new or changed entries get `updatedAt` (clearing the drawer's `isNew` badge is not a
+  change), removed ones a marker in `deleted.names`. `mergeLibraries` merges each list with
+  `mergeNameEntries`; `cloud-sync.js` carries the name markers in the index. Markers are never
+  pruned yet (small; revisit with step 2).
 
 ### Step 2 — Smaller Drive pieces (fixes transfer size)
 
@@ -77,6 +83,16 @@ Drive layout v3 (all in appDataFolder):
 - Index writes stay conditional (only when something changed). Pieces of a deleted book are
   deleted; empty batches are deleted.
 - Batch size 50 is a constant; revisit if chapters are unusually large.
+- **Built:** `cloud-sync.js` writes `qc-book-*`, `qc-names-*-<kind>` (only non-empty lists) and
+  `qc-chapters-*-<n>` (batch = floor(chapterNumber / 50)); the index (`version: 3`) holds each
+  book's `pieces` and `lastRead`. Book and name pieces are fingerprinted by content, chapter
+  batches by ids and change times. `syncBook` downloads only differing pieces (unchanged pieces are
+  taken from this device), merges, and uploads only pieces the merge changed. A v2 index or the old
+  single backup triggers a full merge that writes v3 pieces and removes the v2 book files; an index
+  newer than the code stops with "Update QuickConverter to sync". Merges are deterministic
+  (name lists newest first; equal-time ties settled by content) so devices never re-upload each
+  other's copies. A v1.2.1 device that meets v3 data fails its sync (cannot read the entries) and
+  may leave a stray `quickconverter-book-*` file; update both devices together.
 - **Tests (two devices, fake Drive):** a new chapter transfers one batch file + index; a reading
   position change transfers the index only; a new name transfers that list file + index; Sync
   Catalog transfers the book file + index; nothing changed → index read, nothing written; a book
@@ -95,6 +111,15 @@ Drive layout v3 (all in appDataFolder):
 - `exportAll()` stays for backup files and Replace Drive copy.
 - **Tests:** summaries follow every write path (including sync-applied ones); a sync with nothing
   changed reads no chapter records; a sync after one new chapter reads only that batch.
+- **Built:** IndexedDB version 2 adds a `syncState` store (`{ id: novelId, chapters: { chapterId:
+  [updatedAt, chapterNumber] } }`), kept by `saveChapter`, `updateChapter`, `deleteChapter`,
+  `deleteNovel` and `applySync`; `importAll` clears it so it is rebuilt. Summary writes never fail a
+  save. `StorageService.getSyncSnapshot()` returns books (with lists), `chapterTimes`, markers and
+  settings without chapter text, building missing summaries once from a full read;
+  `getChaptersByIds` loads text on demand. `cloud-sync.js` fingerprints chapter batches from the
+  summaries and loads only differing batches (falls back to a full read without the store). The
+  first sync and v2 migrations still use `exportAll()`. Checked in the app build in a browser: an
+  existing v1 database upgrades to v2 with its data, summaries are built and follow new saves.
 
 ### Migration (with step 2)
 

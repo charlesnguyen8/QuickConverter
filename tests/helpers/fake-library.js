@@ -8,15 +8,22 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const read = (...p) => fs.readFileSync(path.join(repoRoot, ...p), 'utf8');
 
 function makeDatabase() {
-  const stores = { novels: {}, chapters: {} };
+  const stores = { novels: {}, chapters: {}, syncState: {} };
+  const reads = { chapterGetAll: 0, chapterGet: 0 };
   const request = (result) => {
     const req = { result, onsuccess: null, onerror: null };
     setTimeout(() => { if (req.onsuccess) req.onsuccess({ target: req }); }, 0);
     return req;
   };
   const store = (name) => ({
-    getAll: () => request(Object.values(stores[name]).map((r) => JSON.parse(JSON.stringify(r)))),
-    get: (id) => request(stores[name][id] ? JSON.parse(JSON.stringify(stores[name][id])) : null),
+    getAll: () => {
+      if (name === 'chapters') reads.chapterGetAll++;
+      return request(Object.values(stores[name]).map((r) => JSON.parse(JSON.stringify(r))));
+    },
+    get: (id) => {
+      if (name === 'chapters') reads.chapterGet++;
+      return request(stores[name][id] ? JSON.parse(JSON.stringify(stores[name][id])) : null);
+    },
     put: (record) => { stores[name][record.id] = JSON.parse(JSON.stringify(record)); },
     delete: (id) => { delete stores[name][id]; },
     clear: () => { stores[name] = {}; },
@@ -48,7 +55,7 @@ function makeDatabase() {
       return tx;
     }
   };
-  return { stores, open: () => request(database) };
+  return { stores, reads, open: () => request(database) };
 }
 
 // An in-memory Google Drive appDataFolder speaking the REST calls cloud-sync.js makes.
@@ -156,7 +163,7 @@ function makeDevice(drive) {
   vm.runInContext(read('src', 'services', 'platform.js'), env);
   vm.runInContext(read('src', 'services', 'storage.js'), env);
   vm.runInContext(read('src', 'services', 'cloud-sync.js'), env);
-  return { S: env.StorageService, cloud: env.CloudSyncService, stores: db.stores, ls };
+  return { S: env.StorageService, cloud: env.CloudSyncService, stores: db.stores, reads: db.reads, ls };
 }
 
 module.exports = { makeDrive, makeDevice };

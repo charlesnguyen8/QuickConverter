@@ -2,7 +2,8 @@
 // Capable of storing full novel chapter texts and translation data without quota limits
 
 const DB_NAME = 'QuickConverterDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+const SYNC_STATE_STORE = 'syncState';
 
 const BACKUP_FORMAT = 'quickconverter-backup';
 const BACKUP_VERSION = 1;
@@ -84,13 +85,33 @@ function openDatabase() {
         chapterStore.createIndex('novelId', 'novelId', { unique: false });
         chapterStore.createIndex('chapterNumber', 'chapterNumber', { unique: false });
       }
+
+      // Store 3: per-book chapter summaries (id -> [updatedAt, chapterNumber]) for sync
+      if (!db.objectStoreNames.contains(SYNC_STATE_STORE)) {
+        db.createObjectStore(SYNC_STATE_STORE, { keyPath: 'id' });
+      }
     };
 
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      if (db && 'onversionchange' in db) {
+        db.onversionchange = () => {
+          db.close();
+          dbPromise = null;
+        };
+      }
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
   });
 
   return dbPromise;
+}
+
+function chapterNovelId(chapterId) {
+  const id = String(chapterId || '');
+  const at = id.lastIndexOf('_ch');
+  return at > 0 ? id.slice(0, at) : null;
 }
 
 function getAllFromStore(db, storeName) {
@@ -220,27 +241,121 @@ function syncLibraryParts(data) {
     novels: data && Array.isArray(data.novels) ? data.novels.filter((n) => n && n.id) : [],
     chapters: data && Array.isArray(data.chapters) ? data.chapters.filter((c) => c && c.id) : [],
     preferences: data && data.preferences && typeof data.preferences === 'object' ? data.preferences : {},
-    deleted: { novels: { ...(deleted.novels || {}) }, chapters: { ...(deleted.chapters || {}) } }
+    deleted: { novels: { ...(deleted.novels || {}) }, chapters: { ...(deleted.chapters || {}) }, names: copyNameMarkers(deleted.names) }
   };
 }
 
+function copyNameMarkers(names) {
+  const out = {};
+  Object.entries(names && typeof names === 'object' ? names : {}).forEach(([novelId, kinds]) => {
+    out[novelId] = {};
+    Object.entries(kinds && typeof kinds === 'object' ? kinds : {}).forEach(([kind, ids]) => {
+      out[novelId][kind] = { ...(ids || {}) };
+    });
+  });
+  return out;
+}
+
+function mergeNameMarkers(target, source) {
+  Object.entries(source || {}).forEach(([novelId, kinds]) => {
+    const book = target[novelId] || (target[novelId] = {});
+    Object.entries(kinds || {}).forEach(([kind, ids]) => {
+      const markers = book[kind] || (book[kind] = {});
+      Object.entries(ids || {}).forEach(([id, time]) => {
+        markers[id] = Math.max(syncTime(markers[id]), syncTime(time));
+      });
+    });
+  });
+  return target;
+}
+
+function nameKey(entry) {
+  return String((entry && entry.original) || '').trim().toLowerCase();
+}
+
+// Merges two copies of one name list entry by entry: newer edit of the same entry wins, removal
+// markers drop older entries (and are dropped for entries edited after), and the same name
+// added on both devices collapses into the newer one. Returns the list and the markers left.
+function mergeNameEntries(localList, remoteList, markers) {
+  const time = (entry) => syncTime(entry && entry.updatedAt);
+  const keyOf = (entry) => (entry.id ? `id:${entry.id}` : `name:${nameKey(entry)}`);
+  const picked = new Map();
+  [...(localList || []), ...(remoteList || [])].forEach((entry) => {
+    if (!entry) return;
+    const key = keyOf(entry);
+    const current = picked.get(key);
+    picked.set(key, current ? newerCopy(current, entry, time) : entry);
+  });
+  const left = { ...(markers || {}) };
+  const survivors = [];
+  picked.forEach((entry) => {
+    const marker = entry.id ? left[entry.id] : undefined;
+    if (marker !== undefined && syncTime(marker) >= time(entry)) return;
+    if (marker !== undefined) delete left[entry.id];
+    survivors.push(entry);
+  });
+  const byName = new Map();
+  const unnamed = [];
+  survivors.forEach((entry) => {
+    const name = nameKey(entry);
+    if (!name) {
+      unnamed.push(entry);
+      return;
+    }
+    const best = byName.get(name);
+    byName.set(name, best ? newerCopy(best, entry, time) : entry);
+  });
+  const list = [...byName.values(), ...unnamed].sort((a, b) => {
+    const added = syncTime(b.addedAt) - syncTime(a.addedAt);
+    if (added !== 0) return added;
+    return String(a.id || nameKey(a)) < String(b.id || nameKey(b)) ? -1 : 1;
+  });
+  return { list, markers: left };
+}
+
+// The newer of two copies; with equal times the same copy wins whichever device merges.
+function newerCopy(local, remote, timeOf) {
+  const lt = timeOf(local);
+  const rt = timeOf(remote);
+  if (rt !== lt) return rt > lt ? remote : local;
+  return stableJson(remote) > stableJson(local) ? remote : local;
+}
+
 function mergeSyncedNovel(local, remote) {
-  const base = syncTime(remote.updatedAt) > syncTime(local.updatedAt) ? remote : local;
+  const strip = (book) => {
+    const { lastRead, nameList, glossaries, listsUpdatedAt, ...rest } = book;
+    return rest;
+  };
+  const localRecord = strip(local);
+  const remoteRecord = strip(remote);
+  const base = newerCopy(localRecord, remoteRecord, (b) => syncTime(b.updatedAt)) === remoteRecord ? remote : local;
   const merged = { ...base };
   const localRead = local.lastRead ? syncTime(local.lastRead.updatedAt) : -1;
   const remoteRead = remote.lastRead ? syncTime(remote.lastRead.updatedAt) : -1;
   if (remoteRead > localRead) merged.lastRead = remote.lastRead;
   else if (local.lastRead) merged.lastRead = local.lastRead;
-  const localTimes = local.listsUpdatedAt || {};
-  const remoteTimes = remote.listsUpdatedAt || {};
-  const pick = (kind) => (syncTime(remoteTimes[kind]) > syncTime(localTimes[kind]) ? remote : local);
-  const listOf = (book, kind) => (kind === 'namelist' ? book.nameList : (book.glossaries || {})[kind]);
-  const times = {};
+  return merged;
+}
+
+// Puts the entry-by-entry merge of both copies' name lists on a merged book, using and updating
+// the book's removal markers.
+function mergeBookNames(merged, local, remote, nameMarkers) {
+  const listOf = (book, kind) => {
+    if (!book) return [];
+    const list = kind === 'namelist' ? book.nameList : (book.glossaries || {})[kind];
+    return Array.isArray(list) ? list : [];
+  };
+  const markersByKind = nameMarkers[merged.id] || {};
   const lists = {};
+  const times = {};
   LIST_KINDS.forEach((kind) => {
-    const source = pick(kind);
-    lists[kind] = Array.isArray(listOf(source, kind)) ? listOf(source, kind) : [];
-    times[kind] = syncTime((source.listsUpdatedAt || {})[kind]);
+    const result = mergeNameEntries(listOf(local, kind), listOf(remote, kind), markersByKind[kind]);
+    lists[kind] = result.list;
+    if (markersByKind[kind]) markersByKind[kind] = result.markers;
+    times[kind] = Math.max(
+      syncTime(((local && local.listsUpdatedAt) || {})[kind]),
+      syncTime(((remote && remote.listsUpdatedAt) || {})[kind])
+    );
   });
   merged.nameList = lists.namelist;
   merged.glossaries = { locked: lists.locked, soft: lists.soft };
@@ -262,6 +377,15 @@ function dedupeNameList(list) {
     if ((entry.addedAt || 0) < (out[idx].addedAt || 0)) out[idx] = entry;
   });
   return out;
+}
+
+// Whether a name entry changed, ignoring its time and the "new" badge the drawer clears.
+function sameNameEntry(a, b) {
+  const strip = (entry) => {
+    const { updatedAt, isNew, ...rest } = entry || {};
+    return rest;
+  };
+  return stableJson(strip(a)) === stableJson(strip(b));
 }
 
 function hasChineseText(text) {
@@ -674,7 +798,26 @@ const StorageService = {
    */
   async saveNameList(novelId, nameList, kind = 'namelist') {
     if (!novelId) return [];
-    const list = dedupeNameList(Array.isArray(nameList) ? nameList : []);
+    const previous = (await this._getNameListRecord(novelId, kind)) || [];
+    const previousById = new Map(previous.filter((e) => e && e.id).map((e) => [e.id, e]));
+    const now = Date.now();
+    const list = dedupeNameList(Array.isArray(nameList) ? nameList : []).map((entry) => {
+      if (!entry || !entry.id) return entry;
+      const before = previousById.get(entry.id);
+      if (before && sameNameEntry(before, entry)) {
+        return before.updatedAt !== undefined ? { ...entry, updatedAt: before.updatedAt } : entry;
+      }
+      return { ...entry, updatedAt: now };
+    });
+    const kept = new Set(list.filter((e) => e && e.id).map((e) => e.id));
+    const removed = previous.filter((e) => e && e.id && !kept.has(e.id)).map((e) => e.id);
+    if (removed.length > 0) {
+      const deleted = this._readSyncDeleted();
+      const book = deleted.names[novelId] || (deleted.names[novelId] = {});
+      const markers = book[kind] || (book[kind] = {});
+      removed.forEach((id) => { markers[id] = now; });
+      this._writeSyncDeleted(deleted);
+    }
     await this._putNameListRecord(novelId, list, kind);
     return list;
   },
@@ -1036,6 +1179,7 @@ const StorageService = {
     });
 
     this._markDeleted('novels', Array.from(targetIds).filter((id) => String(id).indexOf('::') === -1));
+    await this._updateSyncSummaries({ dropBooks: Array.from(targetIds) });
     this._libraryChanged('novel');
 
     // 3. Mark database as initialized so deleting all novels leaves the list empty instead of re-seeding
@@ -1080,16 +1224,16 @@ const StorageService = {
     };
 
     const db = await openDatabase();
-    return new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
       const tx = db.transaction('chapters', 'readwrite');
       const store = tx.objectStore('chapters');
       store.put(chapterRecord);
-      tx.oncomplete = () => {
-        this._libraryChanged('chapter');
-        resolve(chapterRecord);
-      };
+      tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+    await this._updateSyncSummaries({ put: [chapterRecord] });
+    this._libraryChanged('chapter');
+    return chapterRecord;
   },
 
   async updateChapter(novelId, chapterNumber, updates) {
@@ -1112,16 +1256,16 @@ const StorageService = {
     };
 
     const db = await openDatabase();
-    return new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
       const tx = db.transaction('chapters', 'readwrite');
       const store = tx.objectStore('chapters');
       store.put(updatedRecord);
-      tx.oncomplete = () => {
-        this._libraryChanged('chapter');
-        resolve(updatedRecord);
-      };
+      tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+    await this._updateSyncSummaries({ put: [updatedRecord] });
+    this._libraryChanged('chapter');
+    return updatedRecord;
   },
 
   async getChapter(novelId, chapterNumber) {
@@ -1692,6 +1836,7 @@ const StorageService = {
       tx.onerror = () => reject(tx.error);
     });
     this._markDeleted('chapters', [chapterId]);
+    await this._updateSyncSummaries({ remove: [chapterId] });
     this._libraryChanged('chapter');
     return true;
   },
@@ -1703,18 +1848,123 @@ const StorageService = {
       const parsed = JSON.parse(this.getPreference(SYNC_DELETED_KEY, '{}') || '{}');
       return {
         novels: parsed && parsed.novels && typeof parsed.novels === 'object' ? parsed.novels : {},
-        chapters: parsed && parsed.chapters && typeof parsed.chapters === 'object' ? parsed.chapters : {}
+        chapters: parsed && parsed.chapters && typeof parsed.chapters === 'object' ? parsed.chapters : {},
+        names: parsed && parsed.names && typeof parsed.names === 'object' ? parsed.names : {}
       };
     } catch (e) {
-      return { novels: {}, chapters: {} };
+      return { novels: {}, chapters: {}, names: {} };
     }
   },
 
   _writeSyncDeleted(deleted) {
     this.setPreference(SYNC_DELETED_KEY, JSON.stringify({
       novels: (deleted && deleted.novels) || {},
-      chapters: (deleted && deleted.chapters) || {}
+      chapters: (deleted && deleted.chapters) || {},
+      names: (deleted && deleted.names) || {}
     }));
+  },
+
+  // Keeps the per-book chapter summaries (sync reads these instead of every chapter). Never
+  // fails a save: without the store (older databases in tests) it does nothing.
+  async _updateSyncSummaries({ put = [], remove = [], dropBooks = [] } = {}) {
+    if (put.length === 0 && remove.length === 0 && dropBooks.length === 0) return;
+    const byBook = new Map();
+    const touch = (novelId) => {
+      if (!byBook.has(novelId)) byBook.set(novelId, { put: [], remove: [] });
+      return byBook.get(novelId);
+    };
+    put.forEach((chapter) => { if (chapter && chapter.novelId) touch(chapter.novelId).put.push(chapter); });
+    remove.forEach((id) => { const novelId = chapterNovelId(id); if (novelId) touch(novelId).remove.push(id); });
+    try {
+      const db = await openDatabase();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(SYNC_STATE_STORE, 'readwrite');
+        const store = tx.objectStore(SYNC_STATE_STORE);
+        dropBooks.forEach((novelId) => { if (!byBook.has(novelId)) store.delete(novelId); });
+        byBook.forEach((change, novelId) => {
+          if (dropBooks.indexOf(novelId) !== -1) {
+            store.delete(novelId);
+            return;
+          }
+          const request = store.get(novelId);
+          request.onsuccess = () => {
+            const record = request.result || { id: novelId, chapters: {} };
+            const chapters = { ...(record.chapters || {}) };
+            change.put.forEach((c) => { chapters[c.id] = [Number(c.updatedAt) || 0, Number(c.chapterNumber)]; });
+            change.remove.forEach((id) => { delete chapters[id]; });
+            store.put({ id: novelId, chapters });
+          };
+        });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {}
+  },
+
+  async _clearSyncSummaries() {
+    try {
+      const db = await openDatabase();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(SYNC_STATE_STORE, 'readwrite');
+        tx.objectStore(SYNC_STATE_STORE).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {}
+  },
+
+  // What sync needs from this device without reading chapter text: every book (with its name
+  // lists), each book's chapter ids/numbers/times, the deletion markers and settings. Books
+  // without a summary (libraries from before summaries) get one built from a single full read.
+  async getSyncSnapshot() {
+    const base = await this._exportBase();
+    const db = await openDatabase();
+    let summaries = [];
+    try {
+      summaries = await getAllFromStore(db, SYNC_STATE_STORE);
+    } catch (e) {
+      return null;
+    }
+    const chapterTimes = {};
+    summaries.forEach((record) => { if (record && record.id) chapterTimes[record.id] = { ...(record.chapters || {}) }; });
+    const missing = base.novels.filter((novel) => !chapterTimes[novel.id]);
+    if (missing.length > 0) {
+      const chapters = await getAllFromStore(db, 'chapters');
+      const built = new Map(missing.map((novel) => [novel.id, {}]));
+      chapters.forEach((c) => {
+        const book = c && built.get(c.novelId);
+        if (book) book[c.id] = [Number(c.updatedAt) || 0, Number(c.chapterNumber)];
+      });
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(SYNC_STATE_STORE, 'readwrite');
+          const store = tx.objectStore(SYNC_STATE_STORE);
+          built.forEach((times, novelId) => store.put({ id: novelId, chapters: times }));
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (e) {}
+      built.forEach((times, novelId) => { chapterTimes[novelId] = times; });
+    }
+    const books = new Set(base.novels.map((novel) => novel.id));
+    Object.keys(chapterTimes).forEach((novelId) => { if (!books.has(novelId)) delete chapterTimes[novelId]; });
+    return { ...base, chapterTimes };
+  },
+
+  async getChaptersByIds(ids) {
+    if (!ids || ids.length === 0) return [];
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('chapters', 'readonly');
+      const store = tx.objectStore('chapters');
+      const found = new Array(ids.length).fill(null);
+      ids.forEach((id, i) => {
+        const request = store.get(id);
+        request.onsuccess = () => { found[i] = request.result || null; };
+      });
+      tx.oncomplete = () => resolve(found.filter(Boolean));
+      tx.onerror = () => reject(tx.error);
+    });
   },
 
   _markDeleted(kind, ids) {
@@ -1758,9 +2008,15 @@ const StorageService = {
   },
 
   async exportAll() {
+    const base = await this._exportBase();
+    const db = await openDatabase();
+    const chapters = await getAllFromStore(db, 'chapters');
+    return { ...base, chapters, deleted: base.deleted };
+  },
+
+  async _exportBase() {
     const db = await openDatabase();
     const rawNovels = await getAllFromStore(db, 'novels');
-    const chapters = await getAllFromStore(db, 'chapters');
 
     const listsByNovel = new Map();
     const listTimesByNovel = new Map();
@@ -1815,7 +2071,6 @@ const StorageService = {
       version: BACKUP_VERSION,
       exportedAt: new Date().toISOString(),
       novels,
-      chapters,
       preferences,
       deleted: this._readSyncDeleted()
     };
@@ -1873,6 +2128,7 @@ const StorageService = {
       }
     });
 
+    await this._clearSyncSummaries();
     await this._setDbInitialized();
     return { novels: novels.length, chapters: chapters.length };
   },
@@ -1896,12 +2152,13 @@ const StorageService = {
     if (!remoteData) return { library: libraryOf(local), apply };
     const remote = syncLibraryParts(remoteData);
 
-    const deleted = { novels: { ...local.deleted.novels }, chapters: { ...local.deleted.chapters } };
+    const deleted = { novels: { ...local.deleted.novels }, chapters: { ...local.deleted.chapters }, names: copyNameMarkers(local.deleted.names) };
     ['novels', 'chapters'].forEach((kind) => {
       Object.keys(remote.deleted[kind]).forEach((id) => {
         deleted[kind][id] = Math.max(syncTime(deleted[kind][id]), syncTime(remote.deleted[kind][id]));
       });
     });
+    mergeNameMarkers(deleted.names, remote.deleted.names);
 
     const byId = (list) => new Map(list.map((item) => [item.id, item]));
     const idsOf = (a, b) => Array.from(new Set([...a.map((x) => x.id), ...b.map((x) => x.id)]));
@@ -1912,7 +2169,7 @@ const StorageService = {
     idsOf(local.novels, remote.novels).forEach((id) => {
       const mine = localNovels.get(id);
       const theirs = remoteNovels.get(id);
-      const merged = mine && theirs ? mergeSyncedNovel(mine, theirs) : (mine || theirs);
+      const merged = mergeBookNames(mine && theirs ? mergeSyncedNovel(mine, theirs) : { ...(mine || theirs) }, mine, theirs, deleted.names);
       const marker = deleted.novels[id];
       if (marker !== undefined && syncTime(marker) >= syncTime(merged.updatedAt)) {
         if (mine) apply.deleteNovels.push(id);
@@ -1992,6 +2249,11 @@ const StorageService = {
         const area = storageArea('local');
         if (area) area.set({ [key]: value });
       }
+    });
+    await this._updateSyncSummaries({
+      put: changes.chapters || [],
+      remove: changes.deleteChapters || [],
+      dropBooks: changes.deleteNovels || []
     });
     if (deleted) this._writeSyncDeleted(deleted);
     await this._setDbInitialized();
