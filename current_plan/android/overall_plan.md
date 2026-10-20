@@ -197,6 +197,8 @@ Rough ranges for focused work. The real bottleneck is testing on a phone/emulato
   fingerprint differs, and writes the index only when it changed. The old single
   `quickconverter-backup.json` is merged in on the first sync and left in place. Replace Drive copy /
   Replace this device use the new layout. Locally a sync still reads the whole library (exportAll).
+  Next: `current_plan/sync/sync_v3_plan.md` (name lists merged per entry, smaller Drive pieces,
+  sync without reading the whole library).
 
 **Total:** about 3–4 weeks for full features. A useful first version (Phases 0–1: read and convert
 everything already saved, translate, backup) comes much sooner.
