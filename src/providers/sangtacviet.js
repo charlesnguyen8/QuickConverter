@@ -93,9 +93,14 @@ const SangtacvietProvider = (() => {
   function parseChapterList(data, seriesUrl) {
     const base = seriesUrlFor('', seriesUrl);
     const entries = String(data || '').split('-//-').map((entry) => entry.split('-/-')).filter((parts) => parts.length >= 3 && parts[1].trim());
-    return entries.reverse().map((parts, i) => {
+    const first = entries.length ? Number(entries[0][1].trim()) : NaN;
+    const last = entries.length ? Number(entries[entries.length - 1][1].trim()) : NaN;
+    const newestFirst = Number.isFinite(first) && Number.isFinite(last) ? first > last : true;
+    const ordered = newestFirst ? entries.slice().reverse() : entries;
+    return ordered.map((parts, i) => {
       const id = parts[1].trim();
-      const title = parts.slice(2).join('-/-').replace(/\s+/g, ' ').trim();
+      const titleParts = parts.length > 3 && parts[parts.length - 1].trim().toLowerCase() === 'vip' ? parts.slice(2, -1) : parts.slice(2);
+      const title = titleParts.join('-/-').replace(/\s+/g, ' ').trim();
       return {
         chapterNumber: i + 1,
         title: title || `Chapter ${i + 1}`,

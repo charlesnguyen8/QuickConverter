@@ -155,6 +155,26 @@ const EXPECTED_CHINESE = [
     assert.deepStrictEqual(plain(P.parseChapterList('', BOOK_URL)), []);
   });
 
+  await test('parseChapterList keeps a source that lists oldest first (qidian) in reading order, and drops the vip marker from titles', () => {
+    const QIDIAN_URL = 'https://sangtacviet.com/truyen/qidian/1/1047557032/';
+    const data = [
+      '1-/-878314492-/- Chương 1: Tốt nghiệp trong nghi thức   “Huyễn thuật ” ',
+      '1-/-878515175-/- Chương 02: Đây là bực nào  lòng son dạ sắt!',
+      '1-/-878514614-/- Chương 03: Mở mắt ',
+      '1-/-935406276-/- Chương 60: Đánh cược -/-vip',
+      '1-/-935503507-/- Chương 61: Tuyệt nhất con cừu nhỏ -/-vip\n'
+    ].join('-//-');
+    const list = plain(P.parseChapterList(data, QIDIAN_URL));
+    assert.deepStrictEqual(list.map((c) => [c.chapterNumber, c.slug, c.title]), [
+      [1, '878314492', 'Chương 1: Tốt nghiệp trong nghi thức “Huyễn thuật ”'],
+      [2, '878515175', 'Chương 02: Đây là bực nào lòng son dạ sắt!'],
+      [3, '878514614', 'Chương 03: Mở mắt'],
+      [4, '935406276', 'Chương 60: Đánh cược'],
+      [5, '935503507', 'Chương 61: Tuyệt nhất con cừu nhỏ']
+    ]);
+    assert.strictEqual(list[0].url, `${QIDIAN_URL}878314492/`);
+  });
+
   await test('fetchChapterList asks the same chapter-list endpoint the book page uses, once, with the browser cookies', async () => {
     const calls = [];
     const fetchEnv = loadEnv({
