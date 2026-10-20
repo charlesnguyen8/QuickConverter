@@ -428,11 +428,53 @@ async function testAsync(name, fn) {
     assert(html.includes('tu dưỡng'), 'reading shown under the box');
   });
 
+  test('ReaderPhrasePopover offers the VietPhrase meanings in a dropdown that fills the meaning box', () => {
+    const phrase = { source: '羽衣', reading: 'vũ y', translation: 'vũ y', origin: 'vietPhrase' };
+    const html = render(h(ReaderPhrasePopover, { phrase, vietPhraseOf: (k) => (k === '羽衣' ? ['vũ y', 'áo lông vũ'] : []) }));
+    const select = html.match(/<select[^>]*id="reader-phrase-vietphrase"[^>]*>([\s\S]*?)<\/select>/);
+    assert(select, 'a VietPhrase dropdown');
+    assert(select[1].includes('>vũ y</option>') && select[1].includes('>áo lông vũ</option>'), 'lists each VietPhrase meaning');
+    assert(/min-h-10/.test(select[0]), 'touch-friendly');
+    assert(/<option value="" selected="">Pick to copy into your meaning<\/option>/.test(select[1]), 'nothing is picked until you choose; choosing copies the meaning into the box');
+    assert(!html.includes('id="reader-phrase-vietphrase-use"'), 'no separate Use button');
+    const none = render(h(ReaderPhrasePopover, { phrase: { ...phrase, source: '龘' }, vietPhraseOf: () => [] }));
+    assert(!none.includes('id="reader-phrase-vietphrase"') && none.includes('No VietPhrase entry'), 'says when VietPhrase has nothing');
+  });
+
+  test('ReaderPhrasePopover offers names saved in the name store, and Delete name for this book\'s name', () => {
+    const phrase = { source: '羽衣', reading: 'vũ y', translation: 'Vũ Y', origin: 'name', entryId: 'a' };
+    const props = {
+      phrase,
+      storeNamesOf: (k) => (k === '羽衣' ? [{ translation: 'Hagoromo', from: '门户' }, { translation: 'Vũ Y Tiên', from: 'QT Names' }] : []),
+      bookNameOf: (k) => (k === '羽衣' ? { id: 'a', original: '羽衣', translation: 'Vũ Y' } : null)
+    };
+    const html = render(h(ReaderPhrasePopover, props));
+    const select = html.match(/<select[^>]*id="reader-phrase-store"[^>]*>([\s\S]*?)<\/select>/);
+    assert(select, 'a name store dropdown');
+    assert(/<option[^>]*value="Hagoromo"[^>]*>Hagoromo · 门户<\/option>/.test(select[1]), 'each name says which book it came from');
+    assert(/<option[^>]*value="Vũ Y Tiên"[^>]*>Vũ Y Tiên · QT Names<\/option>/.test(select[1]), 'and QT Names');
+    assert(/<option value="" selected="">Pick to copy into your meaning<\/option>/.test(select[1]), 'nothing is picked until you choose; choosing copies the name into the box');
+    assert(!html.includes('id="reader-phrase-store-use"'), 'no separate Use button');
+    const del = html.match(/<button[^>]*id="reader-phrase-delete-name"[^>]*>([\s\S]*?)<\/button>/);
+    assert(del && /Delete name/.test(del[1]) && /min-h-10/.test(del[0]), "Delete name for this book's name");
+    const notInBook = render(h(ReaderPhrasePopover, { ...props, bookNameOf: () => null }));
+    assert(!notInBook.includes('id="reader-phrase-delete-name"'), 'no Delete name when this book has no name for the text');
+    const empty = render(h(ReaderPhrasePopover, { ...props, storeNamesOf: () => [] }));
+    assert(!empty.includes('id="reader-phrase-store"') && empty.includes('No saved names'), 'says when the store has nothing');
+  });
+
+  test('ReaderPhrasePopover says Meanings suggestions are saved to the Locked Glossary (or the Name List for names)', () => {
+    const soft = render(h(ReaderPhrasePopover, { phrase: { source: '修养', reading: 'tu dưỡng', translation: 'tu dưỡng', origin: 'vietPhrase' }, options: ['tu dưỡng'] }));
+    assert(/Meanings · saved to Locked Glossary/.test(soft), soft.match(/Meanings[^<]*/));
+    const name = render(h(ReaderPhrasePopover, { phrase: { source: '林动', reading: 'lâm động', translation: 'Lâm Động', origin: 'name' }, options: ['Lâm Động'] }));
+    assert(/Meanings · saved to Name List/.test(name));
+  });
+
   test('ReaderPhrasePopover lets you save an empty meaning to hide a character', () => {
     const html = render(h(ReaderPhrasePopover, { phrase: { source: '的', reading: 'đích', translation: '', origin: 'soft' } }));
-    assert(!/id="reader-phrase-use-btn"[^>]*\sdisabled=""/.test(html), 'Use works with an empty meaning');
+    assert(!html.includes('id="reader-phrase-use-btn"'), 'no Use button: the meaning is saved with Save as name or Save as locked');
     assert(!/id="reader-phrase-name-btn"[^>]*\sdisabled=""/.test(html), 'Save as name works with an empty meaning');
-    assert(/id="reader-phrase-use-btn"[^>]*\sdisabled=""/.test(render(h(ReaderPhrasePopover, { phrase: { source: '的', reading: 'đích', translation: '', origin: 'soft' }, saving: true }))), 'still disabled while saving');
+    assert(/id="reader-phrase-name-btn"[^>]*\sdisabled=""/.test(render(h(ReaderPhrasePopover, { phrase: { source: '的', reading: 'đích', translation: '', origin: 'soft' }, saving: true }))), 'still disabled while saving');
   });
 
   test('ReaderPhrasePopover offers Save as locked next to Save as name', () => {
@@ -561,9 +603,9 @@ async function testAsync(name, fn) {
     ]);
     assert(/data-phrase-option="nhân viên công tác"[^>]*aria-current="true"/.test(phrasePopover), 'the shown meaning is marked current');
     assert(/id="reader-phrase-custom"[^>]*value="nhân viên công tác"/.test(phrasePopover), 'custom field starts with the shown meaning');
-    assert(phrasePopover.includes('id="reader-phrase-use-btn"'), 'custom meaning can be applied');
+    assert(!phrasePopover.includes('id="reader-phrase-use-btn"') && phrasePopover.includes('id="reader-phrase-locked-btn"'), 'a custom meaning is saved with Save as name or Save as locked, not a separate Use button');
     assert(phrasePopover.includes('id="reader-phrase-name-btn"'), 'phrase can be saved as a name');
-    assert(phrasePopover.includes('Soft Glossary'), 'says which list a picked meaning is saved to');
+    assert(phrasePopover.includes('saved to Locked Glossary'), 'says which list a picked meaning is saved to (the Locked Glossary, by owner decision)');
     assert(!phrasePopover.includes('id="reader-phrase-open-name"'), 'no Name List link for dictionary phrases');
   });
 

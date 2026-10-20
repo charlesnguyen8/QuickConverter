@@ -10,6 +10,9 @@ import {
   phraseOptions,
   phraseRange,
   phraseSaveKind,
+  meaningPickKind,
+  loadLibraryNames,
+  storeNamesFor,
   savePhraseEntry,
   lookupDefinitions,
   suggestionsForPhrase,
@@ -220,6 +223,39 @@ export default function ReaderChapter() {
     } catch (e) {
       console.error('Error saving phrase:', e);
       window.dispatchEvent(new CustomEvent('reader-show-toast', { detail: 'Could not save the phrase' }));
+    } finally {
+      setSavingPhrase(false);
+    }
+  };
+
+  const [libraryNames, setLibraryNames] = useState({ novelId: null, list: [] });
+  const libraryNovelId = novel ? novel.id : null;
+  useEffect(() => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!phraseOpen || !libraryNovelId || !storage) return;
+    let cancelled = false;
+    loadLibraryNames(storage, libraryNovelId)
+      .then((list) => { if (!cancelled) setLibraryNames({ novelId: libraryNovelId, list }); })
+      .catch((e) => console.warn('[Reader] Name store unavailable:', e));
+    return () => { cancelled = true; };
+  }, [phraseOpen, libraryNovelId]);
+  const storeNamesOf = (source) => storeNamesFor(source, libraryNames.novelId === libraryNovelId ? libraryNames.list : [], converter && converter.qtNamesOf);
+  const bookNameOf = (source) => {
+    const key = String(source || '').trim().toLowerCase();
+    return (novel && Array.isArray(novel.nameList) ? novel.nameList : []).find((entry) => entry && String(entry.original || '').trim().toLowerCase() === key) || null;
+  };
+  const deleteBookName = async (entry) => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novel || !entry) return;
+    setSavingPhrase(true);
+    try {
+      await storage.deleteNameEntry(novel.id, entry.id);
+      setSelected(null);
+      window.dispatchEvent(new CustomEvent('reader-show-toast', { detail: `${entry.original} removed from the Name List` }));
+      window.dispatchEvent(new Event('reader-chapter-refresh'));
+    } catch (e) {
+      console.error('Error deleting a name:', e);
+      window.dispatchEvent(new CustomEvent('reader-show-toast', { detail: 'Could not delete the name' }));
     } finally {
       setSavingPhrase(false);
     }
@@ -553,7 +589,12 @@ export default function ReaderChapter() {
           canExtendRight={canExtendRight}
           onExtendLeft={() => extendSelection('left')}
           onExtendRight={() => extendSelection('right')}
-          onPick={(translation, source) => savePhrase(phraseSaveKind(selectedPhrase), translation, source)}
+          onPick={(translation, source) => savePhrase(meaningPickKind(selectedPhrase), translation, source)}
+          onUse={(translation, source) => savePhrase(phraseSaveKind(selectedPhrase), translation, source)}
+          vietPhraseOf={converter && converter.vietPhraseOf}
+          storeNamesOf={storeNamesOf}
+          bookNameOf={bookNameOf}
+          onDeleteName={deleteBookName}
           onSaveName={(translation, source) => savePhrase('namelist', translation, source)}
           onSaveLocked={(translation, source) => savePhrase('locked', translation, source)}
           readingOf={converter && converter.readingOf}

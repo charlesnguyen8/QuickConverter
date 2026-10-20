@@ -826,6 +826,53 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     }
   });
 
+  await test('a tapped Meanings suggestion goes to the Locked Glossary, or updates the name it came from', () => {
+    assert.strictEqual(readerText.meaningPickKind({ origin: 'name' }), 'namelist');
+    for (const origin of ['locked', 'soft', 'vietPhrase', 'qtNames', 'hanViet', 'selection']) {
+      assert.strictEqual(readerText.meaningPickKind({ origin }), 'locked', `${origin} suggestions go to the locked glossary`);
+    }
+  });
+
+  await test('the name store lists names other books saved for the text, then QT Names, once each', async () => {
+    const lists = {
+      n1: [{ id: 'a', original: '羽衣', translation: 'Vũ Y' }],
+      n2: [{ id: 'b', original: '羽衣', translation: 'Hagoromo' }, { id: 'c', original: '林动', translation: 'Lâm Động' }],
+      n3: [{ id: 'd', original: ' 羽衣 ', translation: 'Hagoromo' }, { id: 'e', original: '羽衣', translation: '' }]
+    };
+    const storage = {
+      getAllNovels: async () => [{ id: 'n1', title: 'Current' }, { id: 'n2', title: '门户' }, { id: 'n3', title: 'Other' }],
+      getNameList: async (id, kind) => (kind === 'namelist' ? lists[id] : [])
+    };
+    const library = await readerText.loadLibraryNames(storage, 'n1');
+    const qtNamesOf = (key) => (key === '羽衣' ? ['Hagoromo', 'Vũ Y Tiên'] : []);
+    assert.deepStrictEqual(plain(readerText.storeNamesFor('羽衣', library, qtNamesOf)), [
+      { translation: 'Hagoromo', from: '门户' },
+      { translation: 'Vũ Y Tiên', from: 'QT Names' }
+    ], "this book's own name is left out; empty names and repeats are skipped");
+    assert.deepStrictEqual(plain(readerText.storeNamesFor('林动', library, null)), [{ translation: 'Lâm Động', from: '门户' }]);
+    assert.deepStrictEqual(plain(readerText.storeNamesFor('', library, qtNamesOf)), []);
+    assert.deepStrictEqual(plain(await readerText.loadLibraryNames(null, 'n1')), []);
+  });
+
+  await test('buildReaderConverter can list VietPhrase and QT Names meanings on their own', async () => {
+    const maps = {
+      vietPhrase: { has: (k) => k === '羽衣', meanings: () => ['vũ y', 'áo lông vũ'] },
+      qtNames: { has: (k) => k === '羽衣', meanings: () => ['Hagoromo'] },
+      pronouns: { has: () => false }
+    };
+    const services = {
+      storage: { getNameList: async () => [] },
+      hanViet: { load: async () => new Map() },
+      dictionaries: { load: async (name) => (name === 'luatNhan' || name === 'ignoredPhrases' ? [] : maps[name] || new Map()) },
+      processors: { createConverter: (lists) => ({ lists }) }
+    };
+    const { buildReaderConverter } = await loadComponent('components/react/reader/readerText.js');
+    const converter = await buildReaderConverter({ id: 'n1', nameList: [] }, services);
+    assert.deepStrictEqual(converter.vietPhraseOf('羽衣'), ['vũ y', 'áo lông vũ']);
+    assert.deepStrictEqual(converter.qtNamesOf('羽衣'), ['Hagoromo']);
+    assert.deepStrictEqual(converter.vietPhraseOf('林动'), []);
+  });
+
   await test('savePhraseEntry updates an existing entry for the same Chinese, or adds a new one', async () => {
     const calls = [];
     const lists = { soft: [{ id: 'e1', original: '笑笑', translation: 'old' }], namelist: [] };

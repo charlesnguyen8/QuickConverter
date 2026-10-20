@@ -92,10 +92,17 @@ export async function buildReaderConverter(novel, services, { onError } = {}) {
     });
     return out;
   };
+  const onlyFrom = (map) => (key) => {
+    if (!map || typeof map.has !== 'function' || !map.has(key)) return [];
+    const found = typeof map.meanings === 'function' ? map.meanings(key) : [map.get(key)];
+    return found.filter((meaning, i) => meaning && found.indexOf(meaning) === i);
+  };
+  const vietPhraseOf = onlyFrom(vietPhrase);
+  const qtNamesOf = onlyFrom(qtNames);
   const readingOf = (text) => Array.from(String(text || '')).map((ch) => (hanVietMap && hanVietMap.has(ch) ? hanVietMap.get(ch) : ch)).join(' ');
   const finished = nowMs();
   const loadTimings = { total: finished - started, build: finished - buildStart, byName };
-  return { ...converter, meaningsOf, readingOf, loadTimings };
+  return { ...converter, meaningsOf, vietPhraseOf, qtNamesOf, readingOf, loadTimings };
 }
 
 export function paragraphsFromLines(lines) {
@@ -207,6 +214,34 @@ export async function savePhraseEntry(storage, novelId, kind, { original, transl
   const existing = list.find((entry) => entry && String(entry.original || '').trim().toLowerCase() === key.toLowerCase());
   if (existing) return storage.updateNameEntry(novelId, existing.id, { translation: value }, kind);
   return storage.addNameEntry(novelId, { original: key, translation: value }, kind);
+}
+
+export function meaningPickKind(segment) {
+  return segment && segment.origin === 'name' ? 'namelist' : 'locked';
+}
+
+export async function loadLibraryNames(storage, currentNovelId) {
+  if (!storage || typeof storage.getAllNovels !== 'function') return [];
+  const novels = (await storage.getAllNovels()) || [];
+  const lists = await Promise.all(novels
+    .filter((novel) => novel && novel.id && novel.id !== currentNovelId)
+    .map(async (novel) => {
+      const list = (await storage.getNameList(novel.id, 'namelist')) || [];
+      return list.map((entry) => ({ original: String((entry && entry.original) || '').trim(), translation: String((entry && entry.translation) || '').trim(), from: novel.title || novel.id }));
+    }));
+  return lists.flat().filter((entry) => entry.original && entry.translation);
+}
+
+export function storeNamesFor(source, libraryNames, qtNamesOf) {
+  const key = String(source || '').trim();
+  if (!key) return [];
+  const out = [];
+  const add = (translation, from) => {
+    if (translation && !out.some((name) => name.translation === translation)) out.push({ translation, from });
+  };
+  (libraryNames || []).forEach((entry) => { if (entry.original === key) add(entry.translation, entry.from); });
+  if (typeof qtNamesOf === 'function') (qtNamesOf(key) || []).forEach((meaning) => add(String(meaning || '').trim(), 'QT Names'));
+  return out;
 }
 
 export const PHRASE_ORIGIN_LABELS = {

@@ -1,9 +1,35 @@
 import React, { useEffect, useState } from 'react';
-import { PHRASE_KIND_LABELS, PHRASE_ORIGIN_LABELS, editedPhrase, phraseSaveKind } from './readerText.js';
+import { PHRASE_KIND_LABELS, PHRASE_ORIGIN_LABELS, editedPhrase, meaningPickKind } from './readerText.js';
+
+const SELECT = 'flex-1 min-w-0 min-h-10 px-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50';
+
+function PickerRow({ id, label, empty, items, onChoose, disabled }) {
+  const [chosen, setChosen] = useState('');
+  const value = items.some((item) => item.value === chosen) ? chosen : '';
+  const choose = (next) => {
+    setChosen(next);
+    if (next && onChoose) onChoose(next);
+  };
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[11px] uppercase tracking-wide text-slate-500">{label}</span>
+      {items.length === 0 ? (
+        <div className="text-xs text-slate-400">{empty}</div>
+      ) : (
+        <div className="flex">
+          <select id={id} value={value} disabled={disabled} onChange={(e) => choose(e.target.value)} aria-label={label} className={SELECT}>
+            <option value="">Pick to copy into your meaning</option>
+            {items.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const BTN = 'min-h-10 inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm font-semibold transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-40 disabled:pointer-events-none';
 
-export default function ReaderPhrasePopover({ phrase, options = [], saving = false, canExtendLeft = false, canExtendRight = false, onExtendLeft, onExtendRight, onPick, onSaveName, onSaveLocked, onOpenName, onClose, suggestions = [], suggestionsLoading = false, onAcceptSuggestion, onRejectSuggestion, readingOf, meaningsOf, definitionsOf, definitionsLoading = false, definitionsError = false }) {
+export default function ReaderPhrasePopover({ phrase, options = [], saving = false, canExtendLeft = false, canExtendRight = false, onExtendLeft, onExtendRight, onPick, onSaveName, onSaveLocked, onOpenName, onUse, onDeleteName, vietPhraseOf, storeNamesOf, bookNameOf, onClose, suggestions = [], suggestionsLoading = false, onAcceptSuggestion, onRejectSuggestion, readingOf, meaningsOf, definitionsOf, definitionsLoading = false, definitionsError = false }) {
   const [custom, setCustom] = useState(phrase ? phrase.translation : '');
   const [sourceText, setSourceText] = useState(phrase ? phrase.source : '');
 
@@ -17,13 +43,17 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
 
   if (!phrase) return null;
   const origin = PHRASE_ORIGIN_LABELS[phrase.origin] || phrase.origin;
-  const saveTo = PHRASE_KIND_LABELS[phraseSaveKind(phrase)];
+  const saveTo = PHRASE_KIND_LABELS[meaningPickKind(phrase)];
   const value = custom.trim();
   const edited = editedPhrase(phrase, sourceText, { readingOf, meaningsOf });
   const unedited = edited.source === phrase.source;
   const shownOptions = unedited && options.length > 0 ? options : edited.options;
   const canSave = !saving && !!edited.source;
   const showDictionary = definitionsLoading || definitionsError || typeof definitionsOf === 'function';
+  const useCustom = onUse || onPick;
+  const vietPhraseItems = (typeof vietPhraseOf === 'function' && edited.source ? vietPhraseOf(edited.source) || [] : []).map((meaning) => ({ value: meaning, label: meaning }));
+  const storeItems = (typeof storeNamesOf === 'function' && edited.source ? storeNamesOf(edited.source) || [] : []).map((name) => ({ value: name.translation, label: `${name.translation} · ${name.from}` }));
+  const bookName = typeof bookNameOf === 'function' && edited.source ? bookNameOf(edited.source) : null;
   const definitions = !definitionsLoading && !definitionsError && typeof definitionsOf === 'function' && edited.source ? definitionsOf(edited.source) : [];
 
   return (
@@ -136,19 +166,29 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
           </div>
         </div>
 
+        <PickerRow id="reader-phrase-vietphrase" label="VietPhrase" empty="No VietPhrase entry for this phrase." items={vietPhraseItems} onChoose={setCustom} disabled={saving} />
+
+        <div className="flex flex-col gap-1.5">
+          <PickerRow id="reader-phrase-store" label="Name store · your other books and QT Names" empty="No saved names for this phrase." items={storeItems} onChoose={setCustom} disabled={saving} />
+          {bookName ? (
+            <div>
+              <button id="reader-phrase-delete-name" type="button" disabled={saving} onClick={() => onDeleteName && onDeleteName(bookName)} title={`Remove ${bookName.original} from this book's Name List`} className={`${BTN} text-rose-300 bg-slate-800 border border-slate-700 hover:bg-rose-500/20`}>
+                Delete name
+              </button>
+            </div>
+          ) : null}
+        </div>
+
         <div className="flex gap-2">
           <input
             id="reader-phrase-custom"
             type="text"
             value={custom}
             onChange={(e) => setCustom(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && onPick && edited.source) { e.preventDefault(); onPick(value, edited.source); } }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && useCustom && edited.source) { e.preventDefault(); useCustom(value, edited.source); } }}
             className="flex-1 min-w-0 min-h-10 px-3 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
             placeholder="Your own meaning"
           />
-          <button id="reader-phrase-use-btn" type="button" disabled={!canSave} onClick={() => onPick && onPick(value, edited.source)} className={`${BTN} text-white bg-indigo-500 hover:bg-indigo-600`}>
-            Use
-          </button>
         </div>
 
         <div className="flex flex-wrap gap-2">
