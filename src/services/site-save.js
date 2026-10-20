@@ -205,9 +205,64 @@
       return run;
     }
 
+    // The app's page source for downloads: opens the chapter page hidden, and resolves with what
+    // the page shows (text, or an image chapter's picture) without saving anything. When the page
+    // needs the user it says why (onNeedsUser), shows the page and keeps waiting for the chapter.
+    function fetchSession(url, { expect = null, onNeedsUser = null, signal = null } = {}) {
+      return new Promise((resolve, reject) => {
+        let timer = null;
+        let unsubscribe = () => {};
+        const onAbort = () => session.fail(new Error('UserCancelled'));
+        const session = global.PageSession.create({
+          expect,
+          onNeedsUser,
+          show: () => {
+            clearTimeout(timer);
+            return browser.show();
+          },
+          finish: async (error, source) => {
+            clearTimeout(timer);
+            unsubscribe();
+            if (signal) signal.removeEventListener('abort', onAbort);
+            if (!(error && error.closedByUser)) {
+              try {
+                await browser.close();
+              } catch (e) {}
+            }
+            if (error) reject(error);
+            else resolve(source);
+          }
+        });
+        if (signal) {
+          if (signal.aborted) {
+            reject(new Error('UserCancelled'));
+            return;
+          }
+          signal.addEventListener('abort', onAbort);
+        }
+        unsubscribe = browser.subscribe((message) => session.handle(message));
+
+        (async () => {
+          try {
+            const script = await loadScript();
+            const userAgent = await userAgentFor(url);
+            await browser.open(url, userAgent ? { script, visible: false, userAgent } : { script, visible: false });
+            if (!session.isDone()) timer = setTimeout(() => session.slow(), hiddenWaitMs);
+          } catch (e) {
+            session.fail(e instanceof Error ? e : new Error(String(e)));
+          }
+        })();
+      });
+    }
+
     return {
       open(url) {
         return enqueue(url);
+      },
+      fetchPage(url, options) {
+        const run = chain.then(() => fetchSession(url, options));
+        chain = run.catch(() => {});
+        return run;
       },
       openLogin(url) {
         return enqueue(url, { login: true });
@@ -264,6 +319,10 @@
     openLogin(url) {
       const saver = sharedSiteSave();
       return saver ? saver.openLogin(url) : Promise.resolve({ status: 'unavailable' });
+    },
+    fetchPage(url, options) {
+      const saver = sharedSiteSave();
+      return saver ? saver.fetchPage(url, options) : Promise.reject(new Error('Opening chapter pages is not available here.'));
     },
     onStatus(handler) {
       const saver = sharedSiteSave();

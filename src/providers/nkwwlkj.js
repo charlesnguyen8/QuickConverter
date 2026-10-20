@@ -219,6 +219,7 @@ const NkwwlkjProvider = (() => {
     supportsBulkDownload: false,
     shortName: '独阅读',
     appUserAgent: 'desktop',
+    fetchMode: 'page',
 
     matches(url) {
       if (!url) return false;

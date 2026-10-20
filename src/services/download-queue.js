@@ -90,6 +90,9 @@
     const queued = (state.queue || []).length;
     if (state.activeTask) {
       const task = state.activeTask;
+      if (task.progress && task.progress.phase === 'needs-user') {
+        return `Waiting for you: ${task.progress.text} · ${chapterLabel(task)}`;
+      }
       const base = `Downloading ${task.novelTitle || 'Novel'} · ${chapterLabel(task)}`;
       return queued > 0 ? `${base} · ${queued} more queued` : base;
     }
@@ -1124,6 +1127,17 @@
             if (task.options && typeof task.options.onChunk === 'function') {
               task.options.onChunk(chunk);
             }
+          },
+          onNeedsUser: (reason) => {
+            task.progress = {
+              phase: 'needs-user',
+              percent: task.progress && task.progress.percent !== undefined ? task.progress.percent : 5,
+              text: reason || 'The chapter page needs you.'
+            };
+            this._notifySubscribers();
+            if (isExtension && isExecutionOwner) {
+              tellWorker({ action: 'QUEUE_PROGRESS', taskId: task.id, chapterNumber: task.chapterNumber, progress: task.progress });
+            }
           }
         };
 
@@ -1165,7 +1179,11 @@
               errLower.includes('top up') ||
               errLower.includes('401') ||
               errLower.includes('402') ||
-              errLower.includes('cannot be downloaded in the background');
+              errLower.includes('cannot be downloaded in the background') ||
+              errLower.includes('saved by opening its page') ||
+              errLower.includes('closed before the chapter loaded') ||
+              errLower.includes("not in the book's chapter list") ||
+              errLower.includes('reading chapter images is not available');
 
             if (isPermanentAuthOrBalance) {
               // Place task back at top of queue, pause queue immediately, and notify

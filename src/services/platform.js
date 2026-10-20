@@ -591,6 +591,20 @@
       if (isExtension()) return null;
       return nativePlugin('BackgroundWork') ? appBackground : null;
     },
+    // Opens a chapter page and returns what it shows (the download queue's page source). The app
+    // uses its SiteBrowser through SiteSave; the extension gets its own in a later phase.
+    get pageSource() {
+      if (isExtension()) return null;
+      const siteSave = global.SiteSave;
+      if (!siteSave || typeof siteSave.available !== 'function' || typeof siteSave.fetchPage !== 'function' || !siteSave.available()) return null;
+      return { fetch: (url, options) => siteSave.fetchPage(url, options) };
+    },
+    // Reads the text of an image chapter (the app's in-page OCR engine).
+    get ocr() {
+      const engine = global.QCOcr;
+      if (!engine || typeof engine.recognize !== 'function') return null;
+      return { recognize: (bytes, mimeType) => engine.recognize(bytes, mimeType) };
+    },
     get siteBrowser() {
       if (isExtension()) return null;
       return nativePlugin('SiteBrowser') ? appSiteBrowser : null;

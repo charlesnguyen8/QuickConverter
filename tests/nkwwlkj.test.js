@@ -292,6 +292,13 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     assert.strictEqual(R.canBulkDownload(null), true);
   });
 
+  await test('page sites download through the queue wherever the platform can open their pages', () => {
+    const pageEnv = loadEnv({ Platform: { pageSource: { fetch: async () => null } } });
+    assert.strictEqual(pageEnv.NkwwlkjProvider.fetchMode, 'page');
+    assert.strictEqual(pageEnv.ProviderRegistry.canBulkDownload({ url: BOOK_URL }), true, 'with a page source (the app)');
+    assert.strictEqual(env.ProviderRegistry.canBulkDownload({ url: BOOK_URL }), false, 'without one (the extension, until phase 3)');
+  });
+
   await test('StorageService.getCatalogChapterNumber maps a chapter id to its catalog number', () => {
     const storageEnv = loadEnv({ indexedDB: { open() { throw new Error('not used'); } } });
     vm.runInContext(read('src', 'services', 'platform.js'), storageEnv);

@@ -1062,6 +1062,54 @@ async function runTests() {
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
   });
 
+  await test('A chapter whose page needs the user shows "waiting for you", then finishes normally', async () => {
+    DownloadQueueService.clearAll();
+    DownloadQueueService.resume();
+    const originalDownload = mockStorageService.downloadChapter;
+    let release = null;
+    mockStorageService.downloadChapter = async (novelId, chNum, options) => {
+      options.onNeedsUser('Log in to 独阅读');
+      await new Promise((resolve) => { release = resolve; });
+      return { success: true, translationDelay: 0 };
+    };
+    try {
+      await DownloadQueueService.enqueue({ novelId: 'n-page', novelTitle: '门户', chapterNumber: 301, chapterTitle: 'Chapter 301' });
+      await new Promise((r) => setTimeout(r, 20));
+      const waiting = DownloadQueueService.getState();
+      assert.strictEqual(waiting.activeTask.progress.phase, 'needs-user');
+      assert.strictEqual(waiting.activeTask.progress.text, 'Log in to 独阅读');
+      assert.strictEqual(DownloadQueueService.backgroundWorkText(waiting), 'Waiting for you: Log in to 独阅读 · Chapter 301');
+      release();
+      await new Promise((resolve) => {
+        const stop = DownloadQueueService.subscribe((s) => { if (s.totalCount === 0 && !s.isProcessing) { stop(); resolve(); } });
+      });
+      assert.strictEqual(DownloadQueueService.getState().isPaused, false, 'carries on');
+    } finally {
+      mockStorageService.downloadChapter = originalDownload;
+      DownloadQueueService.clearAll();
+    }
+  });
+
+  await test('Closing the page before the chapter loads pauses the queue with the reason, no retry backoff', async () => {
+    DownloadQueueService.clearAll();
+    DownloadQueueService.resume();
+    const originalDownload = mockStorageService.downloadChapter;
+    mockStorageService.downloadChapter = async () => { throw new Error('Closed before the chapter loaded.'); };
+    try {
+      await DownloadQueueService.enqueue({ novelId: 'n-page', novelTitle: '门户', chapterNumber: 302, chapterTitle: 'Chapter 302' });
+      await new Promise((r) => setTimeout(r, 30));
+      const state = DownloadQueueService.getState();
+      assert.strictEqual(state.isPaused, true);
+      assert.strictEqual(state.pauseError, 'Closed before the chapter loaded.');
+      assert.strictEqual(state.cooldown, null, 'no 75-minute backoff');
+      assert.strictEqual(state.queue[0].chapterNumber, 302, 'the chapter stays first in line');
+    } finally {
+      mockStorageService.downloadChapter = originalDownload;
+      DownloadQueueService.clearAll();
+      DownloadQueueService.resume();
+    }
+  });
+
   await test('backgroundWorkText says what keeps the app working, and nothing when it can rest', () => {
     const text = DownloadQueueService.backgroundWorkText;
     const task = (n) => ({ novelTitle: 'Regressor', chapterNumber: n, chapterTitle: `Chapter ${n}` });

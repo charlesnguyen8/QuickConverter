@@ -311,7 +311,7 @@ export default function ReaderApp() {
             model={model}
             onDownload={handleDownload}
             deepseekRef={panelRef}
-            manualChapter={catalogItem && (catalogItem.locked || !canBulkDownload(novel)) ? catalogItem : null}
+            manualChapter={catalogItem && !canBulkDownload(novel) ? catalogItem : null}
             novel={novel}
           />
         ) : null}

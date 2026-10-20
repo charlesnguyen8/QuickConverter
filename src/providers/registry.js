@@ -52,9 +52,15 @@ const ProviderRegistry = (() => {
     return (novel.url && getProviderForUrl(novel.url)) || (novel.domain && getProviderForDomain(novel.domain)) || null;
   }
 
+  // Every site can download through the queue; sites whose chapters only exist on their own page
+  // need a platform that can open pages (the app's site window).
   function canBulkDownload(novel) {
     const provider = getProviderForNovel(novel);
-    return !provider || provider.supportsBulkDownload !== false;
+    if (!provider) return true;
+    const pageOnly = provider.fetchMode === 'page' || provider.supportsBulkDownload === false;
+    if (!pageOnly) return true;
+    const platform = globalScope && globalScope.Platform;
+    return !!(platform && platform.pageSource);
   }
 
   // Auto-register default providers available in the current environment

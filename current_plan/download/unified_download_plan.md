@@ -1,6 +1,6 @@
 # One Download for every site and platform (plan)
 
-**Status (2026-10-20):** approved by the owner. Phase 1 built (refactor, no behavior change); phases 2–5 to do.
+**Status (2026-10-20):** approved by the owner. Phases 1–2 built (phase 2 not yet checked on the phone); phases 3–5 to do.
 
 **Goal:** a single `downloadChapter` that the queue calls for every site. Everything around it
 (queue, Download All, cooldowns, retries, AI translation, progress dock, background
@@ -121,6 +121,20 @@ once nothing else calls them).
 2. **Page source in the app.** `Platform.pageSource` from `site-save.js` (result instead of
    save), queue `needs-user` state and dock UI, Download button for page sites, Download All for
    every site. Two-device-style tests with a fake SiteBrowser.
+   - **Built:** `SiteSave.fetchPage(url, { expect, onNeedsUser, signal })` returns the page's
+     chapter (text, or an image chapter's picture) without saving; a different chapter, an empty
+     page, another page or a silent page calls `onNeedsUser(reason)` and shows the page; closing it
+     fails with "Closed before the chapter loaded." `Platform.pageSource` (app only) and
+     `Platform.ocr` (the app's `QCOcr`). `fetchChapterSource` uses the page source for
+     `fetchMode: 'page'` providers (nkwwlkj, sangtacviet) with the catalog URL; `downloadChapter`
+     reads image sources with OCR (origin `ocr`: paid marking, translation). The queue passes
+     `onNeedsUser` (progress phase `needs-user`, notification "Waiting for you: …"), pauses
+     without backoff when the page is closed; the dock shows the reason and a Show page button.
+     `ProviderRegistry.canBulkDownload` is true for page sites wherever a page source exists, so
+     in the app they get Download / Download All and paid chapters get Download too. The
+     extension is unchanged (Open to save) until phase 3. Checked in the app build in a browser
+     with a fake site window: Download buttons, a chapter saved through the page, the
+     waiting-for-you dock with Show page, and a wrong chapter refused.
 3. **Page source in the extension.** Background-tab source in the service worker, content
    script result channel, tab activation on needs-user. Tests with fake `chrome.tabs` and content
    script messages.

@@ -140,7 +140,7 @@ export const ChapterRow = memo(function ChapterRow({ novel, chapter, downloadedC
             <span>⏳#{queueStatus.queuePosition}</span>
             <span className="font-bold">✕</span>
           </button>
-        ) : manualOnly || chapter.locked ? (
+        ) : manualOnly ? (
           <ManualChapterAction chapter={chapter} compact />
         ) : (
           <button

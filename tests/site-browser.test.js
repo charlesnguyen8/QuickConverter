@@ -123,6 +123,7 @@ function loadSiteSave() {
   env.self = env;
   env.globalThis = env;
   vm.createContext(env);
+  vm.runInContext(read('src', 'services', 'page-session.js'), env);
   vm.runInContext(read('src', 'services', 'site-save.js'), env);
   return env;
 }
@@ -426,6 +427,101 @@ process.on('beforeExit', () => {
     assert.strictEqual(await env.SiteSave.siteUserAgent('https://sangtacviet.com/truyen/uukanshu/1/92019/1122/'), 'PHONE-UA', 'sangtacviet refuses a desktop identity on a phone');
     assert.strictEqual(await env.SiteSave.siteUserAgent('https://example.com/'), 'PHONE-UA');
     assert.deepStrictEqual(plain(kinds), [['www.nkwwlkj.cn', 'desktop'], ['sangtacviet.com', 'mobile'], ['example.com', 'mobile']], 'each site keeps one identity (the platform resets its cookies when it changes)');
+  });
+
+  // --- fetchPage: the app's page source for the download queue (returns, never saves) ---
+
+  const EXPECT = { slug: '100181750', chapterSlug: '100043460' };
+
+  await test('fetchPage returns the chapter the page shows, saves nothing and closes the page', async () => {
+    const { createSiteSave } = loadSiteSave().SiteSave;
+    const browser = fakeBrowser();
+    const storage = fakeStorage();
+    const done = createSiteSave({ browser, storage, loadScript: async () => 'SCRIPT', userAgentFor: async () => 'UA' }).fetchPage(NK_CHAPTER_URL, { expect: EXPECT });
+    await tick(); await tick();
+    assert.deepStrictEqual(browser.calls, [['open', NK_CHAPTER_URL, { script: 'SCRIPT', visible: false, userAgent: 'UA' }]]);
+    await browser.emit(CHAPTER_MSG);
+    const source = plain(await done);
+    assert.deepStrictEqual(source, { kind: 'text', title: '第一章 张角', rawText: 'First line of the chapter.\n\nSecond line.', url: NK_CHAPTER_URL });
+    assert.deepStrictEqual(storage.calls, [], 'nothing saved here; the download pipeline saves');
+    assert.deepStrictEqual(browser.calls.slice(-1), [['close']]);
+  });
+
+  await test('fetchPage returns an image chapter\'s picture for OCR', async () => {
+    const { createSiteSave } = loadSiteSave().SiteSave;
+    const browser = fakeBrowser();
+    const done = createSiteSave({ browser, storage: fakeStorage(), loadScript: async () => '' }).fetchPage(NK_CHAPTER_URL, { expect: EXPECT });
+    await tick(); await tick();
+    await browser.emit({ ...CHAPTER_MSG, type: 'image', rawText: undefined, image: { base64: 'AQID', mimeType: 'image/png', width: 939, height: 4200 } });
+    const source = await done;
+    assert.strictEqual(source.kind, 'image');
+    assert.deepStrictEqual(Array.from(new Uint8Array(source.image.bytes)), [1, 2, 3]);
+    assert.strictEqual(source.image.mimeType, 'image/png');
+    assert.strictEqual(source.url, NK_CHAPTER_URL);
+  });
+
+  await test('fetchPage asks for the user (and shows the page) when the chapter does not come, then still returns it', async () => {
+    const { createSiteSave } = loadSiteSave().SiteSave;
+    for (const message of [
+      { type: 'empty', url: NK_CHAPTER_URL },
+      { type: 'other', url: 'https://www.nkwwlkj.cn/signup/login' },
+      { ...CHAPTER_MSG, chapterSlug: '999' },
+      { ...CHAPTER_MSG, type: 'image', rawText: undefined, error: 'tainted canvas' }
+    ]) {
+      const browser = fakeBrowser();
+      const asks = [];
+      const done = createSiteSave({ browser, storage: fakeStorage(), loadScript: async () => '' }).fetchPage(NK_CHAPTER_URL, { expect: EXPECT, onNeedsUser: (reason) => asks.push(reason) });
+      await tick(); await tick();
+      await browser.emit(message);
+      assert.strictEqual(asks.length, 1, `${message.type}: asks once`);
+      assert(asks[0].length > 5, `${message.type}: says why (${asks[0]})`);
+      assert.deepStrictEqual(browser.calls.slice(1), [['show']], `${message.type}: shows the page`);
+      await browser.emit(CHAPTER_MSG);
+      assert.strictEqual((await done).kind, 'text', `${message.type}: the chapter still arrives`);
+    }
+  });
+
+  await test('fetchPage fails when the user closes the page, or the download is cancelled', async () => {
+    const { createSiteSave } = loadSiteSave().SiteSave;
+    let browser = fakeBrowser();
+    let done = createSiteSave({ browser, storage: fakeStorage(), loadScript: async () => '' }).fetchPage(NK_CHAPTER_URL, { expect: EXPECT });
+    await tick(); await tick();
+    await browser.emit({ type: 'closed' });
+    await assert.rejects(() => done, /Closed before the chapter loaded/);
+
+    browser = fakeBrowser();
+    const controller = new AbortController();
+    done = createSiteSave({ browser, storage: fakeStorage(), loadScript: async () => '' }).fetchPage(NK_CHAPTER_URL, { expect: EXPECT, signal: controller.signal });
+    await tick(); await tick();
+    controller.abort();
+    await assert.rejects(() => done, /UserCancelled/);
+    assert.deepStrictEqual(browser.calls.slice(-1), [['close']], 'the page is closed');
+  });
+
+  await test('fetchPage asks for the user when the page stays silent too long', async () => {
+    const { createSiteSave } = loadSiteSave().SiteSave;
+    const browser = fakeBrowser();
+    const asks = [];
+    const done = createSiteSave({ browser, storage: fakeStorage(), loadScript: async () => '', hiddenWaitMs: 20 }).fetchPage(NK_CHAPTER_URL, { expect: EXPECT, onNeedsUser: (r) => asks.push(r) });
+    await new Promise((r) => setTimeout(r, 50));
+    assert.strictEqual(asks.length, 1);
+    assert.deepStrictEqual(browser.calls.slice(1), [['show']]);
+    await browser.emit(CHAPTER_MSG);
+    await done;
+  });
+
+  await test('the app offers the page source through the platform', () => {
+    const env = loadSiteSave();
+    env.Platform = { siteBrowser: {} };
+    vm.runInContext(read('src', 'services', 'platform.js'), env);
+    assert.strictEqual(env.Platform.pageSource, null, 'not without a site browser');
+    const fetched = [];
+    env.SiteSave.available = () => true;
+    env.SiteSave.fetchPage = (url, opts) => { fetched.push([url, opts]); return Promise.resolve({ kind: 'text' }); };
+    const source = env.Platform.pageSource;
+    assert(source && typeof source.fetch === 'function', 'available with the site saver');
+    source.fetch('https://x/1', { a: 1 });
+    assert.deepStrictEqual(plain(fetched), [['https://x/1', { a: 1 }]]);
   });
 
   await test('Log in opens the site visibly without the page script and ends when closed', async () => {

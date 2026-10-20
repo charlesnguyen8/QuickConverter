@@ -203,6 +203,7 @@ const SangtacvietProvider = (() => {
     supportsBulkDownload: false,
     contentWaitMs: 20000,
     appUserAgent: 'mobile',
+    fetchMode: 'page',
 
     matches(url) {
       if (!url) return false;

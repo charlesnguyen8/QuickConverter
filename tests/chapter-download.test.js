@@ -68,7 +68,7 @@ function makeEnv({ provider, translation } = {}) {
   const S = env.StorageService;
   const notices = [];
   S.subscribeChapterSaved((msg) => notices.push([msg.novelId, msg.chapterNumber]));
-  return { S, stores: db.stores, fetches, aiCalls, notices, provider: theProvider };
+  return { S, stores: db.stores, fetches, aiCalls, notices, provider: theProvider, global: env };
 }
 
 async function seed(S, stores, { catalog = true } = {}) {
@@ -217,6 +217,78 @@ process.on('beforeExit', () => {
     await seed(pageOnly.S, pageOnly.stores);
     const pageBook = await pageOnly.S.getNovelById('n1');
     await assert.rejects(() => pageOnly.S.fetchChapterSource(pageBook, 3, {}), /opening its page/i);
+  });
+
+  // --- Page sites through the same download (the app's page source) ---
+
+  const pageProvider = () => ({ id: 'nkwwlkj', fetchMode: 'page', domains: ['www.nkwwlkj.cn'], async fetchChapterContent() { throw new Error('never called'); } });
+
+  async function seedPageBook(env) {
+    await env.S.addNovel({ id: 'n1', title: '门户', slug: '100181750', url: 'https://www.nkwwlkj.cn/book/book_detail/100181750' });
+    env.stores.novels.n1.chapterList = [
+      { chapterNumber: 1, slug: '100043460', title: '第一章 张角', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043460', locked: false }
+    ];
+  }
+
+  function withPageSource(env, result) {
+    const calls = [];
+    return { calls, install: (global) => {
+      global.SiteSave = {
+        available: () => true,
+        fetchPage: async (url, opts) => {
+          calls.push([url, JSON.parse(JSON.stringify({ expect: opts.expect })), typeof opts.onNeedsUser, !!opts.signal || 'signal' in opts]);
+          if (opts.onNeedsUser) opts.onNeedsUser('Log in to 独阅读');
+          return typeof result === 'function' ? result() : result;
+        }
+      };
+    } };
+  }
+
+  await test('a page site downloads through the page source and saves like any download', async () => {
+    const env = makeEnv({ provider: pageProvider() });
+    await seedPageBook(env);
+    const page = withPageSource(env, { kind: 'text', title: 'Page title', rawText: '原文。', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043460' });
+    page.install(env.global);
+    const asks = [];
+    await env.S.downloadChapter('n1', 1, { translation: TRANSLATION, onNeedsUser: (r) => asks.push(r) });
+    assert.deepStrictEqual(page.calls, [['https://www.nkwwlkj.cn/chapter/book_chapter_detail/100043460', { expect: { slug: '100181750', chapterSlug: '100043460' } }, 'function', true]]);
+    assert.deepStrictEqual(asks, ['Log in to 独阅读'], 'the queue hears when the page needs the user');
+    const record = env.stores.chapters.n1_ch1;
+    assert.strictEqual(record.title, '第一章 张角', 'catalog title');
+    assert.strictEqual(record.originalRawText, '原文。');
+    assert.strictEqual(record.isTranslated, true, 'translated like any download');
+  });
+
+  await test('an image chapter from the page is read with OCR, saved as paid and translated', async () => {
+    const env = makeEnv({ provider: pageProvider() });
+    await seedPageBook(env);
+    withPageSource(env, { kind: 'image', image: { bytes: new Uint8Array([1, 2]).buffer, mimeType: 'image/png' }, url: 'https://page/1' }).install(env.global);
+    const read = [];
+    env.global.QCOcr = { recognize: async (bytes, mime) => { read.push([Array.from(new Uint8Array(bytes)), mime]); return '第一章 张角\n\n正文'; } };
+    const progress = [];
+    await env.S.downloadChapter('n1', 1, { translation: TRANSLATION, onProgress: (p) => progress.push(p.phase) });
+    assert.deepStrictEqual(read, [[[1, 2], 'image/png']]);
+    const record = env.stores.chapters.n1_ch1;
+    assert.strictEqual(record.ocrSource, true);
+    assert.strictEqual(record.originalRawText, '第一章 张角\n\n正文');
+    assert.strictEqual(record.isTranslated, true);
+    assert.strictEqual(env.stores.novels.n1.chapterList[0].locked, true, 'marked paid');
+    assert(progress.includes('reading'), 'reports reading the image');
+  });
+
+  await test('without a page source or OCR the download says why', async () => {
+    const none = makeEnv({ provider: pageProvider() });
+    await seedPageBook(none);
+    await assert.rejects(() => none.S.downloadChapter('n1', 1, {}), /saved by opening its page/);
+    const noOcr = makeEnv({ provider: pageProvider() });
+    await seedPageBook(noOcr);
+    withPageSource(noOcr, { kind: 'image', image: { bytes: new ArrayBuffer(1), mimeType: 'image/png' } }).install(noOcr.global);
+    await assert.rejects(() => noOcr.S.downloadChapter('n1', 1, {}), /Reading chapter images is not available/);
+    const blank = makeEnv({ provider: pageProvider() });
+    await seedPageBook(blank);
+    withPageSource(blank, { kind: 'image', image: { bytes: new ArrayBuffer(1), mimeType: 'image/png' } }).install(blank.global);
+    blank.global.QCOcr = { recognize: async () => '  ' };
+    await assert.rejects(() => blank.S.downloadChapter('n1', 1, {}), /No text was found in the chapter image/);
   });
 
   console.log(`--- Chapter Download Test Suite: ${passed}/${passed + failed} passed ---`);

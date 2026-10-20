@@ -89,7 +89,7 @@ export function ReaderChapterRow({ novel, chapter, chNum, downloadedChapter, que
         <span className="hidden group-hover/q:inline">Remove ✕</span>
       </button>
     );
-  } else if (manualOnly || chapter.locked) {
+  } else if (manualOnly) {
     action = <ManualChapterAction chapter={chapter} compact />;
   } else {
     action = (

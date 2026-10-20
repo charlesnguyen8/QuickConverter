@@ -1579,7 +1579,20 @@ const StorageService = {
   async fetchChapterSource(novel, chapterNumber, options = {}) {
     const provider = providerForNovel(novel);
     if (provider && provider.fetchMode === 'page') {
-      throw new Error(`${provider.shortName || provider.name || 'This site'}: chapters are saved by opening its page.`);
+      const platform = storagePlatform();
+      const pages = platform && platform.pageSource;
+      if (!pages) {
+        throw new Error(`${provider.shortName || provider.name || 'This site'}: chapters are saved by opening its page.`);
+      }
+      const pageItem = catalogItemOf(novel, chapterNumber);
+      if (!pageItem || !pageItem.url) {
+        throw new Error(`Chapter ${chapterNumber} is not in the book's chapter list. Sync Catalog, then try again.`);
+      }
+      return pages.fetch(pageItem.url, {
+        expect: { slug: novel.slug, chapterSlug: pageItem.slug },
+        onNeedsUser: options.onNeedsUser,
+        signal: options.signal
+      });
     }
     if (!provider || typeof provider.fetchChapterContent !== 'function') {
       throw new Error(`No provider available to fetch chapter content for ${novel.title}`);
@@ -1615,6 +1628,18 @@ const StorageService = {
     }
     if (options && options.signal && options.signal.aborted) {
       throw new Error('UserCancelled');
+    }
+    if (source.kind === 'image') {
+      const platform = storagePlatform();
+      const ocr = platform && platform.ocr;
+      if (!ocr) throw new Error('Reading chapter images is not available here.');
+      if (options && typeof options.onProgress === 'function') {
+        options.onProgress({ phase: 'reading', percent: 20, text: 'Reading the chapter image...' });
+      }
+      const text = String((await ocr.recognize(source.image.bytes, source.image.mimeType)) || '').trim();
+      if (!text) throw new Error('No text was found in the chapter image. The chapter was not saved.');
+      if (options && options.signal && options.signal.aborted) throw new Error('UserCancelled');
+      return this._saveChapterFromSource(novel, chapterNumber, { origin: 'ocr', title: source.title, url: source.url, rawText: text }, options);
     }
     return this._saveChapterFromSource(novel, chapterNumber, { origin: 'fetch', ...source }, options);
   },
@@ -1690,7 +1715,7 @@ const StorageService = {
 
     if (origin !== 'page') report({ phase: 'completed', percent: 100, text: 'Completed' });
 
-    return origin === 'fetch' ? { ...saved, translationDelay: translated ? translated.delaySeconds : 0 } : saved;
+    return { ...saved, translationDelay: translated ? translated.delaySeconds : 0 };
   },
 
   async _addCapturedGlossary(novelId, chapterNumber, { names = [], locked = [], soft = [] } = {}) {

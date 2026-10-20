@@ -131,7 +131,7 @@ export function ChapterRow({ novel, chapter, chNum, downloadedChapter, queueStat
         <span className="text-amber-400 group-hover/qbtn:text-rose-300 font-bold ml-0.5 group-hover/qbtn:hidden">✕</span>
       </button>
     );
-  } else if (manualOnly || chapter.locked) {
+  } else if (manualOnly) {
     action = <ManualChapterAction chapter={chapter} />;
   } else {
     action = (

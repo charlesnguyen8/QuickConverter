@@ -169,7 +169,10 @@ export default function QueueDock({ queueService, isPopup }) {
   if (active) {
     const modelName = active.options?.translation?.model || 'deepseek';
     const percent = active.progress?.percent !== undefined ? active.progress.percent : 10;
-    const progressText = active.progress?.text || (active.progress?.phase === 'translating' ? `Translating (${percent}%)...` : 'Translating...');
+    const needsUser = active.progress?.phase === 'needs-user';
+    const progressText = needsUser
+      ? `Waiting for you: ${active.progress.text}`
+      : active.progress?.text || (active.progress?.phase === 'translating' ? `Translating (${percent}%)...` : 'Translating...');
     activeSection = (
       <div className="p-2.5 sm:p-3 rounded-xl bg-slate-800 border border-indigo-500 flex flex-col gap-2 shadow-md">
         <div className="flex items-center justify-between gap-2.5">
@@ -196,6 +199,19 @@ export default function QueueDock({ queueService, isPopup }) {
             <CancelIcon size={14} />
           </button>
         </div>
+        {needsUser ? (
+          <button
+            type="button"
+            id="queue-show-page-btn"
+            onClick={() => {
+              const browser = typeof window !== 'undefined' && window.Platform ? window.Platform.siteBrowser : null;
+              if (browser) browser.show();
+            }}
+            className="self-start inline-flex items-center gap-1.5 min-h-10 px-3 rounded-lg text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 transition cursor-pointer"
+          >
+            Show page
+          </button>
+        ) : null}
         <div className="w-full bg-slate-900 rounded-full h-1 overflow-hidden border border-slate-700/50">
           <div className="bg-indigo-500 h-full rounded-full transition-all duration-300" style={{ width: `${percent}%` }} />
         </div>

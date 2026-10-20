@@ -1084,8 +1084,8 @@ async function testAsync(name, fn) {
       assert(manual.includes('Open to save'), `${name} row offers Open to save`);
       const locked = renderRow({ chapter: lockedChapter, manualOnly: true });
       assert(locked.includes('Open to save') && locked.includes(`href="${lockedChapter.url}"`) && !locked.includes('title="Download Chapter 5"'), `${name} row offers Open to save for paid chapters`);
-      const lockedAnySite = renderRow({ chapter: lockedChapter });
-      assert(!lockedAnySite.includes('title="Download Chapter 5"'), `${name} row never offers Download for a locked chapter`);
+      const lockedDownloadable = renderRow({ chapter: lockedChapter });
+      assert(lockedDownloadable.includes('title="Download Chapter 5"') && !lockedDownloadable.includes('Open to save'), `${name} row offers Download for a paid chapter where downloads can open pages (the queue stops at the page if it is not unlocked)`);
     }
   });
 
@@ -1181,6 +1181,23 @@ async function testAsync(name, fn) {
     const html = render(h(QueueDock, { queueService: service, isPopup: false }));
     assert(html.includes('Queue paused — request failed'), 'paused banner heading');
     assert(html.includes('Translation timed out: no data received for 60 seconds.'), 'pause error message is shown');
+  });
+
+  test('QueueDock says when a chapter is waiting for you and offers to show its page', () => {
+    const state = {
+      activeTask: { id: 'n1_ch3', novelId: 'n1', novelTitle: '门户', chapterNumber: 3, chapterTitle: 'Chapter 3', status: 'processing', progress: { phase: 'needs-user', text: 'Log in to 独阅读' } },
+      queue: [],
+      isPaused: false,
+      isProcessing: true,
+      totalCount: 1,
+      cooldown: null,
+      pauseError: null
+    };
+    const service = { getState: () => state, subscribe: (cb) => { cb(state); return () => {}; } };
+    const html = render(h(QueueDock, { queueService: service, isPopup: false }));
+    assert(html.includes('Waiting for you') && html.includes('Log in to 独阅读'), 'says what the page needs');
+    assert(/<button[^>]*id="queue-show-page-btn"/.test(html), 'a Show page button');
+    assert(/min-h-10/.test((html.match(/<button[^>]*id="queue-show-page-btn"[^>]*>/) || [''])[0]), 'tappable');
   });
 
   const NovelDeepseekCard = (await loadComponent('components/react/novel/NovelDeepseekCard.jsx')).default;
