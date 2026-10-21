@@ -854,7 +854,7 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert.deepStrictEqual(plain(await readerText.loadLibraryNames(null, 'n1')), []);
   });
 
-  await test('buildReaderConverter can list VietPhrase and QT Names meanings on their own', async () => {
+  await test('buildReaderConverter can list QT Names meanings on their own', async () => {
     const maps = {
       vietPhrase: { has: (k) => k === '羽衣', meanings: () => ['vũ y', 'áo lông vũ'] },
       qtNames: { has: (k) => k === '羽衣', meanings: () => ['Hagoromo'] },
@@ -868,9 +868,8 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     };
     const { buildReaderConverter } = await loadComponent('components/react/reader/readerText.js');
     const converter = await buildReaderConverter({ id: 'n1', nameList: [] }, services);
-    assert.deepStrictEqual(converter.vietPhraseOf('羽衣'), ['vũ y', 'áo lông vũ']);
     assert.deepStrictEqual(converter.qtNamesOf('羽衣'), ['Hagoromo']);
-    assert.deepStrictEqual(converter.vietPhraseOf('林动'), []);
+    assert.deepStrictEqual(converter.qtNamesOf('林动'), []);
   });
 
   await test('savePhraseEntry updates an existing entry for the same Chinese, or adds a new one', async () => {

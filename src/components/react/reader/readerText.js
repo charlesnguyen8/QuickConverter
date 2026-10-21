@@ -97,12 +97,11 @@ export async function buildReaderConverter(novel, services, { onError } = {}) {
     const found = typeof map.meanings === 'function' ? map.meanings(key) : [map.get(key)];
     return found.filter((meaning, i) => meaning && found.indexOf(meaning) === i);
   };
-  const vietPhraseOf = onlyFrom(vietPhrase);
   const qtNamesOf = onlyFrom(qtNames);
   const readingOf = (text) => Array.from(String(text || '')).map((ch) => (hanVietMap && hanVietMap.has(ch) ? hanVietMap.get(ch) : ch)).join(' ');
   const finished = nowMs();
   const loadTimings = { total: finished - started, build: finished - buildStart, byName };
-  return { ...converter, meaningsOf, vietPhraseOf, qtNamesOf, readingOf, loadTimings };
+  return { ...converter, meaningsOf, qtNamesOf, readingOf, loadTimings };
 }
 
 export function paragraphsFromLines(lines) {

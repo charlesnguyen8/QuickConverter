@@ -591,8 +591,8 @@ export default function ReaderChapter() {
           onExtendRight={() => extendSelection('right')}
           onPick={(translation, source) => savePhrase(meaningPickKind(selectedPhrase), translation, source)}
           onUse={(translation, source) => savePhrase(phraseSaveKind(selectedPhrase), translation, source)}
-          vietPhraseOf={converter && converter.vietPhraseOf}
           storeNamesOf={storeNamesOf}
+          storeNamesLoading={libraryNames.novelId !== libraryNovelId}
           bookNameOf={bookNameOf}
           onDeleteName={deleteBookName}
           onSaveName={(translation, source) => savePhrase('namelist', translation, source)}
