@@ -582,6 +582,20 @@ async function runTests() {
   assert.strictEqual(await StorageService.moveNameEntry('novel-test', 'missing', 'soft', 'locked'), null, 'missing entry returns null');
   console.log('✓ moveNameEntry promotes soft terms into the locked glossary');
 
+  // 25b. moveNameEntry moves between the Name List and the Locked Glossary both ways
+  await StorageService.saveNameList('novel-test', [{ id: 'n1', original: '林动', translation: 'Lâm Động', addedAt: 3, chapterFirstSeen: 2 }], 'namelist');
+  await StorageService.saveNameList('novel-test', [], 'locked');
+  const toLocked = await StorageService.moveNameEntry('novel-test', 'n1', 'namelist', 'locked');
+  assert.strictEqual(toLocked.translation, 'Lâm Động');
+  assert.strictEqual(toLocked.chapterFirstSeen, 2, 'keeps the chapter it was first seen in');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify((await StorageService.getNameList('novel-test', 'locked')).map((e) => e.original))), ['林动'], 'lands in the locked glossary');
+  assert.strictEqual((await StorageService.getNameList('novel-test', 'namelist')).length, 0, 'leaves the name list');
+  const back = await StorageService.moveNameEntry('novel-test', toLocked.id, 'locked', 'namelist');
+  assert.strictEqual(back.original, '林动');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify((await StorageService.getNameList('novel-test', 'namelist')).map((e) => e.original))), ['林动'], 'back in the name list');
+  assert.strictEqual((await StorageService.getNameList('novel-test', 'locked')).length, 0, 'leaves the locked glossary');
+  console.log('✓ moveNameEntry moves between the name list and the locked glossary');
+
   // 26. applyLockedGlossary: deterministic §...§ preprocessing of the source text
   const lockedTerms = [
     { original: 'cultivator', translation: 'tu sĩ' },

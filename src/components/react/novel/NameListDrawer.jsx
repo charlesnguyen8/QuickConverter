@@ -141,6 +141,29 @@ function LockIcon({ size = 13 }) {
   );
 }
 
+function NameTagIcon({ size = 13 }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
+const ENTRY_MOVES = {
+  namelist: [{ to: 'locked', title: 'Move to Locked Glossary', Icon: LockIcon }],
+  locked: [{ to: 'namelist', title: 'Move to Name List', Icon: NameTagIcon }],
+  soft: [{ to: 'locked', title: 'Move to Locked Glossary', Icon: LockIcon }]
+};
+
+export function MoveEntryButtons({ tab, onMove }) {
+  return (ENTRY_MOVES[tab] || []).map(({ to, title, Icon }) => (
+    <button key={to} type="button" data-move-to={to} onClick={(e) => { e.stopPropagation(); if (onMove) onMove(to); }} className="inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded text-slate-400 hover:text-amber-300 hover:bg-slate-700/60 transition cursor-pointer" title={title}>
+      <Icon />
+    </button>
+  ));
+}
+
 const inputCls = 'px-3 py-2.5 sm:py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
 
 const ROW_HEIGHT = 96;
@@ -821,17 +844,18 @@ export default function NameListDrawer() {
     await reload();
   };
 
-  const moveToLocked = async (entry) => {
+  const moveEntry = async (entry, to) => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
-    if (!storage || !novelId || !entry) return;
+    if (!storage || !novelId || !entry || !to) return;
     try {
       if (typeof storage.moveNameEntry === 'function') {
-        await storage.moveNameEntry(novelId, entry.id, 'soft', 'locked');
+        await storage.moveNameEntry(novelId, entry.id, activeTab, to);
       }
       if (editingId === entry.id) setEditingId(null);
       await reload();
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('reader-chapter-refresh'));
     } catch (e) {
-      console.error('Error moving term to locked glossary:', e);
+      console.error('Error moving entry:', e);
     }
   };
 
@@ -1363,11 +1387,7 @@ export default function NameListDrawer() {
                               <CheckIcon />
                             </button>
                           ) : null}
-                          {activeTab === 'soft' ? (
-                            <button type="button" onClick={(e) => { e.stopPropagation(); moveToLocked(entry); }} className="inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded text-slate-400 hover:text-amber-300 hover:bg-slate-700/60 transition cursor-pointer" title="Move to Locked Glossary">
-                              <LockIcon />
-                            </button>
-                          ) : null}
+                          <MoveEntryButtons tab={activeTab} onMove={(to) => moveEntry(entry, to)} />
                           <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(entry); }} className="inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700/60 transition cursor-pointer" title="Edit entry">
                             <EditIcon />
                           </button>

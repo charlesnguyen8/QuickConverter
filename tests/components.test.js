@@ -763,6 +763,18 @@ async function testAsync(name, fn) {
     assert(!novelApp.includes('id="name-list-prompt-panel"'), 'translation prompt panel must not render until opened');
   });
 
+  const { MoveEntryButtons } = await loadComponent('components/react/novel/NameListDrawer.jsx');
+  test('Name List rows move to the Locked Glossary, Locked rows move to the Name List, Soft rows still move to Locked', () => {
+    const moves = (tab) => {
+      const html = render(h(MoveEntryButtons, { tab, onMove() {} }));
+      return (html.match(/<button[^>]*>/g) || []).map((b) => [(b.match(/data-move-to="([^"]*)"/) || [])[1], (b.match(/title="([^"]*)"/) || [])[1], /min-h-10/.test(b)]);
+    };
+    assert.deepStrictEqual(moves('namelist'), [['locked', 'Move to Locked Glossary', true]]);
+    assert.deepStrictEqual(moves('locked'), [['namelist', 'Move to Name List', true]]);
+    assert.deepStrictEqual(moves('soft'), [['locked', 'Move to Locked Glossary', true]], 'the soft move is unchanged');
+    assert.deepStrictEqual(moves('rejected'), [], 'other lists have no move');
+  });
+
   // --- ReaderChapterRow (reader sidebar owns its own row) ---
   const { ReaderChapterRow } = await loadComponent('components/react/reader/ReaderChapterList.jsx');
   test('ReaderChapterRow shows the full title, no cost and no delete', () => {
