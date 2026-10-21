@@ -445,7 +445,7 @@ async function testAsync(name, fn) {
     const html = render(h(ReaderPhrasePopover, { phrase, options: ['vũ y'], storeNamesOf: () => [] }));
     const vp = note(html, 'vietphrase');
     assert(vp, 'a source note under VietPhrase');
-    for (const part of ['VietPhrase.txt', 'Pronouns.txt', 'Names.txt', 'Hán Việt']) assert(vp.includes(part), `VietPhrase note names ${part}`);
+    for (const part of ['Locked Glossaries of your other books', 'VietPhrase.txt', 'Pronouns.txt', 'Names.txt', 'Hán Việt']) assert(vp.includes(part), `VietPhrase note names ${part}`);
     const store = note(html, 'store');
     assert(store, 'a source note under Name store, even when it has no names');
     assert(/other books/.test(store) && store.includes('Names.txt'), 'Name store note names your other books and Names.txt');

@@ -833,6 +833,24 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     }
   });
 
+  await test('VietPhrase suggestions start with meanings your other books locked for the text, then the dictionaries', async () => {
+    const lists = {
+      n1: { locked: [{ id: 'a', original: '羽衣', translation: 'own book' }] },
+      n2: { locked: [{ id: 'b', original: '羽衣', translation: 'feather robe' }, { id: 'c', original: '林动', translation: 'Lin Dong' }], namelist: [{ id: 'd', original: '羽衣', translation: 'Hagoromo' }] },
+      n3: { locked: [{ id: 'e', original: ' 羽衣 ', translation: 'feather robe' }, { id: 'f', original: '羽衣', translation: '' }] }
+    };
+    const storage = {
+      getAllNovels: async () => [{ id: 'n1', title: 'Current' }, { id: 'n2', title: '门户' }, { id: 'n3', title: 'Other' }],
+      getNameList: async (id, kind) => (lists[id] && lists[id][kind]) || []
+    };
+    const locked = await readerText.loadLibraryNames(storage, 'n1', 'locked');
+    assert.deepStrictEqual(plain(locked.map((e) => [e.original, e.translation])), [['羽衣', 'feather robe'], ['林动', 'Lin Dong'], ['羽衣', 'feather robe']], "only other books' locked glossaries, not their name lists");
+    const meaningsOf = readerText.withLibraryMeanings((key) => (key === '羽衣' ? ['vũ y', 'feather robe'] : []), locked);
+    assert.deepStrictEqual(plain(meaningsOf('羽衣')), ['feather robe', 'vũ y'], 'locked meanings first, dictionary meanings after, each once');
+    assert.deepStrictEqual(plain(meaningsOf('林动')), ['Lin Dong']);
+    assert.deepStrictEqual(plain(readerText.withLibraryMeanings(null, locked)('羽衣')), ['feather robe'], 'works before the dictionaries load');
+  });
+
   await test('the name store lists names other books saved for the text, then QT Names, once each', async () => {
     const lists = {
       n1: [{ id: 'a', original: '羽衣', translation: 'Vũ Y' }],

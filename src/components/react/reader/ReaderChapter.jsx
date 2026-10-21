@@ -13,6 +13,7 @@ import {
   meaningPickKind,
   loadLibraryNames,
   storeNamesFor,
+  withLibraryMeanings,
   savePhraseEntry,
   lookupDefinitions,
   suggestionsForPhrase,
@@ -205,9 +206,25 @@ export default function ReaderChapter() {
       to: direction === 'right' ? prev.to + 1 : prev.to
     } : prev));
   };
+  const [libraryNames, setLibraryNames] = useState({ novelId: null, list: [], locked: [] });
+  const libraryNovelId = novel ? novel.id : null;
+  useEffect(() => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!phraseOpen || !libraryNovelId || !storage) return;
+    let cancelled = false;
+    Promise.all([loadLibraryNames(storage, libraryNovelId), loadLibraryNames(storage, libraryNovelId, 'locked')])
+      .then(([list, locked]) => { if (!cancelled) setLibraryNames({ novelId: libraryNovelId, list, locked }); })
+      .catch((e) => console.warn('[Reader] Name store unavailable:', e));
+    return () => { cancelled = true; };
+  }, [phraseOpen, libraryNovelId]);
+  const libraryLocked = libraryNames.novelId === libraryNovelId ? libraryNames.locked : null;
+  const phraseMeaningsOf = useMemo(
+    () => withLibraryMeanings(converter && converter.meaningsOf, libraryLocked || []),
+    [converter, libraryLocked]
+  );
   const selectedOptions = useMemo(
-    () => phraseOptions(selectedPhrase, converter && converter.meaningsOf),
-    [selectedPhrase, converter]
+    () => phraseOptions(selectedPhrase, phraseMeaningsOf),
+    [selectedPhrase, phraseMeaningsOf]
   );
 
   const savePhrase = async (kind, translation, source) => {
@@ -228,17 +245,6 @@ export default function ReaderChapter() {
     }
   };
 
-  const [libraryNames, setLibraryNames] = useState({ novelId: null, list: [] });
-  const libraryNovelId = novel ? novel.id : null;
-  useEffect(() => {
-    const storage = typeof window !== 'undefined' ? window.StorageService : null;
-    if (!phraseOpen || !libraryNovelId || !storage) return;
-    let cancelled = false;
-    loadLibraryNames(storage, libraryNovelId)
-      .then((list) => { if (!cancelled) setLibraryNames({ novelId: libraryNovelId, list }); })
-      .catch((e) => console.warn('[Reader] Name store unavailable:', e));
-    return () => { cancelled = true; };
-  }, [phraseOpen, libraryNovelId]);
   const storeNamesOf = (source) => storeNamesFor(source, libraryNames.novelId === libraryNovelId ? libraryNames.list : [], converter && converter.qtNamesOf);
   const bookNameOf = (source) => {
     const key = String(source || '').trim().toLowerCase();
@@ -598,7 +604,7 @@ export default function ReaderChapter() {
           onSaveName={(translation, source) => savePhrase('namelist', translation, source)}
           onSaveLocked={(translation, source) => savePhrase('locked', translation, source)}
           readingOf={converter && converter.readingOf}
-          meaningsOf={converter && converter.meaningsOf}
+          meaningsOf={phraseMeaningsOf}
           definitionsOf={definitionsOf}
           definitionsLoading={lacViet.status === 'loading'}
           definitionsError={lacViet.status === 'error'}

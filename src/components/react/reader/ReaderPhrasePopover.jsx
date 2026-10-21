@@ -119,7 +119,7 @@ export default function ReaderPhrasePopover({ phrase, options = [], saving = fal
 
         <div className="flex flex-col gap-1.5">
           <span className="text-[11px] uppercase tracking-wide text-slate-500">VietPhrase · tap to save to {saveTo}</span>
-          <p data-section-sources="vietphrase" className="text-[11px] leading-snug text-slate-500">From the bundled QuickTranslator dictionaries VietPhrase.txt, Pronouns.txt and Names.txt, plus the meaning shown now and the Hán Việt reading.</p>
+          <p data-section-sources="vietphrase" className="text-[11px] leading-snug text-slate-500">From the Locked Glossaries of your other books, the bundled QuickTranslator dictionaries VietPhrase.txt, Pronouns.txt and Names.txt, the meaning shown now and the Hán Việt reading.</p>
           <div className="flex flex-wrap gap-1.5">
             {shownOptions.map((option) => {
               const current = unedited && option === phrase.translation;

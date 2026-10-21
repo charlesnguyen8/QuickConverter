@@ -219,16 +219,27 @@ export function meaningPickKind(segment) {
   return segment && segment.origin === 'name' ? 'namelist' : 'locked';
 }
 
-export async function loadLibraryNames(storage, currentNovelId) {
+export async function loadLibraryNames(storage, currentNovelId, kind = 'namelist') {
   if (!storage || typeof storage.getAllNovels !== 'function') return [];
   const novels = (await storage.getAllNovels()) || [];
   const lists = await Promise.all(novels
     .filter((novel) => novel && novel.id && novel.id !== currentNovelId)
     .map(async (novel) => {
-      const list = (await storage.getNameList(novel.id, 'namelist')) || [];
+      const list = (await storage.getNameList(novel.id, kind)) || [];
       return list.map((entry) => ({ original: String((entry && entry.original) || '').trim(), translation: String((entry && entry.translation) || '').trim(), from: novel.title || novel.id }));
     }));
   return lists.flat().filter((entry) => entry.original && entry.translation);
+}
+
+export function withLibraryMeanings(meaningsOf, libraryEntries) {
+  return (key) => {
+    const text = String(key || '').trim();
+    const out = [];
+    const add = (meaning) => { const value = String(meaning || '').trim(); if (value && !out.includes(value)) out.push(value); };
+    (libraryEntries || []).forEach((entry) => { if (entry.original === text) add(entry.translation); });
+    if (typeof meaningsOf === 'function') (meaningsOf(key) || []).forEach(add);
+    return out;
+  };
 }
 
 export function storeNamesFor(source, libraryNames, qtNamesOf) {
