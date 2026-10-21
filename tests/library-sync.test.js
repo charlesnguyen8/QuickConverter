@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { makeDatabase } = require('./helpers/fake-library');
 
 console.log('\n--- Running Library Sync (merge) Test Suite ---');
 
@@ -23,50 +24,8 @@ async function test(name, fn) {
 }
 
 function makeEnv() {
-  const stores = { novels: {}, chapters: {}, syncState: {} };
-  const reads = { chapterGetAll: 0 };
-  const request = (result) => {
-    const req = { result, onsuccess: null, onerror: null };
-    setTimeout(() => { if (req.onsuccess) req.onsuccess({ target: req }); }, 0);
-    return req;
-  };
-  const store = (name) => ({
-    getAll: () => {
-      if (name === 'chapters') reads.chapterGetAll++;
-      return request(Object.values(stores[name]).map((r) => ({ ...r })));
-    },
-    get: (id) => request(stores[name][id] ? { ...stores[name][id] } : null),
-    put: (record) => { stores[name][record.id] = { ...record }; },
-    delete: (id) => { delete stores[name][id]; },
-    clear: () => { stores[name] = {}; },
-    index: (field) => ({
-      openCursor: (range) => {
-        const matches = Object.values(stores[name]).filter((r) => r[field] === range.only);
-        const req = { onsuccess: null };
-        let i = 0;
-        const step = () => setTimeout(() => {
-          if (!req.onsuccess) return;
-          const record = matches[i];
-          req.onsuccess({
-            target: {
-              result: record
-                ? { value: record, delete: () => { delete stores[name][record.id]; }, continue: () => { i++; step(); } }
-                : null
-            }
-          });
-        }, 0);
-        step();
-        return req;
-      }
-    })
-  });
-  const database = {
-    transaction() {
-      const tx = { objectStore: store, oncomplete: null, onerror: null };
-      setTimeout(() => { if (tx.oncomplete) tx.oncomplete(); }, 20);
-      return tx;
-    }
-  };
+  const db = makeDatabase();
+  const { stores, reads } = db;
   const ls = { quickconverter_db_initialized: 'true' };
   const localStorage = {
     get length() { return Object.keys(ls).length; },
@@ -82,7 +41,7 @@ function makeEnv() {
     clearTimeout,
     localStorage,
     IDBKeyRange: { only: (value) => ({ only: value }) },
-    indexedDB: { open: () => request(database) }
+    indexedDB: { open: db.open }
   };
   env.window = env;
   env.self = env;

@@ -25,22 +25,33 @@ async function test(name, fn) {
 
 function makeStorageEnv() {
   const stores = { novels: {}, chapters: {} };
-  const makeRequest = (result) => {
+  const makeRequest = (result, answered = () => {}) => {
     const req = { result, onsuccess: null, onerror: null };
-    setTimeout(() => { if (req.onsuccess) req.onsuccess(); }, 0);
+    setTimeout(() => { if (req.onsuccess) req.onsuccess(); answered(); }, 0);
     return req;
   };
-  const fakeStore = (name) => ({
-    getAll: () => makeRequest(Object.values(stores[name])),
-    get: (id) => makeRequest(stores[name][id] || null),
+  const fakeStore = (name, request = makeRequest) => ({
+    getAll: () => request(Object.values(stores[name])),
+    get: (id) => request(stores[name][id] || null),
     put: (record) => { stores[name][record.id] = { ...record }; },
     delete: (id) => { delete stores[name][id]; },
     clear: () => { stores[name] = {}; }
   });
   const mockDatabase = {
     transaction() {
-      const tx = { objectStore: (name) => fakeStore(name), oncomplete: null, onerror: null };
-      setTimeout(() => { if (tx.oncomplete) tx.oncomplete(); }, 0);
+      let pending = 0;
+      const tx = { objectStore: (name) => fakeStore(name, request), oncomplete: null, onerror: null };
+      const settle = () => setTimeout(() => {
+        if (pending === 0 && tx.oncomplete) {
+          tx.oncomplete();
+          tx.oncomplete = null;
+        }
+      }, 0);
+      function request(result) {
+        pending++;
+        return makeRequest(result, () => { pending--; settle(); });
+      }
+      settle();
       return tx;
     }
   };

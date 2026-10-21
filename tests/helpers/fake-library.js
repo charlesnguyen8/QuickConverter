@@ -7,51 +7,77 @@ const vm = require('vm');
 const repoRoot = path.resolve(__dirname, '..', '..');
 const read = (...p) => fs.readFileSync(path.join(repoRoot, ...p), 'utf8');
 
+// Like IndexedDB, readwrite transactions run one at a time (a later one starts once the earlier
+// one has finished), even when they come from different contexts sharing the database.
 function makeDatabase() {
   const stores = { novels: {}, chapters: {}, syncState: {} };
   const reads = { chapterGetAll: 0, chapterGet: 0 };
+  const copy = (value) => JSON.parse(JSON.stringify(value));
   const request = (result) => {
     const req = { result, onsuccess: null, onerror: null };
     setTimeout(() => { if (req.onsuccess) req.onsuccess({ target: req }); }, 0);
     return req;
   };
-  const store = (name) => ({
-    getAll: () => {
+  const answer = (run, read) => {
+    const req = { result: undefined, onsuccess: null, onerror: null };
+    run(() => {
+      req.result = read();
+      setTimeout(() => { if (req.onsuccess) req.onsuccess({ target: req }); }, 0);
+    });
+    return req;
+  };
+  const store = (name, run) => ({
+    getAll: () => answer(run, () => {
       if (name === 'chapters') reads.chapterGetAll++;
-      return request(Object.values(stores[name]).map((r) => JSON.parse(JSON.stringify(r))));
-    },
-    get: (id) => {
+      return Object.values(stores[name]).map(copy);
+    }),
+    get: (id) => answer(run, () => {
       if (name === 'chapters') reads.chapterGet++;
-      return request(stores[name][id] ? JSON.parse(JSON.stringify(stores[name][id])) : null);
-    },
-    put: (record) => { stores[name][record.id] = JSON.parse(JSON.stringify(record)); },
-    delete: (id) => { delete stores[name][id]; },
-    clear: () => { stores[name] = {}; },
+      return stores[name][id] ? copy(stores[name][id]) : null;
+    }),
+    put: (record) => { const saved = copy(record); run(() => { stores[name][saved.id] = saved; }); },
+    delete: (id) => run(() => { delete stores[name][id]; }),
+    clear: () => run(() => { stores[name] = {}; }),
     index: (field) => ({
       openCursor: (range) => {
-        const matches = Object.values(stores[name]).filter((r) => r[field] === range.only);
         const req = { onsuccess: null };
-        let i = 0;
-        const step = () => setTimeout(() => {
-          if (!req.onsuccess) return;
-          const record = matches[i];
-          req.onsuccess({
-            target: {
-              result: record
-                ? { value: record, delete: () => { delete stores[name][record.id]; }, continue: () => { i++; step(); } }
-                : null
-            }
-          });
-        }, 0);
-        step();
+        run(() => {
+          const matches = Object.values(stores[name]).filter((r) => r[field] === range.only);
+          let i = 0;
+          const step = () => setTimeout(() => {
+            if (!req.onsuccess) return;
+            const record = matches[i];
+            req.onsuccess({
+              target: {
+                result: record
+                  ? { value: record, delete: () => { delete stores[name][record.id]; }, continue: () => { i++; step(); } }
+                  : null
+              }
+            });
+          }, 0);
+          step();
+        });
         return req;
       }
     })
   });
+  let writing = Promise.resolve();
   const database = {
-    transaction() {
-      const tx = { objectStore: store, oncomplete: null, onerror: null };
-      setTimeout(() => { if (tx.oncomplete) tx.oncomplete(); }, 20);
+    transaction(names, mode) {
+      let active = false;
+      const waiting = [];
+      const run = (op) => { if (active) op(); else waiting.push(op); };
+      const tx = { objectStore: (name) => store(name, run), oncomplete: null, onerror: null };
+      const start = () => new Promise((done) => {
+        active = true;
+        waiting.splice(0).forEach((op) => op());
+        setTimeout(() => {
+          if (tx.oncomplete) tx.oncomplete();
+          done();
+        }, 20);
+      });
+      if (mode === 'readwrite') writing = writing.then(start);
+      else start();
       return tx;
     }
   };
@@ -63,6 +89,7 @@ function makeDrive() {
   const files = new Map();
   let seq = 0;
   const log = [];
+  const hooks = {};
   const response = (status, body) => ({
     ok: status >= 200 && status < 300,
     status,
@@ -85,6 +112,7 @@ function makeDrive() {
     if (one && method === 'GET' && u.searchParams.get('alt') === 'media') {
       const f = files.get(one[1]);
       log.push({ op: 'download', name: f ? f.name : null });
+      if (f && hooks.beforeDownload) await hooks.beforeDownload(f.name);
       return f ? response(200, f.content) : response(404, {});
     }
     if (one && method === 'DELETE') {
@@ -117,6 +145,7 @@ function makeDrive() {
   return {
     fetch,
     log,
+    hooks,
     files,
     names: () => Array.from(files.values()).map((f) => f.name).sort(),
     content: (name) => {
@@ -131,8 +160,7 @@ function makeDrive() {
   };
 }
 
-function makeDevice(drive) {
-  const db = makeDatabase();
+function makeDevice(drive, { db = makeDatabase() } = {}) {
   const ls = { quickconverter_db_initialized: 'true' };
   const localStorage = {
     get length() { return Object.keys(ls).length; },
@@ -163,7 +191,7 @@ function makeDevice(drive) {
   vm.runInContext(read('src', 'services', 'platform.js'), env);
   vm.runInContext(read('src', 'services', 'storage.js'), env);
   vm.runInContext(read('src', 'services', 'cloud-sync.js'), env);
-  return { S: env.StorageService, cloud: env.CloudSyncService, stores: db.stores, reads: db.reads, ls };
+  return { S: env.StorageService, cloud: env.CloudSyncService, db, stores: db.stores, reads: db.reads, ls };
 }
 
 module.exports = { makeDrive, makeDevice, makeDatabase };

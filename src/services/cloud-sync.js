@@ -394,9 +394,9 @@
 
   // A whole-library merge followed by writing every book as pieces: the first sync, or moving
   // from the old single backup file or the previous per-book layout.
-  async function fullSync(storage, local, remote, files, indexFile, staleFiles) {
+  async function fullSync(storage, local, remote, files, indexFile, staleFiles, startedAt) {
     const { library, apply } = storage.mergeLibraries(local, remote);
-    await storage.applySync(apply, library.deleted);
+    await storage.applySync(apply, library.deleted, { keepSince: startedAt });
     const books = await writeAllBooks(library, files);
     for (const file of staleFiles) await deleteFile(file.id);
     await writeFile(INDEX_FILENAME, indexPayload(books, normalizeDeleted(library.deleted), library.preferences || {}), indexFile && indexFile.id);
@@ -539,6 +539,7 @@
     if (!storage || typeof storage.exportAll !== 'function' || typeof storage.mergeLibraries !== 'function') {
       throw new Error('StorageService not available');
     }
+    const startedAt = Date.now();
     const files = await listFiles();
     const indexFile = files.find((f) => f.name === INDEX_FILENAME);
     const index = indexFile ? await downloadJson(indexFile.id) : null;
@@ -548,11 +549,11 @@
     if (!index) {
       const legacy = files.find((f) => f.name === BACKUP_FILENAME);
       const remote = legacy ? await downloadJson(legacy.id) : null;
-      outcome = await fullSync(storage, await storage.exportAll(), remote, files, null, []);
+      outcome = await fullSync(storage, await storage.exportAll(), remote, files, null, [], startedAt);
     } else if (Number(index.version) < 3) {
       const remote = await readV2Library(index);
       const stale = files.filter((f) => f.name.indexOf(BOOK_PREFIX) === 0);
-      outcome = await fullSync(storage, await storage.exportAll(), remote, files, indexFile, stale);
+      outcome = await fullSync(storage, await storage.exportAll(), remote, files, indexFile, stale, startedAt);
     } else {
       const names = fileIdByName(files);
       const remoteBooks = index.books || {};
@@ -576,7 +577,7 @@
       Object.keys(remotePrefs).forEach((key) => {
         if (!Object.prototype.hasOwnProperty.call(local.preferences, key)) fill[key] = remotePrefs[key];
       });
-      await storage.applySync({ novels: [], chapters: [], deleteNovels: [], deleteChapters: [], preferences: fill }, state.deleted);
+      await storage.applySync({ novels: [], chapters: [], deleteNovels: [], deleteChapters: [], preferences: fill }, state.deleted, { keepSince: startedAt });
       const preferences = { ...local.preferences, ...remotePrefs };
 
       const before = stableJson({ books: remoteBooks, deleted: remoteDeleted, preferences: remotePrefs });

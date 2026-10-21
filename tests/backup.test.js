@@ -10,16 +10,16 @@ const storageCode = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'stor
 
 const stores = { novels: {}, chapters: {} };
 
-function makeRequest(result) {
+function makeRequest(result, answered = () => {}) {
   const req = { result, onsuccess: null, onerror: null };
-  setTimeout(() => { if (req.onsuccess) req.onsuccess(); }, 0);
+  setTimeout(() => { if (req.onsuccess) req.onsuccess(); answered(); }, 0);
   return req;
 }
 
-function fakeStore(name) {
+function fakeStore(name, request = makeRequest) {
   return {
-    getAll: () => makeRequest(Object.values(stores[name])),
-    get: (id) => makeRequest(stores[name][id] || null),
+    getAll: () => request(Object.values(stores[name])),
+    get: (id) => request(stores[name][id] || null),
     put: (record) => { stores[name][record.id] = { ...record }; },
     clear: () => { stores[name] = {}; }
   };
@@ -27,8 +27,19 @@ function fakeStore(name) {
 
 const mockDatabase = {
   transaction(names) {
-    const tx = { objectStore: (name) => fakeStore(name), oncomplete: null, onerror: null };
-    setTimeout(() => { if (tx.oncomplete) tx.oncomplete(); }, 0);
+    let pending = 0;
+    const tx = { objectStore: (name) => fakeStore(name, request), oncomplete: null, onerror: null };
+    const settle = () => setTimeout(() => {
+      if (pending === 0 && tx.oncomplete) {
+        tx.oncomplete();
+        tx.oncomplete = null;
+      }
+    }, 0);
+    function request(result) {
+      pending++;
+      return makeRequest(result, () => { pending--; settle(); });
+    }
+    settle();
     return tx;
   }
 };

@@ -193,6 +193,175 @@ process.on('beforeExit', () => {
     }
   });
 
+  await test('a name added while a sync is running is kept', async () => {
+    const { drive, a, b } = await twoSyncedDevices();
+    await b.S.addNameEntry('b2', { original: 'Wang Lin', translation: 'Vương Lâm' });
+    await b.cloud.sync();
+    await wait(5);
+    let added = false;
+    drive.hooks.beforeDownload = async (name) => {
+      if (added || name !== namesPiece('b2', 'namelist')) return;
+      added = true;
+      await a.S.addNameEntry('b2', { original: 'Lin Dong', translation: 'Lâm Động' });
+    };
+    await a.cloud.sync();
+    drive.hooks.beforeDownload = null;
+    assert(added, 'the name was added during the sync');
+    const names = (await a.S.getNameList('b2')).map((e) => e.original).sort();
+    assert.deepStrictEqual(plain(names), ['Lin Dong', 'Wang Lin'], 'the new name survives the sync, and the other device\'s name arrives');
+    await a.cloud.sync();
+    await b.cloud.sync();
+    assert.deepStrictEqual(plain((await b.S.getNameList('b2')).map((e) => e.original).sort()), ['Lin Dong', 'Wang Lin'], 'and reaches the other device');
+  });
+
+  await test('a name deleted while a sync is running stays deleted', async () => {
+    const { drive, a, b } = await twoSyncedDevices();
+    const doomed = await a.S.addNameEntry('b2', { original: 'Lin Dong', translation: 'Lâm Động' });
+    await a.cloud.sync();
+    await b.cloud.sync();
+    await b.S.addNameEntry('b2', { original: 'Wang Lin', translation: 'Vương Lâm' });
+    await b.cloud.sync();
+    await wait(5);
+    let deleted = false;
+    drive.hooks.beforeDownload = async (name) => {
+      if (deleted || name !== namesPiece('b2', 'namelist')) return;
+      deleted = true;
+      await a.S.deleteNameEntry('b2', doomed.id);
+    };
+    await a.cloud.sync();
+    drive.hooks.beforeDownload = null;
+    assert(deleted, 'the name was deleted during the sync');
+    assert.deepStrictEqual(plain((await a.S.getNameList('b2')).map((e) => e.original)), ['Wang Lin'], 'the deleted name does not come back');
+    await a.cloud.sync();
+    await b.cloud.sync();
+    assert.deepStrictEqual(plain((await b.S.getNameList('b2')).map((e) => e.original)), ['Wang Lin'], 'and is deleted on the other device');
+  });
+
+  await test('two names saved at the same moment are both kept', async () => {
+    const drive = makeDrive();
+    const a = makeDevice(drive);
+    await seedBooks(a);
+    await Promise.all([
+      a.S.addNameEntry('b1', { original: 'Lin Dong', translation: 'Lâm Động' }),
+      a.S.addNameEntry('b1', { original: 'Wang Lin', translation: 'Vương Lâm' })
+    ]);
+    assert.deepStrictEqual(plain((await a.S.getNameList('b1')).map((e) => e.original).sort()), ['Lin Dong', 'Wang Lin']);
+    const deleted = JSON.parse(a.ls.quickconverter_sync_deleted || '{"names":{}}');
+    assert.deepStrictEqual(plain((deleted.names && deleted.names.b1) || {}), {}, 'neither is marked deleted');
+  });
+
+  const markersOf = (device) => plain((JSON.parse(device.ls.quickconverter_sync_deleted || '{"names":{}}').names || {}));
+
+  await test('the background worker and an open page adding names to one book at once both keep theirs', async () => {
+    const drive = makeDrive();
+    const page = makeDevice(drive);
+    await seedBooks(page);
+    const worker = makeDevice(drive, { db: page.db });
+    await Promise.all([
+      worker.S.addNameEntries('b1', [{ original: 'Wang Lin', translation: 'Vương Lâm' }], 3, 'locked'),
+      page.S.addNameEntry('b1', { original: 'Lin Dong', translation: 'Lâm Động' }, 'locked')
+    ]);
+    assert.deepStrictEqual(plain((await page.S.getNameList('b1', 'locked')).map((e) => e.original).sort()), ['Lin Dong', 'Wang Lin']);
+    assert.deepStrictEqual(markersOf(page), {}, 'the page marks nothing deleted');
+    assert.deepStrictEqual(markersOf(worker), {}, 'the worker marks nothing deleted');
+  });
+
+  await test('a name deleted on a page while the worker adds one marks only the deleted name', async () => {
+    const drive = makeDrive();
+    const page = makeDevice(drive);
+    await seedBooks(page);
+    const doomed = await page.S.addNameEntry('b1', { original: 'Xiao Yan', translation: 'Tiêu Viêm' }, 'soft');
+    const worker = makeDevice(drive, { db: page.db });
+    await Promise.all([
+      worker.S.addNameEntries('b1', [{ original: 'Wang Lin', translation: 'Vương Lâm' }], 3, 'soft'),
+      page.S.deleteNameEntry('b1', doomed.id, 'soft')
+    ]);
+    assert.deepStrictEqual(plain((await page.S.getNameList('b1', 'soft')).map((e) => e.original)), ['Wang Lin']);
+    assert.deepStrictEqual(Object.keys(markersOf(page).b1.soft), [doomed.id], 'only the deleted name is marked');
+    assert.deepStrictEqual(markersOf(worker), {}, 'the worker marks nothing deleted');
+  });
+
+  await test('marking a name seen on a page while the worker adds one keeps both', async () => {
+    const drive = makeDrive();
+    const page = makeDevice(drive);
+    await seedBooks(page);
+    const [seen] = await page.S.addNameEntries('b1', [{ original: 'Lin Dong', translation: 'Lâm Động' }], 1, 'locked');
+    const worker = makeDevice(drive, { db: page.db });
+    await Promise.all([
+      worker.S.addNameEntries('b1', [{ original: 'Wang Lin', translation: 'Vương Lâm' }], 3, 'locked'),
+      page.S.updateNameEntry('b1', seen.id, { isNew: false }, 'locked')
+    ]);
+    const list = plain(await page.S.getNameList('b1', 'locked'));
+    assert.deepStrictEqual(list.map((e) => e.original).sort(), ['Lin Dong', 'Wang Lin']);
+    assert.strictEqual(list.find((e) => e.id === seen.id).isNew, false, 'the name is no longer new');
+    assert.deepStrictEqual(markersOf(page), {}, 'nothing marked deleted');
+  });
+
+  await test('a bulk import on a page while the worker adds a name keeps the worker\'s name', async () => {
+    const drive = makeDrive();
+    const page = makeDevice(drive);
+    await seedBooks(page);
+    await page.S.addNameEntry('b1', { original: 'Lin Dong', translation: 'Lâm Động', chapterFirstSeen: 2 });
+    const worker = makeDevice(drive, { db: page.db });
+    const [, imported] = await Promise.all([
+      worker.S.addNameEntries('b1', [{ original: 'Wang Lin', translation: 'Vương Lâm' }], 3),
+      page.S.importNameEntries('b1', [
+        { original: 'lin dong', translation: 'Lin Đông' },
+        { original: 'Xiao Yan', translation: 'Tiêu Viêm', chapterFirstSeen: 5 }
+      ])
+    ]);
+    assert.deepStrictEqual({ added: imported.added, updated: imported.updated }, { added: 1, updated: 1 });
+    const list = plain(await page.S.getNameList('b1'));
+    assert.deepStrictEqual(list.map((e) => e.original).sort(), ['Lin Dong', 'Wang Lin', 'Xiao Yan']);
+    const lin = list.find((e) => e.original === 'Lin Dong');
+    assert.deepStrictEqual([lin.translation, lin.chapterFirstSeen], ['Lin Đông', 2], 'the import updates the meaning and keeps the chapter');
+    assert.strictEqual(list.find((e) => e.original === 'Xiao Yan').chapterFirstSeen, 5);
+    const returned = plain(imported.list).map((e) => e.original);
+    assert(returned.includes('Lin Dong') && returned.includes('Xiao Yan'), 'the import returns the list it saved');
+    assert.deepStrictEqual(markersOf(page), {}, 'nothing marked deleted');
+  });
+
+  await test('names saved on a new book while its list is first read are kept', async () => {
+    const drive = makeDrive();
+    const a = makeDevice(drive);
+    await a.S.addNovel({ id: 'b9', title: 'New Book', slug: 'nine' });
+    await Promise.all([
+      a.S.getNameList('b9'),
+      a.S.addNameEntry('b9', { original: 'Lin Dong', translation: 'Lâm Động' }),
+      a.S.getNameList('b9', 'namelist'),
+      a.S.addNameEntries('b9', [{ original: 'Wang Lin', translation: 'Vương Lâm' }], 1)
+    ]);
+    assert.deepStrictEqual(plain((await a.S.getNameList('b9')).map((e) => e.original).sort()), ['Lin Dong', 'Wang Lin'], 'the first read of the list does not overwrite names saved meanwhile');
+    await a.S.addNovel({ id: 'b10', title: 'Another New Book' });
+    const readList = a.S._getNameListRecord;
+    let saved = false;
+    a.S._getNameListRecord = async function (novelId, kind) {
+      const list = await readList.call(this, novelId, kind);
+      if (!saved && novelId === 'b10' && !list) {
+        saved = true;
+        await a.S.addNameEntry('b10', { original: 'Xiao Yan', translation: 'Tiêu Viêm' });
+      }
+      return list;
+    };
+    await a.S.getNovelById('b10');
+    a.S._getNameListRecord = readList;
+    assert(saved, 'a name was saved while the book was loading');
+    assert.deepStrictEqual(plain((await a.S.getNameList('b10')).map((e) => e.original)), ['Xiao Yan'], 'loading the book does not overwrite it');
+  });
+
+  await test('adding a name whose Chinese is already in the list keeps the new meaning', async () => {
+    const drive = makeDrive();
+    const a = makeDevice(drive);
+    await seedBooks(a);
+    await a.S.addNameEntry('b1', { original: '林动', translation: 'Lâm Động' });
+    await wait(2);
+    const added = await a.S.addNameEntry('b1', { original: ' 林动 ', translation: 'Lin Dong' });
+    const list = await a.S.getNameList('b1');
+    assert.strictEqual(list.length, 1, 'still one entry for the text');
+    assert.strictEqual(list[0].translation, 'Lin Dong', 'what was just added is what the list shows');
+    assert.strictEqual(added.translation, 'Lin Dong');
+  });
+
   await test('a book deleted on one device is deleted on the other and all its pieces removed', async () => {
     const { drive, a, b } = await twoSyncedDevices();
     await b.S.deleteNovel('b2');

@@ -388,6 +388,20 @@ function sameNameEntry(a, b) {
   return stableJson(strip(a)) === stableJson(strip(b));
 }
 
+// A list about to be saved, deduped, with each changed entry stamped `now` and each unchanged
+// one keeping its stored time.
+function stampNameList(previous, nameList, now) {
+  const previousById = new Map(previous.filter((e) => e && e.id).map((e) => [e.id, e]));
+  return dedupeNameList(Array.isArray(nameList) ? nameList : []).map((entry) => {
+    if (!entry || !entry.id) return entry;
+    const before = previousById.get(entry.id);
+    if (before && sameNameEntry(before, entry)) {
+      return before.updatedAt !== undefined ? { ...entry, updatedAt: before.updatedAt } : entry;
+    }
+    return { ...entry, updatedAt: now };
+  });
+}
+
 function providerForNovel(novel) {
   if (!novel || typeof ProviderRegistry === 'undefined') return null;
   let provider = null;
@@ -620,16 +634,9 @@ const StorageService = {
     const record = novels.find((n) => n.id === novelId) || null;
     if (!record) return null;
 
-    const stored = await this._getNameListRecord(novelId);
-    if (stored) return { ...record, nameList: stored };
-
-    const legacy = Array.isArray(record.nameList) ? record.nameList : [];
-    await this._putNameListRecord(novelId, legacy, 'namelist', { migrated: true });
-    if (Object.prototype.hasOwnProperty.call(record, 'nameList')) {
-      const { nameList, ...rest } = record;
-      try { await this._putNovelRecord(rest); } catch (e) {}
-    }
-    return { ...record, nameList: legacy };
+    const nameList = await this.getNameList(novelId);
+    const { nameList: legacy, ...rest } = record;
+    return { ...rest, nameList };
   },
 
   async isChapterSaved(novelId, chapterNumber) {
@@ -743,15 +750,33 @@ const StorageService = {
 
     if (kind !== 'namelist') return [];
 
-    const novels = await this.getManagedNovels();
-    const novel = novels.find((n) => n.id === novelId) || null;
-    const legacy = novel && Array.isArray(novel.nameList) ? novel.nameList : [];
-    await this._putNameListRecord(novelId, legacy, kind, { migrated: true });
-    if (novel && Object.prototype.hasOwnProperty.call(novel, 'nameList')) {
-      const { nameList, ...rest } = novel;
-      try { await this._putNovelRecord(rest); } catch (e) {}
-    }
-    return [...legacy];
+    const db = await openDatabase();
+    const list = await new Promise((resolve, reject) => {
+      const tx = db.transaction('novels', 'readwrite');
+      const store = tx.objectStore('novels');
+      let found = null;
+      const listRequest = store.get(`${kind}::${novelId}`);
+      listRequest.onsuccess = () => {
+        const record = listRequest.result;
+        if (record && Array.isArray(record.list)) {
+          found = record.list;
+          return;
+        }
+        const novelRequest = store.get(novelId);
+        novelRequest.onsuccess = () => {
+          const novel = novelRequest.result && !isListRecord(novelRequest.result) ? novelRequest.result : null;
+          found = novel && Array.isArray(novel.nameList) ? novel.nameList : [];
+          store.put({ id: `${kind}::${novelId}`, owner: novelId, kind, list: found, updatedAt: 0 });
+          if (novel && Object.prototype.hasOwnProperty.call(novel, 'nameList')) {
+            const { nameList, ...rest } = novel;
+            store.put(rest);
+          }
+        };
+      };
+      tx.oncomplete = () => resolve(found || []);
+      tx.onerror = () => reject(tx.error);
+    });
+    return [...list];
   },
 
   _getNameListRecord(novelId, kind = 'namelist') {
@@ -810,28 +835,87 @@ const StorageService = {
    */
   async saveNameList(novelId, nameList, kind = 'namelist') {
     if (!novelId) return [];
-    const previous = (await this._getNameListRecord(novelId, kind)) || [];
-    const previousById = new Map(previous.filter((e) => e && e.id).map((e) => [e.id, e]));
-    const now = Date.now();
-    const list = dedupeNameList(Array.isArray(nameList) ? nameList : []).map((entry) => {
-      if (!entry || !entry.id) return entry;
-      const before = previousById.get(entry.id);
-      if (before && sameNameEntry(before, entry)) {
-        return before.updatedAt !== undefined ? { ...entry, updatedAt: before.updatedAt } : entry;
+    const { written } = await this._changeNameLists(novelId, [kind], () => ({
+      lists: { [kind]: Array.isArray(nameList) ? nameList : [] }
+    }));
+    return written[kind];
+  },
+
+  // Reads, changes and writes a book's name lists in one IndexedDB transaction, so a change made
+  // at the same moment in another context (the download worker, another page) is never lost and
+  // only entries this change removed get deletion markers. `change` gets the stored lists by kind
+  // and returns { lists, result }; only the lists it returns are written.
+  async _changeNameLists(novelId, kinds, change) {
+    const wanted = [...new Set(kinds)];
+    const db = await openDatabase();
+    const outcome = await new Promise((resolve, reject) => {
+      const tx = db.transaction('novels', 'readwrite');
+      const store = tx.objectStore('novels');
+      const stored = {};
+      let legacyNovel = null;
+      let pending = wanted.length + (wanted.includes('namelist') ? 1 : 0);
+      let done = null;
+      let failure = null;
+      const ready = () => {
+        if (--pending > 0) return;
+        try {
+          const current = {};
+          wanted.forEach((kind) => {
+            const legacy = kind === 'namelist' && legacyNovel && Array.isArray(legacyNovel.nameList) ? legacyNovel.nameList : [];
+            current[kind] = [...(stored[kind] || legacy)];
+          });
+          const { lists = {}, result } = change(current) || {};
+          const now = Date.now();
+          const written = {};
+          const removed = {};
+          Object.keys(lists).forEach((kind) => {
+            const previous = stored[kind] || [];
+            const list = stampNameList(previous, lists[kind], now);
+            const kept = new Set(list.filter((e) => e && e.id).map((e) => e.id));
+            removed[kind] = previous.filter((e) => e && e.id && !kept.has(e.id)).map((e) => e.id);
+            written[kind] = list;
+            store.put({ id: `${kind}::${novelId}`, owner: novelId, kind, list, updatedAt: now });
+          });
+          if (written.namelist && !stored.namelist && legacyNovel && Object.prototype.hasOwnProperty.call(legacyNovel, 'nameList')) {
+            const { nameList, ...rest } = legacyNovel;
+            store.put(rest);
+          }
+          done = { result, written, removed, now };
+        } catch (e) {
+          failure = e;
+          if (typeof tx.abort === 'function') tx.abort();
+        }
+      };
+      wanted.forEach((kind) => {
+        const request = store.get(`${kind}::${novelId}`);
+        request.onsuccess = () => {
+          stored[kind] = request.result && Array.isArray(request.result.list) ? request.result.list : null;
+          ready();
+        };
+      });
+      if (wanted.includes('namelist')) {
+        const request = store.get(novelId);
+        request.onsuccess = () => {
+          legacyNovel = request.result && !isListRecord(request.result) ? request.result : null;
+          ready();
+        };
       }
-      return { ...entry, updatedAt: now };
+      tx.oncomplete = () => (failure ? reject(failure) : resolve(done));
+      tx.onerror = () => reject(failure || tx.error);
+      tx.onabort = () => reject(failure || tx.error);
     });
-    const kept = new Set(list.filter((e) => e && e.id).map((e) => e.id));
-    const removed = previous.filter((e) => e && e.id && !kept.has(e.id)).map((e) => e.id);
-    if (removed.length > 0) {
+    const removedKinds = Object.keys(outcome.removed).filter((kind) => outcome.removed[kind].length > 0);
+    if (removedKinds.length > 0) {
       const deleted = this._readSyncDeleted();
       const book = deleted.names[novelId] || (deleted.names[novelId] = {});
-      const markers = book[kind] || (book[kind] = {});
-      removed.forEach((id) => { markers[id] = now; });
+      removedKinds.forEach((kind) => {
+        const markers = book[kind] || (book[kind] = {});
+        outcome.removed[kind].forEach((id) => { markers[id] = outcome.now; });
+      });
       this._writeSyncDeleted(deleted);
     }
-    await this._putNameListRecord(novelId, list, kind);
-    return list;
+    if (Object.keys(outcome.written).length > 0) this._libraryChanged('names');
+    return outcome;
   },
 
   /**
@@ -842,17 +926,25 @@ const StorageService = {
    */
   async addNameEntry(novelId, entry, kind = 'namelist') {
     if (!novelId || !entry) return null;
-    const currentList = await this.getNameList(novelId, kind);
-    const newEntry = {
-      id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-      original: (entry.original || '').trim(),
-      translation: (entry.translation || '').trim(),
-      chapterFirstSeen: entry.chapterFirstSeen !== undefined && entry.chapterFirstSeen !== '' ? entry.chapterFirstSeen : null,
-      addedAt: Date.now()
-    };
-    currentList.unshift(newEntry);
-    await this.saveNameList(novelId, currentList, kind);
-    return newEntry;
+    const { result } = await this._changeNameLists(novelId, [kind], (lists) => {
+      const currentList = lists[kind];
+      const key = (entry.original || '').trim().toLowerCase();
+      const existingIndex = key ? currentList.findIndex((e) => e && (e.original || '').trim().toLowerCase() === key) : -1;
+      if (existingIndex !== -1) {
+        currentList[existingIndex] = { ...currentList[existingIndex], translation: (entry.translation || '').trim() };
+        return { lists: { [kind]: currentList }, result: currentList[existingIndex] };
+      }
+      const newEntry = {
+        id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+        original: (entry.original || '').trim(),
+        translation: (entry.translation || '').trim(),
+        chapterFirstSeen: entry.chapterFirstSeen !== undefined && entry.chapterFirstSeen !== '' ? entry.chapterFirstSeen : null,
+        addedAt: Date.now()
+      };
+      currentList.unshift(newEntry);
+      return { lists: { [kind]: currentList }, result: newEntry };
+    });
+    return result;
   },
 
   parseNameListBlock,
@@ -887,32 +979,36 @@ const StorageService = {
    */
   async addNameEntries(novelId, entries, chapterFirstSeen, kind = 'namelist') {
     if (!novelId || !Array.isArray(entries) || entries.length === 0) return [];
-    const currentList = await this.getNameList(novelId, kind);
-    const seen = new Set(
-      currentList.map((e) => (e.original || '').trim().toLowerCase()).filter(Boolean)
-    );
-    const added = [];
-    entries.forEach((entry) => {
-      const original = (entry && entry.original ? entry.original : '').trim();
-      const translation = (entry && entry.translation ? entry.translation : '').trim();
-      if (!original || !translation) return;
-      const key = original.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      added.push({
-        id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-        original,
-        translation,
-        chapterFirstSeen: chapterFirstSeen !== undefined && chapterFirstSeen !== '' ? chapterFirstSeen : null,
-        addedAt: Date.now(),
-        isNew: true
+    const { result } = await this._changeNameLists(novelId, [kind], (lists) => {
+      const currentList = lists[kind];
+      const seen = new Set(
+        currentList.map((e) => (e.original || '').trim().toLowerCase()).filter(Boolean)
+      );
+      const added = [];
+      entries.forEach((entry) => {
+        const original = (entry && entry.original ? entry.original : '').trim();
+        const translation = (entry && entry.translation ? entry.translation : '').trim();
+        if (!original || !translation) return;
+        const key = original.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        added.push({
+          id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+          original,
+          translation,
+          chapterFirstSeen: chapterFirstSeen !== undefined && chapterFirstSeen !== '' ? chapterFirstSeen : null,
+          addedAt: Date.now(),
+          isNew: true
+        });
       });
+      if (added.length === 0) return { result: { added, count: currentList.length } };
+      return { lists: { [kind]: [...added, ...currentList] }, result: { added, count: currentList.length + added.length } };
     });
+    const { added, count } = result;
     if (added.length === 0) return [];
-    await this.saveNameList(novelId, [...added, ...currentList], kind);
     if (kind === 'namelist' && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
       window.dispatchEvent(new CustomEvent('novel-name-list-updated', {
-        detail: { novelId, count: currentList.length + added.length, added: added.length }
+        detail: { novelId, count, added: added.length }
       }));
     }
     return added;
@@ -927,19 +1023,56 @@ const StorageService = {
    */
   async updateNameEntry(novelId, entryId, updates, kind = 'namelist') {
     if (!novelId || !entryId || !updates) return null;
-    const currentList = await this.getNameList(novelId, kind);
-    const index = currentList.findIndex(e => e.id === entryId);
-    if (index === -1) return null;
+    const { result } = await this._changeNameLists(novelId, [kind], (lists) => {
+      const currentList = lists[kind];
+      const index = currentList.findIndex(e => e.id === entryId);
+      if (index === -1) return { result: null };
 
-    currentList[index] = {
-      ...currentList[index],
-      original: updates.original !== undefined ? updates.original.trim() : currentList[index].original,
-      translation: updates.translation !== undefined ? updates.translation.trim() : currentList[index].translation,
-      chapterFirstSeen: updates.chapterFirstSeen !== undefined ? updates.chapterFirstSeen : currentList[index].chapterFirstSeen
-    };
+      currentList[index] = {
+        ...currentList[index],
+        original: updates.original !== undefined ? updates.original.trim() : currentList[index].original,
+        translation: updates.translation !== undefined ? updates.translation.trim() : currentList[index].translation,
+        chapterFirstSeen: updates.chapterFirstSeen !== undefined ? updates.chapterFirstSeen : currentList[index].chapterFirstSeen
+      };
+      if (updates.isNew !== undefined) currentList[index].isNew = updates.isNew;
 
-    await this.saveNameList(novelId, currentList, kind);
-    return currentList[index];
+      return { lists: { [kind]: currentList }, result: currentList[index] };
+    });
+    return result;
+  },
+
+  /**
+   * Imports "Original = Translation" lines: updates the meaning of names already in the list
+   * (case-insensitive) and adds the rest.
+   * @returns {Promise<{added: number, updated: number, list: Array}>}
+   */
+  async importNameEntries(novelId, items, kind = 'namelist') {
+    if (!novelId || !Array.isArray(items) || items.length === 0) return { added: 0, updated: 0, list: await this.getNameList(novelId, kind) };
+    const { result, written } = await this._changeNameLists(novelId, [kind], (lists) => {
+      const next = lists[kind];
+      let added = 0;
+      let updated = 0;
+      items.forEach((item) => {
+        const key = (item.original || '').trim().toLowerCase();
+        if (!key) return;
+        const idx = next.findIndex((e) => (e.original || '').trim().toLowerCase() === key);
+        if (idx !== -1) {
+          next[idx] = { ...next[idx], translation: item.translation, chapterFirstSeen: item.chapterFirstSeen || next[idx].chapterFirstSeen };
+          updated++;
+        } else {
+          next.unshift({
+            id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+            original: item.original,
+            translation: item.translation,
+            chapterFirstSeen: item.chapterFirstSeen,
+            addedAt: Date.now()
+          });
+          added++;
+        }
+      });
+      return { lists: { [kind]: next }, result: { added, updated } };
+    });
+    return { ...result, list: written[kind] };
   },
 
   /**
@@ -950,11 +1083,13 @@ const StorageService = {
    */
   async deleteNameEntry(novelId, entryId, kind = 'namelist') {
     if (!novelId || !entryId) return false;
-    const currentList = await this.getNameList(novelId, kind);
-    const filtered = currentList.filter(e => e.id !== entryId);
-    if (filtered.length === currentList.length) return false;
-    await this.saveNameList(novelId, filtered, kind);
-    return true;
+    const { result } = await this._changeNameLists(novelId, [kind], (lists) => {
+      const currentList = lists[kind];
+      const filtered = currentList.filter(e => e.id !== entryId);
+      if (filtered.length === currentList.length) return { result: false };
+      return { lists: { [kind]: filtered }, result: true };
+    });
+    return result;
   },
 
   /**
@@ -964,21 +1099,22 @@ const StorageService = {
    */
   async moveNameEntry(novelId, entryId, fromKind = 'soft', toKind = 'locked') {
     if (!novelId || !entryId) return null;
-    const fromList = await this.getNameList(novelId, fromKind);
-    const entry = fromList.find(e => e.id === entryId);
-    if (!entry) return null;
+    const { result } = await this._changeNameLists(novelId, [fromKind, toKind], (lists) => {
+      const fromList = lists[fromKind];
+      const entry = fromList.find(e => e.id === entryId);
+      if (!entry) return { result: null };
 
-    const toList = await this.getNameList(novelId, toKind);
-    const key = (entry.original || '').trim().toLowerCase();
-    const existing = toList.find(e => (e.original || '').trim().toLowerCase() === key);
-    let moved = existing;
-    if (!existing) {
-      moved = { ...entry, id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), addedAt: Date.now(), isNew: true };
-      toList.unshift(moved);
-    }
-    await this.saveNameList(novelId, toList, toKind);
-    await this.saveNameList(novelId, fromList.filter(e => e.id !== entryId), fromKind);
-    return moved;
+      const toList = lists[toKind];
+      const key = (entry.original || '').trim().toLowerCase();
+      const existing = toList.find(e => (e.original || '').trim().toLowerCase() === key);
+      let moved = existing;
+      if (!existing) {
+        moved = { ...entry, id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), addedAt: Date.now(), isNew: true };
+        toList.unshift(moved);
+      }
+      return { lists: { [toKind]: toList, [fromKind]: fromList.filter(e => e.id !== entryId) }, result: moved };
+    });
+    return result;
   },
 
   notifyChapterSaved(novelId, chapterNumber) {
@@ -1816,6 +1952,29 @@ const StorageService = {
     }
   },
 
+  // The synced markers plus the ones this device made since the sync started.
+  _keepNewerMarkers(deleted, since) {
+    const current = this._readSyncDeleted();
+    const out = { novels: { ...((deleted && deleted.novels) || {}) }, chapters: { ...((deleted && deleted.chapters) || {}) }, names: copyNameMarkers(deleted && deleted.names) };
+    const newer = (time) => syncTime(time) >= since;
+    ['novels', 'chapters'].forEach((kind) => {
+      Object.entries(current[kind] || {}).forEach(([id, time]) => {
+        if (newer(time)) out[kind][id] = Math.max(syncTime(out[kind][id]), syncTime(time));
+      });
+    });
+    const recent = {};
+    Object.entries(current.names || {}).forEach(([novelId, kinds]) => {
+      Object.entries(kinds || {}).forEach(([kind, ids]) => {
+        Object.entries(ids || {}).forEach(([id, time]) => {
+          if (!newer(time)) return;
+          ((recent[novelId] || (recent[novelId] = {}))[kind] || (recent[novelId][kind] = {}))[id] = time;
+        });
+      });
+    });
+    mergeNameMarkers(out.names, recent);
+    return out;
+  },
+
   _writeSyncDeleted(deleted) {
     this.setPreference(SYNC_DELETED_KEY, JSON.stringify({
       novels: (deleted && deleted.novels) || {},
@@ -2169,13 +2328,16 @@ const StorageService = {
       if (BACKUP_EXCLUDED_KEYS.indexOf(key) === -1) preferences[key] = local.preferences[key];
     });
 
+    apply.nameMarkers = copyNameMarkers(deleted.names);
     return { library: libraryOf({ novels, chapters, preferences, deleted }), apply };
   },
 
   // Writes a merge's changes on this device, keeping each record's time so it does not look
   // newly changed, and remembers the merged deletion markers.
-  async applySync(apply, deleted) {
+  async applySync(apply, deleted, { keepSince = null } = {}) {
     const changes = apply || {};
+    const markers = mergeNameMarkers(copyNameMarkers(this._readSyncDeleted().names), copyNameMarkers(changes.nameMarkers));
+    if (deleted) mergeNameMarkers(markers, copyNameMarkers(deleted.names));
     const novelRecords = [];
     const listRecords = [];
     (changes.novels || []).forEach((novel) => {
@@ -2189,7 +2351,18 @@ const StorageService = {
       const novelStore = tx.objectStore('novels');
       const chapterStore = tx.objectStore('chapters');
       novelRecords.forEach((record) => novelStore.put(record));
-      listRecords.forEach((record) => novelStore.put(record));
+      listRecords.forEach((record) => {
+        const request = novelStore.get(record.id);
+        request.onsuccess = () => {
+          const current = request.result && Array.isArray(request.result.list) ? request.result.list : null;
+          if (!current) {
+            novelStore.put(record);
+            return;
+          }
+          const kindMarkers = (markers[record.owner] || {})[record.kind] || {};
+          novelStore.put({ ...record, list: mergeNameEntries(current, record.list, kindMarkers).list });
+        };
+      });
       (changes.chapters || []).forEach((chapter) => chapterStore.put(chapter));
       (changes.deleteNovels || []).forEach((id) => {
         novelStore.delete(id);
@@ -2215,7 +2388,7 @@ const StorageService = {
       remove: changes.deleteChapters || [],
       dropBooks: changes.deleteNovels || []
     });
-    if (deleted) this._writeSyncDeleted(deleted);
+    if (deleted) this._writeSyncDeleted(keepSince === null ? deleted : this._keepNewerMarkers(deleted, keepSince));
     await this._setDbInitialized();
   }
 };

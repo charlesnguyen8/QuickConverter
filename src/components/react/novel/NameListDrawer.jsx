@@ -454,8 +454,8 @@ export default function NameListDrawer() {
     if (!storage || !novelId) return;
     const next = entries.map((entry) => (entry.id === id ? { ...entry, isNew: false } : entry));
     setEntries(next);
-    if (typeof storage.saveNameList === 'function') {
-      Promise.resolve(storage.saveNameList(novelId, next, activeTab)).catch((e) => console.error('Failed to mark name seen:', e));
+    if (typeof storage.updateNameEntry === 'function') {
+      Promise.resolve(storage.updateNameEntry(novelId, id, { isNew: false }, activeTab)).catch((e) => console.error('Failed to mark name seen:', e));
     }
   }, [entries, novelId, activeTab, setEntries]);
 
@@ -892,28 +892,10 @@ export default function NameListDrawer() {
       setBulkStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 block', msg: 'No valid "Original = Translation" lines found.' });
       return;
     }
-    let addedCount = 0;
-    let updatedCount = 0;
-    const next = [...entries];
-    for (const item of parsed) {
-      const idx = next.findIndex((e) => e.original.toLowerCase() === item.original.toLowerCase());
-      if (idx !== -1) {
-        next[idx] = { ...next[idx], translation: item.translation, chapterFirstSeen: item.chapterFirstSeen || next[idx].chapterFirstSeen };
-        updatedCount++;
-      } else {
-        next.unshift({
-          id: 'name_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-          original: item.original,
-          translation: item.translation,
-          chapterFirstSeen: item.chapterFirstSeen,
-          addedAt: Date.now()
-        });
-        addedCount++;
-      }
-    }
-    if (typeof storage.saveNameList === 'function') await storage.saveNameList(novelId, next, activeTab);
-    setEntries(next);
-    setBulkStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 block', msg: `Import complete: ${addedCount} added, ${updatedCount} updated! ✓` });
+    if (typeof storage.importNameEntries !== 'function') return;
+    const { added, updated, list } = await storage.importNameEntries(novelId, parsed, activeTab);
+    setEntries(list);
+    setBulkStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 block', msg: `Import complete: ${added} added, ${updated} updated! ✓` });
   };
 
   return (
