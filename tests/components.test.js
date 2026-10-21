@@ -1464,6 +1464,18 @@ async function testAsync(name, fn) {
   const popover = render(h(ReaderPrefsPopover));
   global.localStorage = prevLocalStorage;
 
+  test('the sepia theme uses the soft parchment #EAE4D3 instead of the yellow sepia', () => {
+    const choice = popover.match(/<[^>]*data-theme-choice="sepia"[^>]*>[\s\S]*?<\/button>/);
+    assert(choice && /bg-\[#eae4d3\]/.test(choice[0]), 'the reader theme picker shows the new color');
+    const settings = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'components', 'react', 'settings', 'SettingsReaderTab.jsx'), 'utf8');
+    assert(/\['sepia',[^\]]*bg-\[#eae4d3\]/.test(settings), 'the Settings theme picker shows it too');
+    const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'views', 'reader.html'), 'utf8');
+    assert(/body\[data-theme="sepia"\] \{\s*background-color: #eae4d3 !important;/.test(css), 'the reader page background');
+    for (const old of ['#fbf0d9', '#ede0cb', '#d8c4ab', '#dfceb5', '#e5d5be', '#f7ebce', '#f3e6cf', '#c9ad8a', 'rgba(251, 240, 217']) {
+      assert(!css.includes(old) && !settings.includes(old), `no old yellow sepia tone ${old} left`);
+    }
+  });
+
   test('ReaderPrefsPopover renders the typography controls reflecting prefs', () => {
     for (const id of ['reader-typography-wrapper', 'toggle-typography-popover-btn', 'reader-typography-popover',
       'close-typography-popover-btn', 'in-reader-font-slider', 'in-reader-font-val', 'in-reader-font-family',

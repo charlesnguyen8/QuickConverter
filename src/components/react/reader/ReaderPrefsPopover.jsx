@@ -35,7 +35,7 @@ const FONTS = [
 const THEMES = [
   ['slate', 'Slate', 'Dark Slate Theme', 'bg-slate-950', 'bg-slate-800 border-slate-600', 'text-slate-200', 'text-slate-300', 'hover:border-slate-600'],
   ['oled', 'OLED', 'OLED Midnight Theme', 'bg-black', 'bg-black border-zinc-700', 'text-zinc-100', 'text-zinc-300', 'hover:border-zinc-700'],
-  ['sepia', 'Sepia', 'Warm Sepia Theme', 'bg-[#fbf0d9]', 'bg-[#ede0cb] border-[#d8c4ab]', 'text-[#2d231b]', 'text-[#2d231b]', 'hover:border-amber-500/60'],
+  ['sepia', 'Sepia', 'Warm Sepia Theme', 'bg-[#eae4d3]', 'bg-[#dfd8c5] border-[#cbc2ab]', 'text-[#2d231b]', 'text-[#2d231b]', 'hover:border-amber-500/60'],
   ['forest', 'Forest', 'Forest Night Theme', 'bg-[#0d1712]', 'bg-[#14241c] border-[#1f3d2c]', 'text-emerald-300', 'text-emerald-200', 'hover:border-emerald-700']
 ];
 

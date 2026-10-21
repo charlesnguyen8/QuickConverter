@@ -30,7 +30,7 @@ const FONTS = [
 const THEMES = [
   ['slate', 'Dark Slate', 'Default theme', 'bg-slate-700 border-slate-600', 'text-slate-100', 'bg-slate-900', 'text-slate-100', 'border-indigo-500 border-2'],
   ['oled', 'OLED Black', 'Pure black battery saver', 'bg-black border-zinc-700', 'text-zinc-100', 'bg-black', 'text-zinc-100', 'border-slate-500'],
-  ['sepia', 'Warm Sepia', 'Soft novel book feel', 'bg-[#fbf0d9] border-amber-600', 'text-[#e6d5be]', 'bg-[#241e17]', 'text-[#e6d5be]', 'border-amber-700/60'],
+  ['sepia', 'Warm Sepia', 'Soft novel book feel', 'bg-[#eae4d3] border-amber-600', 'text-[#e6d5be]', 'bg-[#241e17]', 'text-[#e6d5be]', 'border-amber-700/60'],
   ['forest', 'Forest Night', 'Calm green hue', 'bg-[#132e20] border-emerald-600', 'text-emerald-100', 'bg-[#0d1712]', 'text-emerald-100', 'border-emerald-700/60']
 ];
 
