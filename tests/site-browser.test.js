@@ -193,13 +193,27 @@ process.on('beforeExit', () => {
 
   await test('page script reads the site alerts the download tab caught', async () => {
     const posted = await runPage(STV_URL, STV_PROMPT, {
-      waitMs: 5000,
       before: (env) => {
         env.document.documentElement.getAttribute = (name) => (name === 'data-qc-alerts' ? JSON.stringify(['Lỗi không xác định, vui lòng thử lại sau, mã báo lỗi:4005.\nhttps://sangtacviet.com/']) : null);
       }
     });
     assert.deepStrictEqual(posted.map((m) => [m.type, m.outcome]), [['failed', 'blocked']]);
     assert(posted[0].reason.includes('4005'));
+  });
+
+  await test('a sangtacviet 400x alert followed by the chapter loading saves the chapter instead of stopping', async () => {
+    const STV_CHAPTER_URL = 'https://sangtacviet.com/truyen/uukanshu/1/92019/1122/';
+    const loaded = '<html><body><div id="booknameholder">Book</div><div class="contentbox" id="cld-92019-1122"><i h="x" t="第一章">Chương 1</i><br><i h="y" t="林动">Lâm Động</i></div></body></html>';
+    const posted = await runPage(STV_CHAPTER_URL, STV_PROMPT, {
+      waitMs: 2000,
+      before: (env) => {
+        env.document.documentElement.getAttribute = (name) => (name === 'data-qc-alerts' ? JSON.stringify(['Lỗi không xác định, vui lòng thử lại sau, mã báo lỗi:4008.\nhttps://sangtacviet.com/']) : null);
+      },
+      during: (env) => {
+        setTimeout(() => { env.document.documentElement.outerHTML = loaded; }, 40);
+      }
+    });
+    assert.deepStrictEqual(posted.map((m) => m.type), ['chapter'], 'the chapter, not a "blocked" stop');
   });
 
   await test('page script says what the user must do when a sangtacviet chapter never starts loading', async () => {

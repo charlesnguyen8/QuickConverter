@@ -219,7 +219,7 @@ const SangtacvietProvider = (() => {
     const messages = [main, ...(alerts || []).map(siteMessage)].filter(Boolean);
     for (const message of messages) {
       const outcome = classifyMessage(message);
-      if (outcome) return outcome;
+      if (outcome && (final || outcome.outcome !== 'blocked')) return outcome;
     }
     if (!final) return null;
     const alert = (alerts || []).map(siteMessage).find(Boolean);

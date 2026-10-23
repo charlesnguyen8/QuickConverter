@@ -980,7 +980,7 @@
      * Starts the automatic 1h 15m rate-limit and failure backoff timer on chapter failure.
      * Keeps the failed task at the top of the queue and counts down until automatic retry.
      */
-    _startRetryCooldown(task, errorMessage, isRateLimit = false) {
+    _startRetryCooldown(task, errorMessage, isRateLimit = false, durationOverrideSec = null) {
       this._clearCooldownTimers();
 
       if (this.isPaused || this.queue.length === 0 || this._isClearing) {
@@ -990,7 +990,7 @@
         return;
       }
 
-      const durationSec = this.errorCooldownSec || 4500;
+      const durationSec = durationOverrideSec || this.errorCooldownSec || 4500;
       const retryAt = Date.now() + durationSec * 1000;
 
       this.cooldown = {
@@ -1228,9 +1228,19 @@
               return;
             }
 
+            // A page that did not load in time (outcome retry) is tried again shortly, a few times,
+            // before the normal backoff; it never pauses the queue.
+            if (task.outcome === 'retry' && (task.quickRetries || 0) < 3) {
+              task.quickRetries = (task.quickRetries || 0) + 1;
+              task.status = 'retry_pending';
+              this.queue.unshift(task);
+              this._startRetryCooldown(task, task.error, false, 30);
+              return;
+            }
+
             // No-response / timeout failures pause the queue and surface the error instead of
             // consuming the rate-limit retry budget. Resume re-attempts the same chapter.
-            const isTimeout = errLower.includes('timed out') || errLower.includes('no data received');
+            const isTimeout = task.outcome !== 'retry' && (errLower.includes('timed out') || errLower.includes('no data received'));
             if (isTimeout) {
               task.status = 'paused_error';
               this.queue.unshift(task);

@@ -1065,6 +1065,61 @@ async function runTests() {
     mockStorageService.downloadChapter = originalDownload;
   });
 
+  // 21e. A page that timed out (outcome retry) is retried shortly, never pauses the queue,
+  // even though its message says "timed out"; after a few quick tries the normal backoff applies
+  await test('a page timeout is retried after 30 s up to 3 times without pausing, then falls back to the normal backoff', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+
+    const originalDownload = mockStorageService.downloadChapter;
+    let attempts = 0;
+    mockStorageService.downloadChapter = async () => {
+      attempts++;
+      const error = new Error('Sáng Tác Việt timed out loading the chapter.');
+      error.outcome = 'retry';
+      throw error;
+    };
+    const waitForRetry = () => {
+      const attemptsBefore = attempts;
+      let done = false;
+      return new Promise((resolve) => {
+        const unsub = DownloadQueueService.subscribe((s) => {
+          if (done) return;
+          if (s.cooldown && s.cooldown.active && s.cooldown.type === 'retry' && attempts > attemptsBefore) {
+            done = true;
+            setTimeout(() => unsub(), 0);
+            resolve(s);
+          }
+        });
+      });
+    };
+
+    let next = waitForRetry();
+    await DownloadQueueService.enqueue({ novelId: 'novel-stv', chapterNumber: 241, chapterTitle: 'Thứ 241 chương' });
+    let state = await next;
+    assert.strictEqual(state.isPaused, false, 'a page timeout does not pause the queue');
+    assert.strictEqual(state.pauseError, null);
+    assert.strictEqual(state.cooldown.totalSeconds, 30, 'it is retried after 30 s, not 1 h 15 min');
+    assert.strictEqual(state.queue[0].chapterNumber, 241, 'the chapter waits at the head');
+
+    for (let quick = 2; quick <= 3; quick++) {
+      next = waitForRetry();
+      DownloadQueueService.retryNow();
+      state = await next;
+      assert.strictEqual(state.cooldown.totalSeconds, 30, `quick retry ${quick}`);
+    }
+    next = waitForRetry();
+    DownloadQueueService.retryNow();
+    state = await next;
+    assert.strictEqual(attempts, 4);
+    assert.strictEqual(state.isPaused, false, 'still no pause');
+    assert.strictEqual(state.cooldown.totalSeconds, 4500, 'after 3 quick retries the normal backoff applies');
+
+    mockStorageService.downloadChapter = originalDownload;
+    DownloadQueueService.clearAll();
+  });
+
   // 21d. The site refusing this browser pauses the queue (every chapter would fail the same way)
   await test('the site refusing this browser pauses the queue without spending retries', async () => {
     downloadedTasks = [];

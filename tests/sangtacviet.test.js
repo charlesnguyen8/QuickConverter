@@ -287,11 +287,12 @@ const EXPECTED_CHINESE = [
     assert(/Sync Catalog/.test(missing.reason), 'a missing chapter suggests syncing the chapter list');
 
     for (const code of ['4005', '4008']) {
-      const blocked = of({ document: page(BLOCKED.replace('4008', code)), alerts: [] });
-      assert.strictEqual(blocked.outcome, 'blocked', `error ${code}: the site refuses this browser`);
+      assert.strictEqual(P.classifyPage({ document: page(BLOCKED.replace('4008', code)), alerts: [] }), null, `error ${code} alone is not final: the site often reloads and then loads the chapter`);
+      const blocked = of({ document: page(BLOCKED.replace('4008', code)), alerts: [], final: true });
+      assert.strictEqual(blocked.outcome, 'blocked', `error ${code} still showing when the wait is over: the site refuses this browser`);
       assert(blocked.reason.includes(code), 'says the code');
     }
-    assert.strictEqual(of({ document: page(loadingPrompt), alerts: ['Lỗi không xác định, vui lòng thử lại sau, mã báo lỗi: 4005\nhttps://x'] }).outcome, 'blocked', 'from the alert too (the app wording has a space)');
+    assert.strictEqual(of({ document: page(loadingPrompt), alerts: ['Lỗi không xác định, vui lòng thử lại sau, mã báo lỗi: 4005\nhttps://x'], final: true }).outcome, 'blocked', 'from the alert too (the app wording has a space)');
 
     assert.strictEqual(of({ document: page('<center>Tải quá thời gian, vui lòng tải lại trang.</center>'), alerts: [] }).outcome, 'retry', 'a site timeout is retried');
 
