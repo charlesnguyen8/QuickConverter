@@ -126,8 +126,11 @@
     Promise.resolve(call).catch(() => {});
   }
 
-  class DownloadQueue {
-    constructor() {
+  // One queue of chapters (a lane): its own waiting chapters, active chapter, pause, cooldown,
+  // retry backoff and skipped list. DownloadQueueService holds the lanes.
+  class QueueLane {
+    constructor(laneId = 'main') {
+      this.laneId = laneId;
       this.activeTask = null;
       this.queue = [];
       this.isPaused = false;
@@ -326,7 +329,8 @@
         error: task.error || null,
         retryCount: task.retryCount || 0,
         addedAt: task.addedAt || Date.now(),
-        startedAt: task.startedAt || null
+        startedAt: task.startedAt || null,
+        laneId: task.laneId || this.laneId
       };
     }
 
@@ -470,6 +474,7 @@
 
       const task = {
         id: taskId,
+        laneId: this.laneId,
         novelId,
         novelTitle: novelTitle || 'Novel',
         chapterNumber: num,
@@ -544,6 +549,7 @@
 
         const task = {
           id: `${item.novelId}_ch${num}`,
+          laneId: this.laneId,
           novelId: item.novelId,
           novelTitle: item.novelTitle || 'Novel',
           chapterNumber: num,
@@ -1328,8 +1334,48 @@
     }
   }
 
+  const LANE_METHODS = ['enqueue', 'enqueueBatch', 'remove', 'pause', 'resume', 'clearAll', 'clearSkipped',
+    'skipCooldown', 'retryNow', 'skipFailedChapter', 'setCooldownConfig', 'isQueued', 'getChapterStatus',
+    '_startCooldown', '_clearCooldownTimers'];
+  const LANE_FIELDS = ['activeTask', 'queue', 'isPaused', 'isProcessing', 'cooldown', 'pauseError', 'skipped',
+    'cooldownEnabled', 'minCooldownSec', 'maxCooldownSec', 'errorCooldownSec', 'maxRetries'];
+
+  // The download queue service: holds the lanes and answers for them. For now there is one lane,
+  // "main"; the state lists it in `lanes` next to the top-level fields the views read.
+  class DownloadQueueManager {
+    constructor() {
+      this.main = new QueueLane('main');
+      this.lanes = new Map([[this.main.laneId, this.main]]);
+    }
+
+    _withLanes(state) {
+      return { ...state, lanes: [{ id: this.main.laneId, ...state }] };
+    }
+
+    getState() {
+      return this._withLanes(this.main.getState());
+    }
+
+    subscribe(callback) {
+      if (typeof callback !== 'function') return () => {};
+      return this.main.subscribe((state) => callback(this._withLanes(state)));
+    }
+  }
+
+  LANE_METHODS.forEach((name) => {
+    DownloadQueueManager.prototype[name] = function (...args) {
+      return this.main[name](...args);
+    };
+  });
+  LANE_FIELDS.forEach((name) => {
+    Object.defineProperty(DownloadQueueManager.prototype, name, {
+      get() { return this.main[name]; },
+      set(value) { this.main[name] = value; }
+    });
+  });
+
   // Singleton instance
-  const DownloadQueueService = new DownloadQueue();
+  const DownloadQueueService = new DownloadQueueManager();
   DownloadQueueService.backgroundWorkText = backgroundWorkText;
 
   // Export to global scope

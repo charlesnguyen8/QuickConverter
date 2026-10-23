@@ -1,6 +1,6 @@
 # Several download queues in parallel
 
-**Status (2026-10-23):** plan, not started.
+**Status (2026-10-23):** phase 1 built; phases 2-4 to do.
 
 ## Goal
 
@@ -79,6 +79,11 @@ The foreground service stays on while any lane works; its text summarizes the la
 
 1. **Lanes inside the service, one lane only.** Refactor the queue logic into a lane; the manager
    holds one lane; the API and every current test stay unchanged (characterization first).
+   - **Built:** `QueueLane` (the old queue class) knows its `laneId` and stamps it on every task;
+     `DownloadQueueManager` is `DownloadQueueService`, holds the lanes (`main` only), forwards the
+     public methods and the few fields tests read, and adds `lanes: [{ id: 'main', ... }]` to
+     `getState()` and to what subscribers receive. Persistence and worker messages are still per
+     lane (main); they move to the manager in phase 2.
 2. **Several lanes.** Lane choice on enqueue, lookups across lanes, per-lane controls and
    cooldowns, same-site turns, persistence with migration, worker messages with `laneId`. Tests
    for parallel lanes on different sites, alternation on the same site, per-lane cooldown, and

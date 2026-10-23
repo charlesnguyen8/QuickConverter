@@ -1024,6 +1024,41 @@ async function runTests() {
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
   });
 
+  // 21f. Phase 1 of several queues: the service holds lanes; for now there is one, "main",
+  // and the state lists it next to the top-level fields every view reads today
+  await test('the queue service lists its one lane, "main", with the same state as the top level', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+    const originalDownload = mockStorageService.downloadChapter;
+    let release;
+    mockStorageService.downloadChapter = () => new Promise((resolve) => { release = () => resolve({ id: 'x' }); });
+
+    await DownloadQueueService.enqueue({ novelId: 'lane-novel', novelTitle: 'Lane Novel', chapterNumber: 1 });
+    await DownloadQueueService.enqueue({ novelId: 'lane-novel', novelTitle: 'Lane Novel', chapterNumber: 2 });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const state = DownloadQueueService.getState();
+    assert(Array.isArray(state.lanes) && state.lanes.length === 1, 'one lane');
+    const [lane] = state.lanes;
+    assert.strictEqual(lane.id, 'main');
+    for (const field of ['activeTask', 'queue', 'isPaused', 'isProcessing', 'cooldown', 'pauseError', 'skipped', 'totalCount']) {
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(lane[field] === undefined ? null : lane[field])), JSON.parse(JSON.stringify(state[field] === undefined ? null : state[field])), `lane ${field} matches the top level`);
+    }
+    assert.strictEqual(state.activeTask.laneId, 'main', 'the active chapter records its lane');
+    assert.strictEqual(state.queue[0].laneId, 'main', 'waiting chapters record their lane');
+
+    const seen = [];
+    const unsub = DownloadQueueService.subscribe((s) => seen.push(s));
+    unsub();
+    assert(seen.length > 0 && Array.isArray(seen[0].lanes) && seen[0].lanes[0].id === 'main', 'subscribers get the lanes too');
+
+    release();
+    mockStorageService.downloadChapter = originalDownload;
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+  });
+
   // 21c. A chapter the site cannot give (VIP, missing) is skipped and the queue goes on
   await test('a chapter the site cannot give is skipped, listed with its reason, and the queue goes on', async () => {
     downloadedTasks = [];
