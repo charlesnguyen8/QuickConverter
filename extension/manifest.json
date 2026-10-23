@@ -98,6 +98,17 @@
         "scripts/content.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://sangtacviet.com/truyen/*",
+        "*://*.sangtacviet.com/truyen/*"
+      ],
+      "js": [
+        "scripts/page-alerts.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
   "icons": {

@@ -180,6 +180,34 @@ process.on('beforeExit', () => {
     assert.strictEqual(posted[0].chapterSlug, '100043460');
   });
 
+  const STV_URL = 'https://sangtacviet.com/truyen/qidian/1/1047557032/935406276/';
+  const stvPage = (main) => `<html><body><div id="content-container"><div class="contentbox" id="maincontent">${main}</div></div></body></html>`;
+  const STV_PROMPT = stvPage('<center><span class="spinner-border"></span><br>Nhấp vào để tải chương...</center>');
+
+  await test('page script reports why a sangtacviet chapter failed instead of waiting it out', async () => {
+    const posted = await runPage(STV_URL, stvPage('Đây là chương vip của qidian, chưa thể tải chương này. Ghi chú về chương này: Qidian vừa nâng cấp bảo mật, nhiều truyện không thể tải được, xin chờ giải pháp.'), { waitMs: 5000 });
+    assert.deepStrictEqual(posted.map((m) => [m.type, m.outcome]), [['failed', 'skip']], 'right away, not after the wait');
+    assert.strictEqual(posted[0].chapterSlug, '935406276');
+    assert(/VIP/.test(posted[0].reason));
+  });
+
+  await test('page script reads the site alerts the download tab caught', async () => {
+    const posted = await runPage(STV_URL, STV_PROMPT, {
+      waitMs: 5000,
+      before: (env) => {
+        env.document.documentElement.getAttribute = (name) => (name === 'data-qc-alerts' ? JSON.stringify(['Lỗi không xác định, vui lòng thử lại sau, mã báo lỗi:4005.\nhttps://sangtacviet.com/']) : null);
+      }
+    });
+    assert.deepStrictEqual(posted.map((m) => [m.type, m.outcome]), [['failed', 'blocked']]);
+    assert(posted[0].reason.includes('4005'));
+  });
+
+  await test('page script says what the user must do when a sangtacviet chapter never starts loading', async () => {
+    const posted = await runPage(STV_URL, STV_PROMPT);
+    assert.deepStrictEqual(posted.map((m) => [m.type, m.outcome]), [['failed', 'needs-user']], 'not a bare "empty"');
+    assert(/Nhấp vào để tải chương/.test(posted[0].reason));
+  });
+
   await test('page script reports an image (paid) chapter instead of text', async () => {
     const posted = await runPage(NK_CHAPTER_URL, NK_IMAGE);
     assert.deepStrictEqual(posted.map((m) => m.type), ['image']);
@@ -390,7 +418,7 @@ process.on('beforeExit', () => {
     const source = loadTabSource().create({ tabs, pageFor: (url) => `ext://open-to-save?url=${url}` });
     const done = source.fetch(NK_CHAPTER_URL, { expect: EXPECT });
     await tick(); await tick();
-    assert.deepStrictEqual(tabs.calls, [['create', `ext://open-to-save?url=${NK_CHAPTER_URL}`, false]], 'in the background, through the hand-off page');
+    assert.deepStrictEqual(tabs.calls, [['create', `ext://open-to-save?url=${NK_CHAPTER_URL}#qc-download`, false]], 'in the background, through the hand-off page, marked as a download tab');
     assert.deepStrictEqual(plain(source.sessionFor(41)), { expect: EXPECT }, 'the content script can ask whether its tab is a download');
     assert.strictEqual(source.sessionFor(99), null, 'other tabs are not');
     source.onTabMessage(41, CHAPTER_MSG);
@@ -398,6 +426,89 @@ process.on('beforeExit', () => {
     assert.deepStrictEqual(result, { kind: 'text', title: '第一章 张角', rawText: 'First line of the chapter.\n\nSecond line.', url: NK_CHAPTER_URL });
     assert.deepStrictEqual(tabs.calls.slice(1), [['remove', 41]], 'the tab closes');
     assert.strictEqual(source.sessionFor(41), null);
+  });
+
+  await test('extension: download tabs record site alerts instead of showing them; other tabs are untouched', () => {
+    const shown = [];
+    const make = (hash) => {
+      const attrs = {};
+      const env = { location: { hash }, alert: (m) => shown.push(m), document: { documentElement: { setAttribute: (k, v) => { attrs[k] = v; }, getAttribute: (k) => (k in attrs ? attrs[k] : null) } } };
+      env.window = env;
+      env.globalThis = env;
+      vm.createContext(env);
+      vm.runInContext(read('extension', 'scripts', 'page-alerts.js'), env);
+      return { env, attrs };
+    };
+    const download = make('#qc-download');
+    vm.runInContext("alert('Lỗi không xác định, mã báo lỗi:4005\\nhttps://x'); window.alert('second')", download.env);
+    assert.deepStrictEqual(shown, [], 'no pop-up in a download tab');
+    assert.deepStrictEqual(JSON.parse(download.attrs['data-qc-alerts']), ['Lỗi không xác định, mã báo lỗi:4005\nhttps://x', 'second'], 'recorded for the page script');
+    const reading = make('');
+    vm.runInContext("alert('hello')", reading.env);
+    assert.deepStrictEqual(shown, ['hello'], 'a tab the user opened still shows the site alerts');
+    assert.strictEqual(reading.attrs['data-qc-alerts'], undefined);
+  });
+
+  await test('extension: the alert catcher runs in the page itself before the site scripts, on sangtacviet chapter pages', () => {
+    const manifest = JSON.parse(read('extension', 'manifest.json'));
+    const entry = manifest.content_scripts.find((c) => c.js.includes('scripts/page-alerts.js'));
+    assert(entry, 'a content script entry for the alert catcher');
+    assert.deepStrictEqual(entry.js, ['scripts/page-alerts.js']);
+    assert.strictEqual(entry.world, 'MAIN', 'runs in the page context, where the site calls alert');
+    assert.strictEqual(entry.run_at, 'document_start', 'before the site scripts');
+    assert(entry.matches.includes('*://sangtacviet.com/truyen/*') && entry.matches.includes('*://*.sangtacviet.com/truyen/*'));
+  });
+
+  await test('the download tab marker does not change which chapter a page is', () => {
+    const env = loadPage(NK_CHAPTER_URL, '<html></html>');
+    for (const url of [NK_CHAPTER_URL, 'https://sangtacviet.com/truyen/qidian/1/1047557032/935406276/']) {
+      const provider = env.ProviderRegistry.getProviderForUrl(url + '#qc-download');
+      assert(provider, url);
+      const { url: marked, ...ids } = plain(provider.parseUrl(url + '#qc-download'));
+      const { url: plainUrl, ...expected } = plain(provider.parseUrl(url));
+      assert.deepStrictEqual(ids, expected, url);
+    }
+  });
+
+  await test('a download acts on why a page failed: skip and blocked end it, needs-user waits for the user', () => {
+    const env = { console, setTimeout, clearTimeout, atob, btoa };
+    env.globalThis = env;
+    vm.createContext(env);
+    vm.runInContext(read('src', 'services', 'page-session.js'), env);
+    const start = () => {
+      const seen = { asked: [], shown: 0, finished: [] };
+      const session = env.PageSession.create({
+        expect: { slug: 'qidian-1047557032', chapterSlug: '935406276' },
+        onNeedsUser: (reason) => seen.asked.push(reason),
+        show: () => { seen.shown++; },
+        finish: (error, source) => seen.finished.push(error ? { message: error.message, outcome: error.outcome } : source)
+      });
+      return { session, seen };
+    };
+    const failed = (outcome, reason) => ({ type: 'failed', slug: 'qidian-1047557032', chapterSlug: '935406276', outcome, reason });
+
+    for (const outcome of ['skip', 'blocked', 'retry']) {
+      const { session, seen } = start();
+      session.handle(failed(outcome, `why ${outcome}`));
+      assert.deepStrictEqual(plain(seen.finished), [{ message: `why ${outcome}`, outcome }], `${outcome} ends the download with its reason`);
+      assert.strictEqual(seen.shown, 0, `${outcome} does not bring the page forward`);
+    }
+
+    const { session, seen } = start();
+    session.handle(failed('needs-user', 'Tap to load'));
+    assert.deepStrictEqual(seen.asked, ['Tap to load'], 'needs-user asks for the user with the reason');
+    assert.strictEqual(seen.shown, 1, 'and shows the page');
+    assert.deepStrictEqual(seen.finished, [], 'and keeps waiting for the chapter');
+
+    const other = start();
+    other.session.handle({ ...failed('skip', 'VIP'), chapterSlug: '1' });
+    assert.deepStrictEqual(other.seen.finished, [], 'a failure on a different chapter does not end this download');
+    assert.strictEqual(other.seen.asked.length, 1, 'it asks for the user instead');
+  });
+
+  await test('page script reports the chapter URL without the download tab marker', async () => {
+    const posted = await runPage(STV_URL + '#qc-download', STV_PROMPT);
+    assert.strictEqual(posted[0].url, STV_URL);
   });
 
   await test('extension: when the page needs you the tab comes forward; closing it ends the download', async () => {
@@ -473,7 +584,7 @@ process.on('beforeExit', () => {
 
   await test('extension: the worker answers download tabs, offers the page source and reads images offscreen', () => {
     const manifest = JSON.parse(read('extension', 'manifest.json'));
-    const pageSites = manifest.content_scripts.filter((c) => c.matches.some((m) => /nkwwlkj|sangtacviet/.test(m)));
+    const pageSites = manifest.content_scripts.filter((c) => c.js.includes('scripts/content.js') && c.matches.some((m) => /nkwwlkj|sangtacviet/.test(m)));
     assert.strictEqual(pageSites.length, 2);
     pageSites.forEach((c) => {
       assert(c.js.indexOf('services/site-page.js') > -1 && c.js.indexOf('services/site-page.js') < c.js.indexOf('scripts/content.js'), 'the page runner is injected before the content script');

@@ -88,7 +88,9 @@ export default function QueueDock({ queueService, isPopup }) {
   const total = (active ? 1 : 0) + queue.length;
   const isPaused = !!state?.isPaused;
 
-  if (total === 0 && !isCooldown) return null;
+  const skipped = Array.isArray(state?.skipped) ? state.skipped : [];
+
+  if (total === 0 && !isCooldown && skipped.length === 0) return null;
 
   const call = (method) => {
     if (service && typeof service[method] === 'function') service[method]();
@@ -317,6 +319,31 @@ export default function QueueDock({ queueService, isPopup }) {
     );
   }
 
+  const skippedSection = skipped.length > 0 ? (
+    <div id="queue-skipped" className="p-2.5 rounded-xl bg-slate-800 border border-slate-600 text-xs text-slate-300 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold text-slate-200">Skipped {skipped.length} {skipped.length === 1 ? 'chapter' : 'chapters'}</span>
+        <button
+          type="button"
+          id="queue-dismiss-skipped"
+          onClick={() => call('clearSkipped')}
+          className="min-h-10 px-3 rounded-lg text-[11px] font-semibold text-slate-300 bg-slate-900 border border-slate-600 hover:bg-slate-700 transition cursor-pointer"
+          title="Forget the skipped chapters"
+        >
+          Dismiss
+        </button>
+      </div>
+      <ul className="flex flex-col gap-1 max-h-28 overflow-y-auto">
+        {skipped.slice().reverse().map((entry) => (
+          <li key={`${entry.novelId}:${entry.chapterNumber}`} className="break-words">
+            <span className="font-semibold text-slate-200">{entry.chapterTitle || `Chapter ${entry.chapterNumber}`}</span>
+            <span className="text-slate-400">: {entry.reason}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  ) : null;
+
   const listMaxH = popup ? 'max-h-28' : 'max-h-48';
   const cardWidth = popup ? 'w-[calc(100vw-1rem)] max-w-[344px]' : 'w-80 sm:w-96';
 
@@ -363,6 +390,7 @@ export default function QueueDock({ queueService, isPopup }) {
         </div>
 
         {activeSection}
+        {skippedSection}
 
         {queue.length > 0 ? (
           <div className={`flex flex-col gap-1.5 ${listMaxH} overflow-y-auto pr-1 select-none`}>

@@ -1024,6 +1024,83 @@ async function runTests() {
     assert.strictEqual(state.queue[0].status, 'paused_error', 'chapter is parked as paused_error at the head');
     assert(!state.queue[0].retryCount, 'retry budget is not consumed');
     assert(state.pauseError && state.pauseError.includes('saved by opening its page'), 'pauseError explains why');
+  // 21c. A chapter the site cannot give (VIP, missing) is skipped and the queue goes on
+  await test('a chapter the site cannot give is skipped, listed with its reason, and the queue goes on', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+
+    const originalDownload = mockStorageService.downloadChapter;
+    const asked = [];
+    mockStorageService.downloadChapter = async (novelId, chapterNumber) => {
+      asked.push(chapterNumber);
+      if (chapterNumber === 60) {
+        const error = new Error('VIP chapter the site cannot load: Đây là chương vip của qidian, chưa thể tải chương này.');
+        error.outcome = 'skip';
+        throw error;
+      }
+      return { id: `${novelId}_ch${chapterNumber}` };
+    };
+
+    await DownloadQueueService.enqueue({ novelId: 'novel-stv', chapterNumber: 60, chapterTitle: 'Chương 60' });
+    await DownloadQueueService.enqueue({ novelId: 'novel-stv', chapterNumber: 61, chapterTitle: 'Chương 61' });
+    for (let i = 0; i < 50 && asked.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 20));
+
+    const state = DownloadQueueService.getState();
+    assert.deepStrictEqual(asked, [60, 61], 'the next chapter is downloaded right after');
+    assert.strictEqual(state.isPaused, false, 'the queue does not pause');
+    assert.strictEqual(state.pauseError, null);
+    assert.strictEqual(state.cooldown, null, 'no retry backoff');
+    assert.strictEqual(state.skipped.length, 1, 'the skipped chapter is listed');
+    assert.strictEqual(state.skipped[0].chapterNumber, 60);
+    assert.strictEqual(state.skipped[0].novelId, 'novel-stv');
+    assert(/VIP/.test(state.skipped[0].reason), 'with why');
+
+    DownloadQueueService.clearSkipped();
+    assert.deepStrictEqual(DownloadQueueService.getState().skipped, [], 'Dismiss empties the list');
+    DownloadQueueService.skipped = [{ novelId: 'novel-stv', chapterNumber: 60, reason: 'VIP' }];
+    DownloadQueueService.clearAll();
+    assert.deepStrictEqual(DownloadQueueService.getState().skipped, [], 'Clear all empties the list');
+    mockStorageService.downloadChapter = originalDownload;
+  });
+
+  // 21d. The site refusing this browser pauses the queue (every chapter would fail the same way)
+  await test('the site refusing this browser pauses the queue without spending retries', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+
+    const originalDownload = mockStorageService.downloadChapter;
+    mockStorageService.downloadChapter = async () => {
+      const error = new Error('Sáng Tác Việt refused to load chapters in this browser (error 4005).');
+      error.outcome = 'blocked';
+      throw error;
+    };
+
+    await DownloadQueueService.enqueue({ novelId: 'novel-stv', chapterNumber: 1 });
+    await new Promise((resolve) => {
+      let unsub;
+      unsub = DownloadQueueService.subscribe((s) => {
+        if (s.isPaused) {
+          if (unsub) unsub(); else setTimeout(() => unsub && unsub(), 0);
+          resolve();
+        }
+      });
+    });
+
+    const state = DownloadQueueService.getState();
+    assert.strictEqual(state.isPaused, true);
+    assert.strictEqual(state.cooldown, null, 'no retry backoff');
+    assert.strictEqual(state.queue[0].status, 'paused_error', 'the chapter waits at the head');
+    assert(!state.queue[0].retryCount, 'retry budget is not consumed');
+    assert(state.pauseError.includes('4005'));
+
+    mockStorageService.downloadChapter = originalDownload;
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+  });
+
 
     mockStorageService.downloadChapter = originalDownload;
     DownloadQueueService.clearAll();

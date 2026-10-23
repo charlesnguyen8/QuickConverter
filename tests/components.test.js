@@ -1212,6 +1212,23 @@ async function testAsync(name, fn) {
     const service = { getState: () => state, subscribe: (cb) => { cb(state); return () => {}; } };
     const html = render(h(QueueDock, { queueService: service, isPopup: false }));
     assert(html.includes('Waiting for you') && html.includes('Log in to 独阅读'), 'says what the page needs');
+  test('QueueDock lists the chapters the site could not give, even when the queue is done, and can dismiss them', () => {
+    const skipped = [
+      { novelId: 'n1', chapterNumber: 60, chapterTitle: 'Chương 60', reason: 'VIP chapter the site cannot load: Đây là chương vip của qidian.' },
+      { novelId: 'n1', chapterNumber: 61, chapterTitle: 'Chương 61', reason: 'VIP chapter the site cannot load: Đây là chương vip của qidian.' }
+    ];
+    const state = { activeTask: null, queue: [], isPaused: false, isProcessing: false, totalCount: 0, cooldown: null, pauseError: null, skipped };
+    const cleared = [];
+    const service = { getState: () => state, subscribe: (cb) => { cb(state); return () => {}; }, clearSkipped: () => cleared.push(true) };
+    const html = render(h(QueueDock, { queueService: service, isPopup: false }));
+    assert(html.includes('Skipped 2 chapters'), 'says how many were skipped');
+    assert(html.includes('Chương 60') && html.includes('Chương 61') && html.includes('VIP chapter the site cannot load'), 'which ones and why');
+    const dismiss = html.match(/<button[^>]*id="queue-dismiss-skipped"[^>]*>/);
+    assert(dismiss && /min-h-10/.test(dismiss[0]), 'a tappable Dismiss button');
+    const empty = { ...state, skipped: [] };
+    assert.strictEqual(render(h(QueueDock, { queueService: { getState: () => empty, subscribe: (cb) => { cb(empty); return () => {}; } }, isPopup: false })), '', 'nothing to show: no dock');
+  });
+
     assert(/<button[^>]*id="queue-show-page-btn"/.test(html), 'a Show page button');
     assert(/min-h-10/.test((html.match(/<button[^>]*id="queue-show-page-btn"[^>]*>/) || [''])[0]), 'tappable');
   });

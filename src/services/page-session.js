@@ -54,9 +54,20 @@
         closed();
         return;
       }
-      const isChapter = message.type === 'chapter' || message.type === 'image';
+      const isChapter = message.type === 'chapter' || message.type === 'image' || message.type === 'failed';
       if (isChapter && !isExpected(message)) {
         needUser('The site showed a different chapter. Open the right one, or close the page.');
+        return;
+      }
+      if (message.type === 'failed') {
+        const reason = message.reason || 'The site could not load the chapter.';
+        if (message.outcome === 'needs-user') {
+          needUser(reason);
+          return;
+        }
+        const error = new Error(reason);
+        error.outcome = message.outcome || 'retry';
+        end(error);
         return;
       }
       if (message.type === 'chapter' && message.rawText) {

@@ -183,6 +183,53 @@ const SangtacvietProvider = (() => {
     };
   }
 
+  function mainContentText(src) {
+    const open = /<div[^>]*\bid=["']maincontent["'][^>]*>/i.exec(String(src || ''));
+    if (!open) return '';
+    const start = open.index + open[0].length;
+    const end = src.indexOf('</div>', start);
+    return cleanText(src.slice(start, end === -1 ? undefined : end));
+  }
+
+  function siteMessage(text) {
+    return String(text || '').split('\n')[0].replace(/\s+/g, ' ').trim();
+  }
+
+  function classifyMessage(message) {
+    if (/chương vip/i.test(message) && /chưa thể tải/i.test(message)) {
+      return { outcome: 'skip', reason: `VIP chapter the site cannot load: ${message}` };
+    }
+    if (/chương không tồn tại/i.test(message)) {
+      return { outcome: 'skip', reason: `The site says this chapter does not exist: ${message} Sync Catalog to refresh the chapter list.` };
+    }
+    const code = /mã báo lỗi\s*:\s*(\d+)/i.exec(message);
+    if (code && /^400\d$/.test(code[1])) {
+      return { outcome: 'blocked', reason: `Sáng Tác Việt refused to load chapters in this browser (error ${code[1]}).` };
+    }
+    if (/tải quá thời gian/i.test(message)) {
+      return { outcome: 'retry', reason: 'Sáng Tác Việt timed out loading the chapter.' };
+    }
+    return null;
+  }
+
+  function classifyPage({ document: doc, alerts = [], final = false } = {}) {
+    const src = docHtml(doc);
+    if (contentBoxHtml(src) && chineseFromContent(contentBoxHtml(src))) return null;
+    const main = mainContentText(src);
+    const messages = [main, ...(alerts || []).map(siteMessage)].filter(Boolean);
+    for (const message of messages) {
+      const outcome = classifyMessage(message);
+      if (outcome) return outcome;
+    }
+    if (!final) return null;
+    const alert = (alerts || []).map(siteMessage).find(Boolean);
+    if (alert) return { outcome: 'needs-user', reason: `Sáng Tác Việt says: ${alert}` };
+    if (/Nhấp vào để tải chương/i.test(main)) {
+      return { outcome: 'needs-user', reason: 'The chapter is waiting for a tap ("Nhấp vào để tải chương…"). Tap it on the page.' };
+    }
+    return null;
+  }
+
   function nativeHttp() {
     const platform = typeof Platform !== 'undefined' ? Platform : null;
     return platform && platform.http ? platform.http : null;
@@ -249,6 +296,7 @@ const SangtacvietProvider = (() => {
     parseSeriesHtml,
     parseChapterList,
     parseChapterPageHtml,
+    classifyPage,
 
     extractSeriesMetadata(doc) {
       return parseSeriesHtml(docHtml(doc));

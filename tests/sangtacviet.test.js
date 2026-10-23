@@ -265,6 +265,46 @@ const EXPECTED_CHINESE = [
     assert(!/Tiểu thư|Bạn đang đọc/.test(page.rawText), 'neither the site\'s Vietnamese nor its notice is saved');
   });
 
+  await test('classifyPage tells why a chapter page failed, from the site message or its alert', () => {
+    const doc = (html) => ({ documentElement: { outerHTML: html } });
+    const page = (main) => doc(`<html><body><div id="content-container"><div class="contentbox" id="maincontent">${main}</div></div></body></html>`);
+    const loadingPrompt = '<center><span class="spinner-border"></span><br>\n\t\t\tNhấp vào để tải chương...\t\t</center>';
+    const VIP = 'Đây là chương vip của qidian, chưa thể tải chương này. Ghi chú về chương này: Qidian vừa nâng cấp bảo mật, nhiều truyện không thể tải được, xin chờ giải pháp.';
+    const MISSING = 'Hệ thống không thể tải chương này do bạn mở 1 chương không tồn tại, hãy thử cập nhật danh sách chương trước.';
+    const BLOCKED = 'Lỗi không xác định, vui lòng thử lại sau, mã báo lỗi:4008.';
+    const of = (args) => plain(P.classifyPage(args));
+
+    assert.strictEqual(P.classifyPage({ document: doc(CHAPTER_HTML), alerts: [] }), null, 'a loaded chapter is not a failure');
+    assert.strictEqual(P.classifyPage({ document: page(loadingPrompt), alerts: [] }), null, 'still loading: wait');
+
+    const vip = of({ document: page(VIP), alerts: [] });
+    assert.strictEqual(vip.outcome, 'skip', 'a VIP chapter the site cannot load is skipped');
+    assert(/VIP/.test(vip.reason) && vip.reason.includes(VIP), vip.reason);
+    assert.strictEqual(of({ document: page(loadingPrompt), alerts: [`${VIP}\nhttps://sangtacviet.com/truyen/qidian/1/1/2/`] }).outcome, 'skip', 'also when only its alert was caught');
+
+    const missing = of({ document: page(MISSING), alerts: [] });
+    assert.strictEqual(missing.outcome, 'skip');
+    assert(/Sync Catalog/.test(missing.reason), 'a missing chapter suggests syncing the chapter list');
+
+    for (const code of ['4005', '4008']) {
+      const blocked = of({ document: page(BLOCKED.replace('4008', code)), alerts: [] });
+      assert.strictEqual(blocked.outcome, 'blocked', `error ${code}: the site refuses this browser`);
+      assert(blocked.reason.includes(code), 'says the code');
+    }
+    assert.strictEqual(of({ document: page(loadingPrompt), alerts: ['Lỗi không xác định, vui lòng thử lại sau, mã báo lỗi: 4005\nhttps://x'] }).outcome, 'blocked', 'from the alert too (the app wording has a space)');
+
+    assert.strictEqual(of({ document: page('<center>Tải quá thời gian, vui lòng tải lại trang.</center>'), alerts: [] }).outcome, 'retry', 'a site timeout is retried');
+
+    const prompt = of({ document: page(loadingPrompt), alerts: [], final: true });
+    assert.strictEqual(prompt.outcome, 'needs-user', 'a load prompt that never started needs the user');
+    assert(/Nhấp vào để tải chương|tap/i.test(prompt.reason), prompt.reason);
+
+    const unknown = of({ document: page(loadingPrompt), alerts: ['Something new happened'], final: true });
+    assert.strictEqual(unknown.outcome, 'needs-user', 'an unknown alert at the end needs the user');
+    assert(unknown.reason.includes('Something new happened'), 'and shows its message');
+    assert.strictEqual(P.classifyPage({ document: page(loadingPrompt), alerts: ['Something new happened'] }), null, 'but not before the wait is over');
+  });
+
   await test('extractChapterInfo waits for the content: nothing until the page has rendered the text', () => {
     const doc = (html) => ({ documentElement: { outerHTML: html } });
     const info = plain(P.extractChapterInfo(doc(CHAPTER_HTML), 1));

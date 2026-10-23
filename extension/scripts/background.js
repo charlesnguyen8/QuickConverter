@@ -318,6 +318,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.action === 'QUEUE_CLEAR_SKIPPED') {
+    if (typeof DownloadQueueService !== 'undefined') {
+      DownloadQueueService.clearSkipped();
+      sendResponse({ success: true, state: DownloadQueueService.getState() });
+    } else {
+      sendResponse({ success: false });
+    }
+    return false;
+  }
+
   if (message.action === 'QUEUE_SKIP_COOLDOWN') {
     if (typeof DownloadQueueService !== 'undefined') {
       DownloadQueueService.skipCooldown();

@@ -137,6 +137,7 @@
       this._initialized = false;
       this.cooldown = null;
       this.pauseError = null;
+      this.skipped = [];
       this._cooldownTickInterval = null;
       this.cooldownEnabled = true;
       this.minCooldownSec = 180; // 3.0 minutes
@@ -162,6 +163,7 @@
             this.isPaused = !!msg.state.isPaused;
             this.isProcessing = !!msg.state.isProcessing;
             this.pauseError = msg.state.pauseError || null;
+            this.skipped = Array.isArray(msg.state.skipped) ? msg.state.skipped : [];
             this._notifySubscribers();
           } else if (msg && msg.action === 'QUEUE_PROGRESS' && this.activeTask) {
             // Lightweight in-place progress update without storage disk serialization overhead
@@ -192,6 +194,7 @@
             this.isPaused = !!saved.isPaused;
             this.isProcessing = !!saved.activeTask;
             this.pauseError = saved.pauseError || null;
+        this.skipped = Array.isArray(saved.skipped) ? saved.skipped : [];
             this._notifySubscribers();
           }
         });
@@ -261,6 +264,7 @@
         this.isPaused = !!saved.isPaused;
         this.isProcessing = false;
         this.pauseError = saved.pauseError || null;
+        this.skipped = Array.isArray(saved.skipped) ? saved.skipped : [];
 
         // Restore cooldown state if active
         if (saved.cooldown && saved.cooldown.active) {
@@ -290,6 +294,7 @@
         this.isPaused = !!saved.isPaused;
         this.isProcessing = !!this.activeTask;
         this.pauseError = saved.pauseError || null;
+        this.skipped = Array.isArray(saved.skipped) ? saved.skipped : [];
         if (saved.cooldown && saved.cooldown.active) {
           const retryAt = saved.cooldown.retryAt;
           const remSec = retryAt ? Math.max(0, Math.round((retryAt - Date.now()) / 1000)) : (saved.cooldown.secondsRemaining || 0);
@@ -333,7 +338,8 @@
         isProcessing: this.isProcessing,
         totalCount: (this.activeTask ? 1 : 0) + this.queue.length,
         cooldown: this.cooldown ? { ...this.cooldown } : null,
-        pauseError: this.pauseError || null
+        pauseError: this.pauseError || null,
+        skipped: (this.skipped || []).map((entry) => ({ ...entry }))
       };
     }
 
@@ -351,7 +357,9 @@
                 queue: state.queue,
                 isPaused: state.isPaused,
                 cooldown: state.cooldown,
-                pauseError: state.pauseError
+                pauseError: state.pauseError,
+              skipped: state.skipped,
+                skipped: state.skipped
               }
             });
           } catch (e) {}
@@ -362,7 +370,8 @@
               queue: state.queue,
               isPaused: state.isPaused,
               cooldown: state.cooldown,
-              pauseError: state.pauseError
+              pauseError: state.pauseError,
+              skipped: state.skipped
             }));
           } catch (e) {}
         }
@@ -692,6 +701,7 @@
       this.queue = [];
       this.isPaused = false;
       this.pauseError = null;
+      this.skipped = [];
       const active = this.activeTask;
       this.activeTask = null;
       this.isProcessing = false;
@@ -729,6 +739,21 @@
     /**
      * Bypasses the cooldown wait immediately and starts the next chapter in queue.
      */
+    // Forgets the chapters the site could not give (the dock's Dismiss).
+    clearSkipped() {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
+        this.skipped = [];
+        this._notifySubscribers();
+        try {
+          askWorker({ action: 'QUEUE_CLEAR_SKIPPED' }).catch(() => {});
+        } catch (e) {}
+        return;
+      }
+      this.skipped = [];
+      this._sync();
+      this._notifySubscribers();
+    }
+
     skipCooldown() {
       if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
@@ -1148,10 +1173,14 @@
       } catch (err) {
         if (abortController.signal.aborted || err.message === 'Translation cancelled by user.' || err.message === 'UserCancelled') {
           task.status = 'cancelled';
+        } else if (err && err.outcome === 'skip') {
+          task.status = 'skipped';
+          task.error = err.message || 'The site cannot give this chapter.';
         } else {
           console.error(`[DownloadQueue] Error downloading ${task.chapterTitle}:`, err);
           task.status = 'failed';
           task.error = err.message || 'Download failed';
+          task.outcome = err && err.outcome ? err.outcome : null;
         }
       } finally {
         if (this._isClearing) {
@@ -1182,7 +1211,8 @@
               errLower.includes('saved by opening its page') ||
               errLower.includes('closed before the chapter loaded') ||
               errLower.includes("not in the book's chapter list") ||
-              errLower.includes('reading chapter images is not available');
+              errLower.includes('reading chapter images is not available') ||
+              task.outcome === 'blocked';
 
             if (isPermanentAuthOrBalance) {
               // Place task back at top of queue, pause queue immediately, and notify
@@ -1239,6 +1269,21 @@
             // Start 1 hour 15 minute backoff cooldown
             this._startRetryCooldown(task, task.error, isRateLimit);
             return;
+          }
+
+          if (task.status === 'skipped') {
+            this.skipped = [...(this.skipped || []), {
+              novelId: task.novelId,
+              chapterNumber: task.chapterNumber,
+              chapterTitle: task.chapterTitle || null,
+              reason: task.error,
+              at: Date.now()
+            }].slice(-50);
+            if (!this.isPaused && this.queue.length > 0) {
+              this._sync();
+              this._processNext();
+              return;
+            }
           }
 
           if (this.isPaused || this.queue.length === 0) {

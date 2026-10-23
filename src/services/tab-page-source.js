@@ -45,7 +45,7 @@
         }
         (async () => {
           try {
-            const tab = await tabs.create({ url: pageFor(url), active: false });
+            const tab = await tabs.create({ url: pageFor(url.indexOf('#') === -1 ? url + '#qc-download' : url), active: false });
             tabId = tab && typeof tab.id === 'number' ? tab.id : null;
             if (tabId === null) throw new Error('Could not open the chapter page.');
             if (session.isDone()) {

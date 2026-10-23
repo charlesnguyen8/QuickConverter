@@ -27,6 +27,23 @@
     return global.btoa(binary);
   }
 
+  // Alerts the site raised, as recorded by the download tab's alert catcher (page-alerts.js).
+  function caughtAlerts(doc) {
+    const root = doc && doc.documentElement;
+    if (!root || typeof root.getAttribute !== 'function') return [];
+    try {
+      const list = JSON.parse(root.getAttribute('data-qc-alerts') || '[]');
+      return Array.isArray(list) ? list.map(String) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function classified(provider, doc, final) {
+    if (typeof provider.classifyPage !== 'function') return null;
+    return provider.classifyPage({ document: doc, alerts: caughtAlerts(doc), final }) || null;
+  }
+
   async function captureImage(provider, doc, win) {
     if (typeof provider.captureChapterImage !== 'function') return null;
     const image = await provider.captureChapterImage(doc, win);
@@ -35,7 +52,7 @@
   }
 
   async function run({ window: win, document: doc, post, waitMs, intervalMs = 500 } = {}) {
-    const href = win && win.location ? win.location.href : '';
+    const href = (win && win.location ? win.location.href : '').replace(/#qc-download$/, '');
     const registry = global.ProviderRegistry;
     const provider = registry ? registry.getProviderForUrl(href) : null;
     if (!provider) {
@@ -84,7 +101,13 @@
         post({ type: 'chapter', ...base(), title: chapter.title, novelTitle: chapter.novelTitle, rawText: chapter.rawText });
         return;
       }
-      if (Date.now() - started >= limit) {
+      const timeUp = Date.now() - started >= limit;
+      const failure = classified(provider, doc, timeUp);
+      if (failure) {
+        post({ type: 'failed', ...base(), outcome: failure.outcome, reason: failure.reason });
+        return;
+      }
+      if (timeUp) {
         post({ type: 'empty', ...base() });
         return;
       }
