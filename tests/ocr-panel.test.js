@@ -631,6 +631,118 @@ process.on('beforeExit', () => {
     assert.strictEqual(ocrText.assembleParagraphs(null), '');
   });
 
+  const ocrPipeline = await loadComponent('components/react/ocr/ocrPipeline.js');
+  await test('blankRowsFromPixels finds the rows that are only background', () => {
+    const width = 3;
+    const rows = [[255, 255, 255], [255, 0, 255], [250, 252, 255], [10, 10, 10]];
+    const data = new Uint8ClampedArray(width * rows.length * 4);
+    rows.forEach((row, y) => row.forEach((v, x) => { const i = (y * width + x) * 4; data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255; }));
+    assert.deepStrictEqual(Array.from(ocrPipeline.blankRowsFromPixels(data, width, rows.length)), [true, false, true, false], 'near-background rows count as blank');
+  });
+
+  await test('the OCR pipeline decodes, cuts strips at blank rows, reads each strip and puts lines back in page order', async () => {
+    const width = 4;
+    const height = 2600;
+    const drawn = [];
+    const canvases = [];
+    const makeCanvas = (w, h) => {
+      const canvas = {
+        width: w,
+        height: h,
+        getContext: () => ({
+          fillStyle: '',
+          fillRect() {},
+          drawImage: (...args) => drawn.push([w, h, ...args.slice(1)]),
+          getImageData: (x, y, cw, ch) => {
+            const data = new Uint8ClampedArray(cw * ch * 4).fill(255);
+            for (let row = 0; row < ch; row++) {
+              if (row % 100 < 60) data[row * cw * 4] = 0;
+            }
+            return { data };
+          }
+        })
+      };
+      canvases.push(canvas);
+      return canvas;
+    };
+    const decoded = [];
+    const decode = async (bytes, mimeType) => { decoded.push([bytes.byteLength, mimeType]); return { width, height }; };
+    const read = [];
+    const service = {
+      recognize: async (strip) => {
+        read.push(strip.height);
+        return { lines: [[{ text: `strip ${read.length}`, box: { x: 0, y: 5, width: 10, height: 20 }, confidence: 0.9 }]] };
+      }
+    };
+    const text = await ocrPipeline.recognizeImage(service, new Uint8Array([1, 2, 3]).buffer, 'image/png', { decode, makeCanvas });
+    assert.deepStrictEqual(decoded, [[3, 'image/png']]);
+    assert(read.length >= 3, `a tall image is read in strips (${read.length})`);
+    assert(read.every((h) => h <= 1200), 'no strip is taller than 1200 px');
+    assert.strictEqual(read.reduce((a, b) => a + b, 0), height, 'the strips cover the whole image');
+    const order = text.split('\n\n').join(' ');
+    assert(order.indexOf('strip 1') < order.indexOf('strip 2') && order.indexOf('strip 2') < order.indexOf('strip 3'), `lines keep page order: ${order}`);
+  });
+
+  const ocrWorkerProtocol = await loadComponent('components/react/ocr/ocrWorkerProtocol.js');
+  await test('the OCR worker answers each request with its id: the text, or the error', async () => {
+    const ok = await ocrWorkerProtocol.handleWorkerRequest({ id: 7, bytes: new Uint8Array([1]).buffer, mimeType: 'image/png' }, async (bytes, mime) => `read ${bytes.byteLength} ${mime}`);
+    assert.deepStrictEqual(plain(ok), { id: 7, text: 'read 1 image/png' });
+    const bad = await ocrWorkerProtocol.handleWorkerRequest({ id: 8, bytes: new ArrayBuffer(1), mimeType: 'image/png' }, async () => { throw new Error('model failed'); });
+    assert.deepStrictEqual(plain(bad), { id: 8, error: 'model failed' });
+  });
+
+  await test('the OCR client sends a copy of the image to one worker and matches replies by id', async () => {
+    const workers = [];
+    const createWorker = () => {
+      const worker = {
+        sent: [],
+        listeners: {},
+        addEventListener: (type, fn) => { worker.listeners[type] = fn; },
+        postMessage: (message, transfer) => { worker.sent.push({ message, transfer }); },
+        terminate: () => { worker.terminated = true; },
+        reply: (data) => worker.listeners.message({ data }),
+        crash: () => worker.listeners.error({ message: 'boom' })
+      };
+      workers.push(worker);
+      return worker;
+    };
+    const client = ocrWorkerProtocol.createOcrClient(createWorker);
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    const first = client.recognize(bytes, 'image/png');
+    const second = client.recognize(new Uint8Array([4]).buffer, 'image/jpeg');
+    assert.strictEqual(workers.length, 1, 'one worker for all requests');
+    const [a, b] = workers[0].sent;
+    assert.strictEqual(a.message.mimeType, 'image/png');
+    assert.deepStrictEqual(a.transfer, [a.message.bytes], 'the image is transferred, not cloned');
+    assert.notStrictEqual(a.message.bytes, bytes, 'a copy is sent');
+    assert.strictEqual(bytes.byteLength, 3, "the caller's image stays usable");
+    workers[0].reply({ id: b.message.id, text: 'second' });
+    workers[0].reply({ id: a.message.id, text: 'first' });
+    assert.strictEqual(await first, 'first');
+    assert.strictEqual(await second, 'second');
+
+    const failing = client.recognize(bytes, 'image/png');
+    workers[0].reply({ id: workers[0].sent[2].message.id, error: 'model failed' });
+    await assert.rejects(failing, /model failed/);
+
+    const lost = client.recognize(bytes, 'image/png');
+    workers[0].crash();
+    await assert.rejects(lost, /boom|OCR worker/i, 'a crashed worker fails its pending requests');
+    assert(workers[0].terminated, 'and is let go');
+    client.recognize(bytes, 'image/png');
+    assert.strictEqual(workers.length, 2, 'the next request starts a new worker');
+  });
+
+  await test('the OCR engine runs in a module worker the bundler builds as ES modules', () => {
+    const engine = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'ocr', 'ocrEngine.js'), 'utf8');
+    assert(/new Worker\(new URL\('\.\/ocr\.worker\.js', import\.meta\.url\), \{ type: 'module' \}\)/.test(engine), 'ocrEngine starts ocr.worker.js as a module worker');
+    assert(!/onnxruntime-web|ppu-paddle-ocr/.test(engine), 'the page itself no longer loads the OCR runtime');
+    const worker = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'react', 'ocr', 'ocr.worker.js'), 'utf8');
+    assert(/ppu-paddle-ocr\/web/.test(worker) && /onnxruntime-web/.test(worker), 'the worker owns the OCR runtime');
+    const vite = fs.readFileSync(path.join(repoRoot, 'vite.config.mjs'), 'utf8');
+    assert(/worker:\s*\{\s*format:\s*'es'/.test(vite), 'workers are bundled as ES modules');
+  });
+
   await test('planStrips cuts a tall image only at blank rows near the target height', () => {
     const height = 3000;
     const blank = Array.from({ length: height }, (_, y) => y % 34 >= 26);

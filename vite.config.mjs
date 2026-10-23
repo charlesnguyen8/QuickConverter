@@ -32,6 +32,9 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: [{ find: /^onnxruntime-web$/, replacement: 'onnxruntime-web/wasm' }]
     },
+    worker: {
+      format: 'es'
+    },
     build: {
       outDir: target.outDir,
       emptyOutDir: true,
