@@ -129,15 +129,14 @@
   // One queue of chapters (a lane): its own waiting chapters, active chapter, pause, cooldown,
   // retry backoff and skipped list. DownloadQueueService holds the lanes.
   class QueueLane {
-    constructor(laneId = 'main') {
+    constructor(laneId = 'main', host = null) {
       this.laneId = laneId;
+      this.host = host;
       this.activeTask = null;
       this.queue = [];
       this.isPaused = false;
       this.isProcessing = false;
       this._isClearing = false;
-      this.subscribers = new Set();
-      this._initialized = false;
       this.cooldown = null;
       this.pauseError = null;
       this.skipped = [];
@@ -148,99 +147,6 @@
       this._lastCooldownDurationSec = null;
       this.errorCooldownSec = 4500; // 1 hour 15 minutes (75 mins)
       this.maxRetries = 3;
-
-      this._init();
-    }
-
-    async _init() {
-      if (this._initialized) return;
-      this._initialized = true;
-
-      // 1. Listen for runtime broadcasts across extension views (UI views in extension only)
-      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
-        nativeMessaging().subscribe((msg) => {
-          if (msg && msg.action === 'QUEUE_STATE_CHANGED' && msg.state) {
-            // Update local state in view from broadcast
-            this.activeTask = msg.state.activeTask;
-            this.queue = msg.state.queue || [];
-            this.isPaused = !!msg.state.isPaused;
-            this.isProcessing = !!msg.state.isProcessing;
-            this.pauseError = msg.state.pauseError || null;
-            this.skipped = Array.isArray(msg.state.skipped) ? msg.state.skipped : [];
-            this._notifySubscribers();
-          } else if (msg && msg.action === 'QUEUE_PROGRESS' && this.activeTask) {
-            // Lightweight in-place progress update without storage disk serialization overhead
-            if (this.activeTask.id === msg.taskId || Number(this.activeTask.chapterNumber) === Number(msg.chapterNumber)) {
-              this.activeTask.progress = msg.progress;
-              this._notifySubscribers();
-            }
-          } else if (msg && msg.action === 'QUEUE_COOLDOWN_TICK') {
-            this.cooldown = msg.cooldown || null;
-            this._notifySubscribers();
-          } else if (msg && msg.action === 'QUEUE_SET_COOLDOWN_CONFIG' && msg.config) {
-            this.setCooldownConfig(msg.config);
-          } else if (msg && msg.action === 'QUEUE_RETRY_NOW') {
-            this.retryNow();
-          } else if (msg && msg.action === 'QUEUE_SKIP_FAILED_CHAPTER') {
-            this.skipFailedChapter();
-          }
-        });
-      }
-
-      // 2. Listen to storage changes so views navigating across pages immediately sync (UI views in extension only)
-      if (isExtension && !isBackgroundWorker && platformAtLoad) {
-        platformAtLoad.storage.onChanged((changes, area) => {
-          if (area === 'local' && changes[STORAGE_KEY] && changes[STORAGE_KEY].newValue) {
-            const saved = changes[STORAGE_KEY].newValue;
-            this.activeTask = saved.activeTask || null;
-            this.queue = saved.queue || [];
-            this.isPaused = !!saved.isPaused;
-            this.isProcessing = !!saved.activeTask;
-            this.pauseError = saved.pauseError || null;
-        this.skipped = Array.isArray(saved.skipped) ? saved.skipped : [];
-            this._notifySubscribers();
-          }
-        });
-      }
-
-      // 3. Load initial state from storage (the platform's local area or localStorage)
-      const local = localArea();
-      if (local) {
-        local.get([STORAGE_KEY, 'quickconverter_queue_cooldown']).then((res) => {
-          if (res && res[STORAGE_KEY]) {
-            this._restoreState(res[STORAGE_KEY]);
-          }
-          if (res && res.quickconverter_queue_cooldown) {
-            this.setCooldownConfig(res.quickconverter_queue_cooldown);
-          }
-        });
-      } else if (typeof localStorage !== 'undefined') {
-        try {
-          const raw = localStorage.getItem(STORAGE_KEY);
-          if (raw) {
-            this._restoreState(JSON.parse(raw));
-          }
-          const rawCfg = localStorage.getItem('quickconverter_queue_cooldown');
-          if (rawCfg) {
-            this.setCooldownConfig(JSON.parse(rawCfg));
-          }
-        } catch (e) {}
-      }
-
-      // 4. In extension UI views, query background worker directly for live authoritative state
-      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
-        try {
-          askWorker({ action: 'QUEUE_GET_STATE' }).then((resp) => {
-            if (!resp) return;
-            this.activeTask = resp.activeTask || null;
-            this.queue = resp.queue || [];
-            this.isPaused = !!resp.isPaused;
-            this.isProcessing = !!resp.activeTask;
-            this.cooldown = resp.cooldown || null;
-            this._notifySubscribers();
-          });
-        } catch (e) {}
-      }
     }
 
     /**
@@ -348,66 +254,11 @@
     }
 
     _sync() {
-      const state = this.getState();
-
-      // Persist to storage and broadcast ONLY from execution owner
-      if (isExecutionOwner) {
-        const local = localArea();
-        if (local) {
-          try {
-            local.set({
-              [STORAGE_KEY]: {
-                activeTask: state.activeTask,
-                queue: state.queue,
-                isPaused: state.isPaused,
-                cooldown: state.cooldown,
-                pauseError: state.pauseError,
-              skipped: state.skipped,
-                skipped: state.skipped
-              }
-            });
-          } catch (e) {}
-        } else if (typeof localStorage !== 'undefined') {
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({
-              activeTask: state.activeTask,
-              queue: state.queue,
-              isPaused: state.isPaused,
-              cooldown: state.cooldown,
-              pauseError: state.pauseError,
-              skipped: state.skipped
-            }));
-          } catch (e) {}
-        }
-
-        // Broadcast to other open extension tabs if running in extension
-        if (isExtension) {
-          tellWorker({ action: 'QUEUE_STATE_CHANGED', state });
-        }
-      }
-
-      this._notifySubscribers();
+      if (this.host) this.host.laneChanged(this);
     }
 
     _notifySubscribers() {
-      const state = this.getState();
-      updateBackgroundHold(state);
-      this.subscribers.forEach((cb) => {
-        try { cb(state); } catch (e) { console.error('[DownloadQueue] Subscriber error:', e); }
-      });
-    }
-
-    /**
-     * Subscribes a listener to queue state changes.
-     * @param {function} callback
-     * @returns {function} Unsubscribe function
-     */
-    subscribe(callback) {
-      if (typeof callback !== 'function') return () => {};
-      this.subscribers.add(callback);
-      // Immediately call with current state
-      try { callback(this.getState()); } catch (e) {}
-      return () => this.subscribers.delete(callback);
+      if (this.host) this.host.notify();
     }
 
     /**
@@ -486,24 +337,6 @@
         addedAt: Date.now()
       };
 
-      // If running inside extension view, delegate to background service worker
-      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
-        try {
-          const resp = await askWorker({ action: 'QUEUE_ENQUEUE', task: this._serializeTask(task) });
-          if (resp) {
-            if (resp.state) {
-              this.activeTask = resp.state.activeTask || null;
-              this.queue = resp.state.queue || [];
-              this.isPaused = !!resp.state.isPaused;
-              this.isProcessing = !!resp.state.isProcessing;
-              this._notifySubscribers();
-            }
-            return resp;
-          }
-        } catch (e) {}
-        return { success: false, error: 'Background queue service unreachable' };
-      }
-
       this.queue.push(task);
       this._sync();
       if (isExecutionOwner) {
@@ -520,25 +353,6 @@
     async enqueueBatch(tasks) {
       if (!Array.isArray(tasks) || tasks.length === 0) {
         return { success: true, count: 0, state: this.getState() };
-      }
-
-      // If running inside extension view, delegate to background service worker
-      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
-        try {
-          const serializedTasks = tasks.map((t) => this._serializeTask(t)).filter(Boolean);
-          const resp = await askWorker({ action: 'QUEUE_ENQUEUE_BATCH', tasks: serializedTasks });
-          if (resp) {
-            if (resp.state) {
-              this.activeTask = resp.state.activeTask || null;
-              this.queue = resp.state.queue || [];
-              this.isPaused = !!resp.state.isPaused;
-              this.isProcessing = !!resp.state.isProcessing;
-              this._notifySubscribers();
-            }
-            return resp;
-          }
-        } catch (e) {}
-        return { success: false, error: 'Background queue service unreachable' };
       }
 
       let addedCount = 0;
@@ -582,24 +396,6 @@
     async remove(taskId) {
       if (!taskId) return false;
 
-      // In extension UI views, delegate to background service worker
-      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
-        try {
-          const resp = await askWorker({ action: 'QUEUE_REMOVE', taskId });
-          if (resp) {
-            if (resp.state) {
-              this.activeTask = resp.state.activeTask || null;
-              this.queue = resp.state.queue || [];
-              this.isPaused = !!resp.state.isPaused;
-              this.isProcessing = !!resp.state.isProcessing;
-              this._notifySubscribers();
-            }
-            return !!resp.success;
-          }
-        } catch (e) {}
-        return false;
-      }
-
       // Check if active task
       if (this.activeTask && this.activeTask.id === taskId) {
         if (this.activeTask.abortController) {
@@ -625,7 +421,7 @@
           if (this.queue.length === 0) {
             this._clearCooldownTimers();
             this.cooldown = null;
-            updateKeepAlive(false);
+            if (this.host) this.host.activityChanged();
           } else {
             const nextTask = this.queue[0];
             this.cooldown.nextTaskId = nextTask?.id || null;
@@ -653,15 +449,8 @@
       }
       if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          askWorker({ action: 'QUEUE_PAUSE' }).then((resp) => {
-            if (resp && resp.state) {
-              this.activeTask = resp.state.activeTask || null;
-              this.queue = resp.state.queue || [];
-              this.isPaused = !!resp.state.isPaused;
-              this.isProcessing = !!resp.state.isProcessing;
-              this.cooldown = resp.state.cooldown || null;
-              this._notifySubscribers();
-            }
+          askWorker({ laneId: this.laneId, action: 'QUEUE_PAUSE' }).then((resp) => {
+            if (resp && resp.state && this.host) this.host.applyWorkerState(resp.state);
           });
         } catch (e) {}
         return;
@@ -677,15 +466,8 @@
       this.pauseError = null;
       if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          askWorker({ action: 'QUEUE_RESUME' }).then((resp) => {
-            if (resp && resp.state) {
-              this.activeTask = resp.state.activeTask || null;
-              this.queue = resp.state.queue || [];
-              this.isPaused = !!resp.state.isPaused;
-              this.isProcessing = !!resp.state.isProcessing;
-              this.cooldown = resp.state.cooldown || null;
-              this._notifySubscribers();
-            }
+          askWorker({ laneId: this.laneId, action: 'QUEUE_RESUME' }).then((resp) => {
+            if (resp && resp.state && this.host) this.host.applyWorkerState(resp.state);
           });
         } catch (e) {}
         return;
@@ -712,33 +494,13 @@
       this.activeTask = null;
       this.isProcessing = false;
 
-      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
-        try {
-          askWorker({ action: 'QUEUE_CLEAR_ALL' }).then((resp) => {
-            this._isClearing = false;
-            if (resp && resp.state) {
-              this.activeTask = resp.state.activeTask || null;
-              this.queue = resp.state.queue || [];
-              this.isPaused = !!resp.state.isPaused;
-              this.isProcessing = !!resp.state.isProcessing;
-              this.cooldown = resp.state.cooldown || null;
-              this._notifySubscribers();
-            }
-          });
-        } catch (e) {
-          this._isClearing = false;
-        }
-        this._notifySubscribers();
-        return;
-      }
-
       if (active && active.abortController) {
         try {
           active.abortController.abort(new Error('UserCancelled'));
         } catch (e) {}
       }
       this._sync();
-      updateKeepAlive(false);
+      if (this.host) this.host.activityChanged();
       this._isClearing = false;
     }
 
@@ -751,7 +513,7 @@
         this.skipped = [];
         this._notifySubscribers();
         try {
-          askWorker({ action: 'QUEUE_CLEAR_SKIPPED' }).catch(() => {});
+          askWorker({ laneId: this.laneId, action: 'QUEUE_CLEAR_SKIPPED' }).catch(() => {});
         } catch (e) {}
         return;
       }
@@ -763,15 +525,8 @@
     skipCooldown() {
       if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          askWorker({ action: 'QUEUE_SKIP_COOLDOWN' }).then((resp) => {
-            if (resp && resp.state) {
-              this.activeTask = resp.state.activeTask || null;
-              this.queue = resp.state.queue || [];
-              this.isPaused = !!resp.state.isPaused;
-              this.isProcessing = !!resp.state.isProcessing;
-              this.cooldown = resp.state.cooldown || null;
-              this._notifySubscribers();
-            }
+          askWorker({ laneId: this.laneId, action: 'QUEUE_SKIP_COOLDOWN' }).then((resp) => {
+            if (resp && resp.state && this.host) this.host.applyWorkerState(resp.state);
           });
         } catch (e) {}
         return;
@@ -791,15 +546,8 @@
     retryNow() {
       if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          askWorker({ action: 'QUEUE_RETRY_NOW' }).then((resp) => {
-            if (resp && resp.state) {
-              this.activeTask = resp.state.activeTask || null;
-              this.queue = resp.state.queue || [];
-              this.isPaused = !!resp.state.isPaused;
-              this.isProcessing = !!resp.state.isProcessing;
-              this.cooldown = resp.state.cooldown || null;
-              this._notifySubscribers();
-            }
+          askWorker({ laneId: this.laneId, action: 'QUEUE_RETRY_NOW' }).then((resp) => {
+            if (resp && resp.state && this.host) this.host.applyWorkerState(resp.state);
           });
         } catch (e) {}
         return;
@@ -814,15 +562,8 @@
     skipFailedChapter() {
       if (isExtension && !isBackgroundWorker && nativeMessaging()) {
         try {
-          askWorker({ action: 'QUEUE_SKIP_FAILED_CHAPTER' }).then((resp) => {
-            if (resp && resp.state) {
-              this.activeTask = resp.state.activeTask || null;
-              this.queue = resp.state.queue || [];
-              this.isPaused = !!resp.state.isPaused;
-              this.isProcessing = !!resp.state.isProcessing;
-              this.cooldown = resp.state.cooldown || null;
-              this._notifySubscribers();
-            }
+          askWorker({ laneId: this.laneId, action: 'QUEUE_SKIP_FAILED_CHAPTER' }).then((resp) => {
+            if (resp && resp.state && this.host) this.host.applyWorkerState(resp.state);
           });
         } catch (e) {}
         return;
@@ -838,14 +579,14 @@
       if (isExecutionOwner && !this.isPaused && this.queue.length > 0) {
         this._processNext();
       } else {
-        updateKeepAlive(false);
+        if (this.host) this.host.activityChanged();
       }
     }
 
     /**
      * Configures the cooldown duration range and toggle.
      */
-    setCooldownConfig(config) {
+    _applyConfig(config) {
       if (!config) return;
       if (typeof config.enabled === 'boolean') {
         this.cooldownEnabled = config.enabled;
@@ -864,24 +605,6 @@
         this.maxRetries = Math.round(config.maxRetries);
       }
 
-      const toSave = {
-        enabled: this.cooldownEnabled,
-        minSec: this.minCooldownSec,
-        maxSec: this.maxCooldownSec,
-        errorCooldownSec: this.errorCooldownSec,
-        maxRetries: this.maxRetries
-      };
-
-      const local = localArea();
-      if (local) {
-        local.set({ quickconverter_queue_cooldown: toSave });
-      } else if (typeof localStorage !== 'undefined') {
-        try { localStorage.setItem('quickconverter_queue_cooldown', JSON.stringify(toSave)); } catch (e) {}
-      }
-
-      if (isExtension && !isBackgroundWorker) {
-        tellWorker({ action: 'QUEUE_SET_COOLDOWN_CONFIG', config: toSave });
-      }
     }
 
     _clearCooldownTimers() {
@@ -890,7 +613,7 @@
         this._cooldownTickInterval = null;
       }
       const alarms = nativeAlarms();
-      if (alarms) alarms.clear('QUEUE_COOLDOWN_ALARM');
+      if (alarms) alarms.clear(`QUEUE_COOLDOWN_ALARM:${this.laneId}`);
     }
 
     _startCooldown(forcedDurationSec) {
@@ -899,7 +622,7 @@
       if (this.isPaused || this.queue.length === 0 || this._isClearing) {
         this.cooldown = null;
         this._sync();
-        updateKeepAlive(false);
+        if (this.host) this.host.activityChanged();
         return;
       }
 
@@ -950,9 +673,9 @@
       };
 
       const alarms = nativeAlarms();
-      if (alarms) alarms.create('QUEUE_COOLDOWN_ALARM', { when: retryAt });
+      if (alarms) alarms.create(`QUEUE_COOLDOWN_ALARM:${this.laneId}`, { when: retryAt });
 
-      updateKeepAlive(true);
+      if (this.host) this.host.activityChanged();
       this._sync();
 
       this._cooldownTickInterval = setInterval(() => {
@@ -977,7 +700,7 @@
 
         this._notifySubscribers();
         if (isExtension && isExecutionOwner) {
-          tellWorker({ action: 'QUEUE_COOLDOWN_TICK', cooldown: this.cooldown });
+          tellWorker({ action: 'QUEUE_COOLDOWN_TICK', laneId: this.laneId, cooldown: this.cooldown });
         }
       }, 1000);
     }
@@ -992,7 +715,7 @@
       if (this.isPaused || this.queue.length === 0 || this._isClearing) {
         this.cooldown = null;
         this._sync();
-        updateKeepAlive(false);
+        if (this.host) this.host.activityChanged();
         return;
       }
 
@@ -1016,9 +739,9 @@
       };
 
       const alarms = nativeAlarms();
-      if (alarms) alarms.create('QUEUE_COOLDOWN_ALARM', { when: retryAt });
+      if (alarms) alarms.create(`QUEUE_COOLDOWN_ALARM:${this.laneId}`, { when: retryAt });
 
-      updateKeepAlive(true);
+      if (this.host) this.host.activityChanged();
       this._sync();
 
       this._cooldownTickInterval = setInterval(() => {
@@ -1043,14 +766,14 @@
 
         this._notifySubscribers();
         if (isExtension && isExecutionOwner) {
-          tellWorker({ action: 'QUEUE_COOLDOWN_TICK', cooldown: this.cooldown });
+          tellWorker({ action: 'QUEUE_COOLDOWN_TICK', laneId: this.laneId, cooldown: this.cooldown });
         }
       }, 1000);
     }
 
     _startRestoredCooldownTick() {
       this._clearCooldownTimers();
-      updateKeepAlive(true);
+      if (this.host) this.host.activityChanged();
 
       this._cooldownTickInterval = setInterval(() => {
         if (!this.cooldown || !this.cooldown.active || this._isClearing || this.isPaused) {
@@ -1074,7 +797,7 @@
 
         this._notifySubscribers();
         if (isExtension && isExecutionOwner) {
-          tellWorker({ action: 'QUEUE_COOLDOWN_TICK', cooldown: this.cooldown });
+          tellWorker({ action: 'QUEUE_COOLDOWN_TICK', laneId: this.laneId, cooldown: this.cooldown });
         }
       }, 1000);
     }
@@ -1090,12 +813,12 @@
 
       if (this.isProcessing || this.isPaused || this.queue.length === 0) {
         if (this.queue.length === 0 && !this.activeTask) {
-          updateKeepAlive(false);
+          if (this.host) this.host.activityChanged();
         }
         return;
       }
 
-      updateKeepAlive(true);
+      if (this.host) this.host.activityChanged();
       this.isProcessing = true;
       const task = this.queue.shift();
       const abortController = new AbortController();
@@ -1121,6 +844,7 @@
         const taskOptions = {
           ...(task.options || {}),
           signal: abortController.signal,
+          siteTurn: (site) => (this.host ? this.host.siteTurn(site) : Promise.resolve(() => {})),
           onProgress: (prog) => {
             if (!prog) return;
             task.progress = {
@@ -1150,7 +874,7 @@
 
               // 2. In Chrome extension, broadcast lightweight progress IPC message without storage disk churn
               if (isExtension && isExecutionOwner) {
-                tellWorker({ action: 'QUEUE_PROGRESS', taskId: task.id, chapterNumber: task.chapterNumber, progress: task.progress });
+                tellWorker({ action: 'QUEUE_PROGRESS', laneId: this.laneId, taskId: task.id, chapterNumber: task.chapterNumber, progress: task.progress });
               }
             }
           },
@@ -1167,7 +891,7 @@
             };
             this._notifySubscribers();
             if (isExtension && isExecutionOwner) {
-              tellWorker({ action: 'QUEUE_PROGRESS', taskId: task.id, chapterNumber: task.chapterNumber, progress: task.progress });
+              tellWorker({ action: 'QUEUE_PROGRESS', laneId: this.laneId, taskId: task.id, chapterNumber: task.chapterNumber, progress: task.progress });
             }
           }
         };
@@ -1193,7 +917,7 @@
           this.activeTask = null;
           this.isProcessing = false;
           this._sync();
-          updateKeepAlive(false);
+          if (this.host) this.host.activityChanged();
           return;
         }
 
@@ -1230,7 +954,7 @@
               this.cooldown = null;
               this._sync();
               this._notifySubscribers();
-              updateKeepAlive(false);
+              if (this.host) this.host.activityChanged();
               return;
             }
 
@@ -1256,7 +980,7 @@
               this.cooldown = null;
               this._sync();
               this._notifySubscribers();
-              updateKeepAlive(false);
+              if (this.host) this.host.activityChanged();
               return;
             }
 
@@ -1274,7 +998,7 @@
               this.cooldown = null;
               this._sync();
               this._notifySubscribers();
-              updateKeepAlive(false);
+              if (this.host) this.host.activityChanged();
               return;
             }
 
@@ -1306,7 +1030,7 @@
             this._clearCooldownTimers();
             this.cooldown = null;
             this._sync();
-            updateKeepAlive(false);
+            if (this.host) this.host.activityChanged();
           } else {
             // Model-requested wait: <<<DELAY>>>Ns<<<DELAY>>> on a successful translation forces
             // exactly N + 5 seconds, regardless of the cooldown toggle/min/max.
@@ -1334,43 +1058,481 @@
     }
   }
 
-  const LANE_METHODS = ['enqueue', 'enqueueBatch', 'remove', 'pause', 'resume', 'clearAll', 'clearSkipped',
-    'skipCooldown', 'retryNow', 'skipFailedChapter', 'setCooldownConfig', 'isQueued', 'getChapterStatus',
-    '_startCooldown', '_clearCooldownTimers'];
-  const LANE_FIELDS = ['activeTask', 'queue', 'isPaused', 'isProcessing', 'cooldown', 'pauseError', 'skipped',
-    'cooldownEnabled', 'minCooldownSec', 'maxCooldownSec', 'errorCooldownSec', 'maxRetries'];
+  const LANE_FIELDS = ['activeTask', 'queue', 'isPaused', 'isProcessing', 'cooldown', 'pauseError', 'skipped'];
+  const CONFIG_FIELDS = { cooldownEnabled: 'enabled', minCooldownSec: 'minSec', maxCooldownSec: 'maxSec', errorCooldownSec: 'errorCooldownSec', maxRetries: 'maxRetries' };
 
-  // The download queue service: holds the lanes and answers for them. For now there is one lane,
-  // "main"; the state lists it in `lanes` next to the top-level fields the views read.
+  function laneIsIdle(lane) {
+    return !lane.activeTask && !lane.isProcessing && lane.queue.length === 0 && !lane.cooldown && (lane.skipped || []).length === 0 && !(lane.isPaused && lane.pauseError);
+  }
+
+  function laneHasNovel(lane, novelId) {
+    if (lane.activeTask && lane.activeTask.novelId === novelId) return true;
+    return lane.queue.some((t) => t.novelId === novelId);
+  }
+
+  function serializeForWorker(task) {
+    return QueueLane.prototype._serializeTask.call({ laneId: null }, { ...task, id: task.id || `${task.novelId}_ch${Number(task.chapterNumber)}` });
+  }
+
+  // The download queue service: holds the lanes (one queue per novel, running in parallel), keeps
+  // the saved and broadcast state, and answers for the lanes. Lanes on the same site take turns at
+  // fetching (siteTurn). In extension pages it mirrors the worker's lanes and forwards actions.
   class DownloadQueueManager {
     constructor() {
-      this.main = new QueueLane('main');
-      this.lanes = new Map([[this.main.laneId, this.main]]);
+      this.lanes = new Map();
+      this.subscribers = new Set();
+      this.config = { enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 };
+      this._turns = new Map();
+      this._init();
     }
 
-    _withLanes(state) {
-      return { ...state, lanes: [{ id: this.main.laneId, ...state }] };
+    get main() {
+      return this.lanes.values().next().value || null;
+    }
+
+    _orderedLanes() {
+      return Array.from(this.lanes.values());
+    }
+
+    _newLaneId() {
+      if (!this.lanes.has('main')) return 'main';
+      let n = 2;
+      while (this.lanes.has(`lane-${n}`)) n++;
+      return `lane-${n}`;
+    }
+
+    _createLane(id) {
+      const lane = new QueueLane(id || this._newLaneId(), this);
+      lane._applyConfig(this.config);
+      this.lanes.set(lane.laneId, lane);
+      return lane;
+    }
+
+    _laneOfNovel(novelId) {
+      return this._orderedLanes().find((lane) => laneHasNovel(lane, novelId)) || null;
+    }
+
+    // The lane a novel's chapters go to: its own lane; else the chosen lane; else, for "auto", the
+    // only lane; else a new lane.
+    _pickLane(novelId, choice) {
+      const own = this._laneOfNovel(novelId);
+      if (own) return own;
+      if (choice && choice !== 'auto' && choice !== 'new' && this.lanes.has(choice)) return this.lanes.get(choice);
+      const lanes = this._orderedLanes();
+      if (choice !== 'new' && lanes.length === 1) return lanes[0];
+      return this._createLane();
+    }
+
+    _lanesFor(laneId) {
+      if (laneId) return this.lanes.has(laneId) ? [this.lanes.get(laneId)] : [];
+      return this._orderedLanes();
     }
 
     getState() {
-      return this._withLanes(this.main.getState());
+      const lanes = this._orderedLanes().map((lane) => ({ id: lane.laneId, ...lane.getState() }));
+      const active = lanes.find((l) => l.activeTask);
+      const cooling = lanes.find((l) => l.cooldown && !l.activeTask) || lanes.find((l) => l.cooldown);
+      const failing = lanes.find((l) => l.pauseError);
+      return {
+        activeTask: active ? active.activeTask : null,
+        queue: lanes.reduce((all, l) => all.concat(l.queue), []),
+        isPaused: lanes.length > 0 && lanes.every((l) => l.isPaused),
+        isProcessing: lanes.some((l) => l.isProcessing),
+        totalCount: lanes.reduce((sum, l) => sum + l.totalCount, 0),
+        cooldown: cooling ? cooling.cooldown : null,
+        pauseError: failing ? failing.pauseError : null,
+        skipped: lanes.reduce((all, l) => all.concat(l.skipped || []), []),
+        lanes
+      };
     }
 
     subscribe(callback) {
       if (typeof callback !== 'function') return () => {};
-      return this.main.subscribe((state) => callback(this._withLanes(state)));
+      this.subscribers.add(callback);
+      try { callback(this.getState()); } catch (e) {}
+      return () => this.subscribers.delete(callback);
+    }
+
+    notify() {
+      const state = this.getState();
+      updateBackgroundHold(state);
+      this.subscribers.forEach((cb) => {
+        try { cb(state); } catch (e) { console.error('[DownloadQueue] Subscriber error:', e); }
+      });
+    }
+
+    activityChanged() {
+      updateKeepAlive(this._orderedLanes().some((lane) => lane.activeTask || lane.isProcessing || (lane.cooldown && lane.cooldown.active) || (!lane.isPaused && lane.queue.length > 0)));
+    }
+
+    // Called by a lane after it changed: drops lanes with nothing left, saves and broadcasts.
+    laneChanged(lane) {
+      if (isExecutionOwner) {
+        if (laneIsIdle(lane)) {
+          if (this.lanes.get(lane.laneId) === lane) {
+            lane._clearCooldownTimers();
+            this.lanes.delete(lane.laneId);
+          }
+        } else if (!this.lanes.has(lane.laneId)) {
+          this.lanes.set(lane.laneId, lane);
+        }
+        this._persist();
+      }
+      this.activityChanged();
+      this.notify();
+    }
+
+    _persist() {
+      const state = this.getState();
+      const saved = {
+        activeTask: state.activeTask,
+        queue: state.queue,
+        isPaused: state.isPaused,
+        cooldown: state.cooldown,
+        pauseError: state.pauseError,
+        skipped: state.skipped,
+        lanes: state.lanes.map((l) => ({
+          id: l.id,
+          activeTask: l.activeTask,
+          queue: l.queue,
+          isPaused: l.isPaused,
+          cooldown: l.cooldown,
+          pauseError: l.pauseError,
+          skipped: l.skipped
+        }))
+      };
+      const local = localArea();
+      if (local) {
+        try { local.set({ [STORAGE_KEY]: saved }); } catch (e) {}
+      } else if (typeof localStorage !== 'undefined') {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(saved)); } catch (e) {}
+      }
+      if (isExtension) tellWorker({ action: 'QUEUE_STATE_CHANGED', state });
+    }
+
+    // A first-come, first-served turn per site: resolves with a function that gives the turn back.
+    siteTurn(site) {
+      const key = String(site || 'unknown');
+      const previous = this._turns.get(key) || Promise.resolve();
+      let release;
+      const mine = new Promise((resolve) => { release = resolve; });
+      const chain = previous.then(() => mine);
+      this._turns.set(key, chain);
+      chain.then(() => { if (this._turns.get(key) === chain) this._turns.delete(key); });
+      return previous.then(() => {
+        let released = false;
+        return () => {
+          if (released) return;
+          released = true;
+          release();
+        };
+      });
+    }
+
+    // Restores the saved queue (the worker or the app after a restart). Returns the new state.
+    _restoreSnapshot(saved) {
+      if (!saved || this._orderedLanes().some((lane) => !laneIsIdle(lane))) return this.getState();
+      const laneStates = Array.isArray(saved.lanes) ? saved.lanes : [{ id: 'main', ...saved }];
+      laneStates.forEach((ls) => {
+        const lane = this._createLane(ls.id || this._newLaneId());
+        lane._restoreState(ls);
+        if (laneIsIdle(lane)) this.lanes.delete(lane.laneId);
+      });
+      this.notify();
+      return this.getState();
+    }
+
+    // Extension pages: show the worker's lanes.
+    applyWorkerState(state) {
+      if (!state) return;
+      let laneStates = state.lanes;
+      if (!Array.isArray(laneStates)) {
+        const busy = state.activeTask || (state.queue || []).length > 0 || state.cooldown || (state.skipped || []).length > 0;
+        laneStates = busy ? [{ id: 'main', ...state }] : [];
+      }
+      const seen = new Set();
+      laneStates.forEach((ls) => {
+        const id = ls.id || 'main';
+        seen.add(id);
+        let lane = this.lanes.get(id);
+        if (!lane) {
+          lane = new QueueLane(id, this);
+          lane._applyConfig(this.config);
+          this.lanes.set(id, lane);
+        }
+        lane.activeTask = ls.activeTask || null;
+        lane.queue = ls.queue || [];
+        lane.isPaused = !!ls.isPaused;
+        lane.isProcessing = ls.isProcessing !== undefined ? !!ls.isProcessing : !!ls.activeTask;
+        lane.cooldown = ls.cooldown || null;
+        lane.pauseError = ls.pauseError || null;
+        lane.skipped = Array.isArray(ls.skipped) ? ls.skipped : [];
+      });
+      Array.from(this.lanes.keys()).forEach((id) => { if (!seen.has(id)) this.lanes.delete(id); });
+      this.notify();
+    }
+
+    _init() {
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
+        nativeMessaging().subscribe((msg) => {
+          if (!msg) return;
+          if (msg.action === 'QUEUE_STATE_CHANGED' && msg.state) {
+            this.applyWorkerState(msg.state);
+          } else if (msg.action === 'QUEUE_PROGRESS') {
+            const lane = (msg.laneId && this.lanes.get(msg.laneId)) || this._orderedLanes().find((l) => l.activeTask && l.activeTask.id === msg.taskId);
+            if (lane && lane.activeTask) {
+              lane.activeTask.progress = msg.progress;
+              this.notify();
+            }
+          } else if (msg.action === 'QUEUE_COOLDOWN_TICK') {
+            const lane = msg.laneId ? this.lanes.get(msg.laneId) : this.main;
+            if (lane) {
+              lane.cooldown = msg.cooldown || null;
+              this.notify();
+            }
+          } else if (msg.action === 'QUEUE_SET_COOLDOWN_CONFIG' && msg.config) {
+            this._takeConfig(msg.config);
+          }
+        });
+      }
+
+      if (isExtension && !isBackgroundWorker && platformAtLoad) {
+        platformAtLoad.storage.onChanged((changes, area) => {
+          if (area === 'local' && changes[STORAGE_KEY] && changes[STORAGE_KEY].newValue) {
+            this.applyWorkerState(changes[STORAGE_KEY].newValue);
+          }
+        });
+      }
+
+      const apply = (saved, cfg) => {
+        if (cfg) {
+          try { this._takeConfig(typeof cfg === 'string' ? JSON.parse(cfg) : cfg); } catch (e) {}
+        }
+        if (saved) {
+          if (isExecutionOwner) this._restoreSnapshot(saved);
+          else this.applyWorkerState(saved);
+        }
+      };
+      const local = localArea();
+      if (local) {
+        local.get([STORAGE_KEY, 'quickconverter_queue_cooldown']).then((res) => {
+          apply(res && res[STORAGE_KEY], res && res.quickconverter_queue_cooldown);
+        });
+      } else if (typeof localStorage !== 'undefined') {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          apply(raw ? JSON.parse(raw) : null, localStorage.getItem('quickconverter_queue_cooldown'));
+        } catch (e) {}
+      }
+
+      if (isExtension && !isBackgroundWorker && nativeMessaging()) {
+        askWorker({ action: 'QUEUE_GET_STATE' }).then((resp) => { if (resp) this.applyWorkerState(resp); });
+      }
+    }
+
+    _takeConfig(config) {
+      if (!config) return;
+      const probe = new QueueLane('config');
+      probe._applyConfig(this.config);
+      probe._applyConfig(config);
+      this.config = {
+        enabled: probe.cooldownEnabled,
+        minSec: probe.minCooldownSec,
+        maxSec: probe.maxCooldownSec,
+        errorCooldownSec: probe.errorCooldownSec,
+        maxRetries: probe.maxRetries
+      };
+      this._orderedLanes().forEach((lane) => lane._applyConfig(this.config));
+    }
+
+    setCooldownConfig(config) {
+      if (!config) return;
+      this._takeConfig(config);
+      const toSave = { ...this.config };
+      const local = localArea();
+      if (local) {
+        local.set({ quickconverter_queue_cooldown: toSave });
+      } else if (typeof localStorage !== 'undefined') {
+        try { localStorage.setItem('quickconverter_queue_cooldown', JSON.stringify(toSave)); } catch (e) {}
+      }
+      if (isExtension && !isBackgroundWorker) {
+        tellWorker({ action: 'QUEUE_SET_COOLDOWN_CONFIG', config: toSave });
+      }
+    }
+
+    _forwarding() {
+      return isExtension && !isBackgroundWorker && !!nativeMessaging();
+    }
+
+    async enqueue(task, { lane: choice = 'auto' } = {}) {
+      if (!task || !task.novelId || task.chapterNumber === undefined) {
+        throw new Error('novelId and chapterNumber are required to enqueue a download.');
+      }
+      if (this._forwarding()) {
+        const resp = await askWorker({ action: 'QUEUE_ENQUEUE', task: serializeForWorker(task), lane: choice });
+        if (!resp) return { success: false, error: 'Background queue service unreachable' };
+        if (resp.state) this.applyWorkerState(resp.state);
+        return resp;
+      }
+      if (this.isQueued(task.novelId, task.chapterNumber)) {
+        return { success: false, alreadyQueued: true, taskId: `${task.novelId}_ch${Number(task.chapterNumber)}` };
+      }
+      return this._pickLane(task.novelId, choice).enqueue(task);
+    }
+
+    async enqueueBatch(tasks, { lane: choice = 'auto' } = {}) {
+      if (!Array.isArray(tasks) || tasks.length === 0) {
+        return { success: true, count: 0, state: this.getState() };
+      }
+      if (this._forwarding()) {
+        const resp = await askWorker({ action: 'QUEUE_ENQUEUE_BATCH', tasks: tasks.filter(Boolean).map(serializeForWorker), lane: choice });
+        if (!resp) return { success: false, error: 'Background queue service unreachable' };
+        if (resp.state) this.applyWorkerState(resp.state);
+        return resp;
+      }
+      const byLane = new Map();
+      let laneForNew = null;
+      tasks.forEach((t) => {
+        if (!t || !t.novelId || t.chapterNumber === undefined || this.isQueued(t.novelId, t.chapterNumber)) return;
+        let lane = this._laneOfNovel(t.novelId);
+        if (!lane) {
+          if (!laneForNew) laneForNew = this._pickLane(t.novelId, choice);
+          lane = laneForNew;
+        }
+        if (!byLane.has(lane)) byLane.set(lane, []);
+        byLane.get(lane).push(t);
+      });
+      let count = 0;
+      for (const [lane, list] of byLane) {
+        const res = await lane.enqueueBatch(list);
+        count += res.count || 0;
+      }
+      return { success: true, count, state: this.getState() };
+    }
+
+    async remove(taskId) {
+      if (!taskId) return false;
+      if (this._forwarding()) {
+        const resp = await askWorker({ action: 'QUEUE_REMOVE', taskId });
+        if (resp && resp.state) this.applyWorkerState(resp.state);
+        return !!(resp && resp.success);
+      }
+      const lane = this._orderedLanes().find((l) => (l.activeTask && l.activeTask.id === taskId) || l.queue.some((t) => t.id === taskId));
+      return lane ? lane.remove(taskId) : false;
+    }
+
+    isQueued(novelId, chapterNumber) {
+      return this._orderedLanes().some((lane) => lane.isQueued(novelId, chapterNumber));
+    }
+
+    getChapterStatus(novelId, chapterNumber) {
+      for (const lane of this._orderedLanes()) {
+        const status = lane.getChapterStatus(novelId, chapterNumber);
+        if (status) return { ...status, laneId: lane.laneId };
+      }
+      return null;
+    }
+
+    pause(laneId) { this._lanesFor(laneId).forEach((lane) => lane.pause()); }
+
+    resume(laneId) { this._lanesFor(laneId).forEach((lane) => lane.resume()); }
+
+    clearSkipped(laneId) { this._lanesFor(laneId).forEach((lane) => lane.clearSkipped()); }
+
+    skipCooldown(laneId) { this._lanesFor(laneId).filter((lane) => laneId || lane.cooldown).forEach((lane) => lane.skipCooldown()); }
+
+    retryNow(laneId) { this._lanesFor(laneId).filter((lane) => laneId || (lane.cooldown && lane.cooldown.type === 'retry')).forEach((lane) => lane.retryNow()); }
+
+    skipFailedChapter(laneId) { this._lanesFor(laneId).filter((lane) => laneId || (lane.cooldown && lane.cooldown.type === 'retry')).forEach((lane) => lane.skipFailedChapter()); }
+
+    clearAll(laneId) {
+      if (this._forwarding()) {
+        this._lanesFor(laneId).forEach((lane) => this.lanes.delete(lane.laneId));
+        this.notify();
+        askWorker({ action: 'QUEUE_CLEAR_ALL', laneId }).then((resp) => { if (resp && resp.state) this.applyWorkerState(resp.state); });
+        return;
+      }
+      this._lanesFor(laneId).forEach((lane) => lane.clearAll());
+      this.notify();
+    }
+
+    _startCooldown(...args) {
+      const lane = this.main;
+      return lane ? lane._startCooldown(...args) : undefined;
+    }
+
+    _clearCooldownTimers() {
+      this._orderedLanes().forEach((lane) => lane._clearCooldownTimers());
+    }
+
+    // The worker's side of the queue messages extension pages send. Null for other messages.
+    handleWorkerMessage(message) {
+      if (!message || typeof message.action !== 'string' || message.action.indexOf('QUEUE_') !== 0) return null;
+      const laneId = message.laneId || undefined;
+      const withState = (extra) => ({ success: true, ...extra, state: this.getState() });
+      switch (message.action) {
+        case 'QUEUE_ENQUEUE':
+          return this.enqueue(message.task || message, { lane: message.lane }).then((res) => ({ ...res, state: this.getState() }));
+        case 'QUEUE_ENQUEUE_BATCH':
+          return this.enqueueBatch(message.tasks || [], { lane: message.lane }).then((res) => ({ ...res, state: this.getState() }));
+        case 'QUEUE_REMOVE':
+          return this.remove(message.taskId).then((res) => ({ success: res, state: this.getState() }));
+        case 'QUEUE_PAUSE':
+          this.pause(laneId);
+          return Promise.resolve(withState({ isPaused: true }));
+        case 'QUEUE_RESUME':
+          this.resume(laneId);
+          return Promise.resolve(withState({ isPaused: false }));
+        case 'QUEUE_CLEAR_ALL':
+          this.clearAll(laneId);
+          return Promise.resolve(withState());
+        case 'QUEUE_GET_STATE':
+          return Promise.resolve(this.getState());
+        case 'QUEUE_CLEAR_SKIPPED':
+          this.clearSkipped(laneId);
+          return Promise.resolve(withState());
+        case 'QUEUE_SKIP_COOLDOWN':
+          this.skipCooldown(laneId);
+          return Promise.resolve(withState());
+        case 'QUEUE_RETRY_NOW':
+          this.retryNow(laneId);
+          return Promise.resolve(withState());
+        case 'QUEUE_SKIP_FAILED_CHAPTER':
+          this.skipFailedChapter(laneId);
+          return Promise.resolve(withState());
+        case 'QUEUE_SET_COOLDOWN_CONFIG':
+          this.setCooldownConfig(message.config);
+          return Promise.resolve(withState());
+        default:
+          return null;
+      }
+    }
+
+    // A cooldown alarm woke the worker: the named lane goes on.
+    onCooldownAlarm(name) {
+      const laneId = String(name || '').split(':')[1];
+      this.skipCooldown(laneId || undefined);
     }
   }
 
-  LANE_METHODS.forEach((name) => {
-    DownloadQueueManager.prototype[name] = function (...args) {
-      return this.main[name](...args);
-    };
-  });
   LANE_FIELDS.forEach((name) => {
     Object.defineProperty(DownloadQueueManager.prototype, name, {
-      get() { return this.main[name]; },
-      set(value) { this.main[name] = value; }
+      get() {
+        const lane = this.main;
+        if (lane) return lane[name];
+        if (name === 'queue' || name === 'skipped') return [];
+        return name === 'isPaused' || name === 'isProcessing' ? false : null;
+      },
+      set(value) {
+        const lane = this.main || this._createLane('main');
+        lane[name] = value;
+      }
+    });
+  });
+  Object.entries(CONFIG_FIELDS).forEach(([name, key]) => {
+    Object.defineProperty(DownloadQueueManager.prototype, name, {
+      get() { return this.config[key]; },
+      set(value) { this._takeConfig({ [key]: value }); }
     });
   });
 

@@ -138,6 +138,31 @@ process.on('beforeExit', () => {
     assert.strictEqual(record.ocrSource, undefined);
   });
 
+  await test("downloadChapter holds the site's turn only while it fetches the chapter, not while it translates", async () => {
+    const { S, stores, aiCalls, fetches } = makeEnv();
+    await seed(S, stores);
+    const events = [];
+    const siteTurn = async (site) => {
+      events.push(['turn', site, fetches.length]);
+      return () => events.push(['release', fetches.length, aiCalls.length]);
+    };
+    await S.downloadChapter('n1', 3, { translation: TRANSLATION, siteTurn });
+    assert.deepStrictEqual(events, [['turn', 'wetriedtls', 0], ['release', 1, 0]], 'turn taken before the fetch, given back after it and before translating');
+    assert.strictEqual(aiCalls.length, 1, 'then translated');
+
+    const failing = makeEnv({ provider: { id: 'wetriedtls', async fetchChapterContent() { throw new Error('site down'); } } });
+    await seed(failing.S, failing.stores);
+    let released = 0;
+    await assert.rejects(() => failing.S.downloadChapter('n1', 3, { siteTurn: async () => () => { released++; } }), /site down/);
+    assert.strictEqual(released, 1, 'a failed fetch gives the turn back too');
+
+    const ready = makeEnv();
+    await seed(ready.S, ready.stores);
+    let asked = 0;
+    await ready.S.downloadChapter('n1', 3, { source: { kind: 'text', title: 'T', rawText: 'Ready text.' }, siteTurn: async () => { asked++; return () => {}; } });
+    assert.strictEqual(asked, 0, 'a chapter already in hand does not wait for the site');
+  });
+
   await test('characterization: downloadChapter errors (no provider, empty page, cancelled)', async () => {
     const empty = makeEnv({ provider: { async fetchChapterContent() { return { rawText: '' }; } } });
     await seed(empty.S, empty.stores);

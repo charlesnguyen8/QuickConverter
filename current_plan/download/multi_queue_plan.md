@@ -1,6 +1,6 @@
 # Several download queues in parallel
 
-**Status (2026-10-23):** phase 1 built; phases 2-4 to do.
+**Status (2026-10-23):** phases 1-2 built; phases 3-4 to do.
 
 ## Goal
 
@@ -88,6 +88,14 @@ The foreground service stays on while any lane works; its text summarizes the la
    cooldowns, same-site turns, persistence with migration, worker messages with `laneId`. Tests
    for parallel lanes on different sites, alternation on the same site, per-lane cooldown, and
    restore.
+   - **Built:** `enqueue`/`enqueueBatch` take `{ lane: 'auto' | 'new' | laneId }` (a novel always
+     joins its own lane); controls (`pause`, `resume`, `skipCooldown`, `retryNow`, `clearAll`, ...)
+     take an optional `laneId` and act on every lane without one. Each lane has its own cooldown
+     alarm (`QUEUE_COOLDOWN_ALARM:<laneId>`). `siteTurn(site)` is a first-come lock held only
+     around `fetchChapterSource`, so same-site lanes alternate and translation runs in parallel.
+     The manager persists `lanes` (a legacy save loads as `main`), drops idle lanes, and answers
+     every `QUEUE_*` worker message (`handleWorkerMessage`); pages mirror the worker's lanes.
+     No UI yet, so nothing visible changes until phase 3.
 3. **UI.** `ChooseQueueDialog` at the three places downloads start; the dock shows lanes; chapter
    rows keep their status across lanes.
 4. **App background text and docs** (`context.md`, AGENTS.md, README).

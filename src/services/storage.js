@@ -1743,7 +1743,15 @@ const StorageService = {
       if (options && typeof options.onProgress === 'function') {
         options.onProgress({ phase: 'fetching', percent: 5, text: 'Fetching raw chapter...' });
       }
-      source = await this.fetchChapterSource(novel, chapterNumber, options);
+      const provider = providerForNovel(novel);
+      const release = options && typeof options.siteTurn === 'function'
+        ? await options.siteTurn((provider && provider.id) || novel.domain || 'unknown')
+        : null;
+      try {
+        source = await this.fetchChapterSource(novel, chapterNumber, options);
+      } finally {
+        if (typeof release === 'function') release();
+      }
     }
     if (options && options.signal && options.signal.aborted) {
       throw new Error('UserCancelled');

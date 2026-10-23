@@ -231,151 +231,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
 
-  if (message.action === 'QUEUE_ENQUEUE') {
-    (async () => {
-      try {
-        if (typeof DownloadQueueService !== 'undefined') {
-          const res = await DownloadQueueService.enqueue(message.task || message);
-          sendResponse({ ...res, state: DownloadQueueService.getState() });
-        } else {
-          sendResponse({ success: false, error: 'DownloadQueueService not loaded' });
-        }
-      } catch (err) {
-        sendResponse({ success: false, error: err.message });
-      }
-    })();
+  const queueReply = typeof DownloadQueueService !== 'undefined' ? DownloadQueueService.handleWorkerMessage(message) : null;
+  if (queueReply) {
+    queueReply.then(sendResponse, (err) => sendResponse({ success: false, error: err && err.message }));
     return true;
-  }
-
-  if (message.action === 'QUEUE_ENQUEUE_BATCH') {
-    (async () => {
-      try {
-        if (typeof DownloadQueueService !== 'undefined') {
-          const res = await DownloadQueueService.enqueueBatch(message.tasks || []);
-          sendResponse({ ...res, state: DownloadQueueService.getState() });
-        } else {
-          sendResponse({ success: false, error: 'DownloadQueueService not loaded' });
-        }
-      } catch (err) {
-        sendResponse({ success: false, error: err.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.action === 'QUEUE_REMOVE') {
-    (async () => {
-      try {
-        if (typeof DownloadQueueService !== 'undefined') {
-          const res = await DownloadQueueService.remove(message.taskId);
-          sendResponse({ success: res, state: DownloadQueueService.getState() });
-        } else {
-          sendResponse({ success: false });
-        }
-      } catch (err) {
-        sendResponse({ success: false, error: err.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.action === 'QUEUE_PAUSE') {
-    if (typeof DownloadQueueService !== 'undefined') {
-      DownloadQueueService.pause();
-      sendResponse({ success: true, isPaused: true, state: DownloadQueueService.getState() });
-    } else {
-      sendResponse({ success: false });
-    }
-    return false;
-  }
-
-  if (message.action === 'QUEUE_RESUME') {
-    if (typeof DownloadQueueService !== 'undefined') {
-      DownloadQueueService.resume();
-      sendResponse({ success: true, isPaused: false, state: DownloadQueueService.getState() });
-    } else {
-      sendResponse({ success: false });
-    }
-    return false;
-  }
-
-  if (message.action === 'QUEUE_CLEAR_ALL') {
-    if (typeof DownloadQueueService !== 'undefined') {
-      DownloadQueueService.clearAll();
-      sendResponse({ success: true, state: DownloadQueueService.getState() });
-    } else {
-      sendResponse({ success: false });
-    }
-    return false;
-  }
-
-  if (message.action === 'QUEUE_GET_STATE') {
-    if (typeof DownloadQueueService !== 'undefined') {
-      sendResponse(DownloadQueueService.getState());
-    } else {
-      sendResponse({ activeTask: null, queue: [], isPaused: false, isProcessing: false, cooldown: null });
-    }
-    return false;
-  }
-
-  if (message.action === 'QUEUE_CLEAR_SKIPPED') {
-    if (typeof DownloadQueueService !== 'undefined') {
-      DownloadQueueService.clearSkipped();
-      sendResponse({ success: true, state: DownloadQueueService.getState() });
-    } else {
-      sendResponse({ success: false });
-    }
-    return false;
-  }
-
-  if (message.action === 'QUEUE_SKIP_COOLDOWN') {
-    if (typeof DownloadQueueService !== 'undefined') {
-      DownloadQueueService.skipCooldown();
-      sendResponse({ success: true, state: DownloadQueueService.getState() });
-    } else {
-      sendResponse({ success: false });
-    }
-    return false;
-  }
-
-  if (message.action === 'QUEUE_RETRY_NOW') {
-    if (typeof DownloadQueueService !== 'undefined') {
-      DownloadQueueService.retryNow();
-      sendResponse({ success: true, state: DownloadQueueService.getState() });
-    } else {
-      sendResponse({ success: false });
-    }
-    return false;
-  }
-
-  if (message.action === 'QUEUE_SKIP_FAILED_CHAPTER') {
-    if (typeof DownloadQueueService !== 'undefined') {
-      DownloadQueueService.skipFailedChapter();
-      sendResponse({ success: true, state: DownloadQueueService.getState() });
-    } else {
-      sendResponse({ success: false });
-    }
-    return false;
-  }
-
-  if (message.action === 'QUEUE_SET_COOLDOWN_CONFIG') {
-    if (typeof DownloadQueueService !== 'undefined') {
-      DownloadQueueService.setCooldownConfig(message.config);
-      sendResponse({ success: true, state: DownloadQueueService.getState() });
-    } else {
-      sendResponse({ success: false });
-    }
-    return false;
   }
 });
 
 // Chrome alarms listener to wake up MV3 background service worker when cooldown or retry alarm fires
 if (typeof chrome !== 'undefined' && chrome.alarms && chrome.alarms.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm && alarm.name === 'QUEUE_COOLDOWN_ALARM') {
-      if (typeof DownloadQueueService !== 'undefined') {
-        DownloadQueueService.skipCooldown();
-      }
+    if (alarm && String(alarm.name).indexOf('QUEUE_COOLDOWN_ALARM') === 0 && typeof DownloadQueueService !== 'undefined') {
+      DownloadQueueService.onCooldownAlarm(alarm.name);
     }
   });
 }

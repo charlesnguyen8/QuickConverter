@@ -1386,6 +1386,326 @@ async function runTests() {
     }
   });
 
+  // --- Phase 2 of several queues: lanes run in parallel ---
+  const waitUntil = async (check, label, ms = 3000) => {
+    const start = Date.now();
+    while (!check()) {
+      if (Date.now() - start > ms) throw new Error(`timed out waiting: ${label}`);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  };
+  const laneOf = (novelId) => DownloadQueueService.getState().lanes.find((l) => (l.activeTask && l.activeTask.novelId === novelId) || l.queue.some((t) => t.novelId === novelId));
+  const gate = () => { let open; const p = new Promise((r) => { open = r; }); return { p, open }; };
+  const RAW = { translation: { enabled: false } };
+
+  await test('a novel that already has a lane keeps adding to it; "new" starts a second lane that runs in parallel', async () => {
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+    const original = mockStorageService.downloadChapter;
+    const running = new Set();
+    const gates = {};
+    mockStorageService.downloadChapter = async (novelId, n) => {
+      running.add(`${novelId}:${n}`);
+      gates[`${novelId}:${n}`] = gate();
+      await gates[`${novelId}:${n}`].p;
+      running.delete(`${novelId}:${n}`);
+      return { id: `${novelId}_ch${n}` };
+    };
+    try {
+      await DownloadQueueService.enqueue({ novelId: 'lane-a', novelTitle: 'A', chapterNumber: 1, options: RAW });
+      await DownloadQueueService.enqueue({ novelId: 'lane-a', novelTitle: 'A', chapterNumber: 2, options: RAW }, { lane: 'new' });
+      assert.strictEqual(DownloadQueueService.getState().lanes.length, 1, 'chapters of a novel that has a lane always join it');
+      await DownloadQueueService.enqueueBatch([{ novelId: 'lane-b', novelTitle: 'B', chapterNumber: 1, options: RAW }], { lane: 'new' });
+      const state = DownloadQueueService.getState();
+      assert.strictEqual(state.lanes.length, 2, 'a second lane');
+      assert.notStrictEqual(laneOf('lane-a').id, laneOf('lane-b').id);
+      await waitUntil(() => running.has('lane-a:1') && running.has('lane-b:1'), 'both lanes download at the same time');
+      assert.strictEqual(DownloadQueueService.getState().totalCount, 3, 'the summary counts every lane');
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(DownloadQueueService.getChapterStatus('lane-b', 1))).status, 'processing', 'chapter status looks across lanes');
+      assert.strictEqual(DownloadQueueService.isQueued('lane-a', 2), true);
+      gates['lane-b:1'].open();
+      await waitUntil(() => DownloadQueueService.getState().lanes.length === 1, 'a lane with nothing left is removed');
+      gates['lane-a:1'].open();
+      await waitUntil(() => running.has('lane-a:2'), 'lane A goes on');
+      gates['lane-a:2'].open();
+      await waitUntil(() => DownloadQueueService.getState().lanes.length === 0, 'no lanes when everything is done');
+    } finally {
+      mockStorageService.downloadChapter = original;
+      DownloadQueueService.clearAll();
+    }
+  });
+
+  await test('"auto" joins the only lane, and starts a new one when several other lanes are busy', async () => {
+    DownloadQueueService.clearAll();
+    const original = mockStorageService.downloadChapter;
+    const hold = gate();
+    mockStorageService.downloadChapter = async () => { await hold.p; return {}; };
+    try {
+      await DownloadQueueService.enqueue({ novelId: 'auto-a', chapterNumber: 1, options: RAW });
+      await DownloadQueueService.enqueue({ novelId: 'auto-b', chapterNumber: 1, options: RAW });
+      assert.strictEqual(DownloadQueueService.getState().lanes.length, 1, 'with one lane, auto joins it');
+      await DownloadQueueService.enqueue({ novelId: 'auto-c', chapterNumber: 1, options: RAW }, { lane: 'new' });
+      await DownloadQueueService.enqueue({ novelId: 'auto-d', chapterNumber: 1, options: RAW });
+      assert.strictEqual(DownloadQueueService.getState().lanes.length, 3, 'with several busy lanes, auto starts a new one');
+      const target = laneOf('auto-c').id;
+      await DownloadQueueService.enqueue({ novelId: 'auto-e', chapterNumber: 1, options: RAW }, { lane: target });
+      assert.strictEqual(laneOf('auto-e').id, target, 'a chosen lane is used');
+    } finally {
+      hold.open();
+      mockStorageService.downloadChapter = original;
+      DownloadQueueService.clearAll();
+    }
+  });
+
+  await test('lanes on the same site take turns at fetching; different sites do not wait', async () => {
+    DownloadQueueService.clearAll();
+    const original = mockStorageService.downloadChapter;
+    const order = [];
+    mockStorageService.downloadChapter = async (novelId, n, options) => {
+      const site = novelId.startsWith('stv') ? 'sangtacviet' : 'wetriedtls';
+      const release = await options.siteTurn(site);
+      order.push(`${novelId}:${n}`);
+      await new Promise((r) => setTimeout(r, 15));
+      release();
+      return {};
+    };
+    try {
+      await DownloadQueueService.enqueueBatch([1, 2, 3].map((n) => ({ novelId: 'stv-1', chapterNumber: n, options: RAW })));
+      await DownloadQueueService.enqueueBatch([1, 2, 3].map((n) => ({ novelId: 'stv-2', chapterNumber: n, options: RAW })), { lane: 'new' });
+      await waitUntil(() => order.length === 6, 'all six fetched');
+      const sites = order.map((k) => k.split(':')[0]);
+      for (let i = 1; i < sites.length; i++) assert.notStrictEqual(sites[i], sites[i - 1], `same-site lanes alternate: ${order.join(', ')}`);
+
+      order.length = 0;
+      const held = gate();
+      mockStorageService.downloadChapter = async (novelId, n, options) => {
+        const release = await options.siteTurn(novelId.startsWith('stv') ? 'sangtacviet' : 'wetriedtls');
+        order.push(`${novelId}:${n}`);
+        if (novelId === 'stv-3') await held.p;
+        release();
+        return {};
+      };
+      await DownloadQueueService.enqueue({ novelId: 'stv-3', chapterNumber: 1, options: RAW });
+      await DownloadQueueService.enqueue({ novelId: 'wtl-1', chapterNumber: 1, options: RAW }, { lane: 'new' });
+      await waitUntil(() => order.includes('wtl-1:1'), 'another site is not held up by a busy sangtacviet turn');
+      held.open();
+    } finally {
+      mockStorageService.downloadChapter = original;
+      DownloadQueueService.clearAll();
+    }
+  });
+
+  await test('pause, resume and cooldown belong to one lane; the other lanes keep going', async () => {
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 60, maxSec: 60, errorCooldownSec: 4500, maxRetries: 3 });
+    const original = mockStorageService.downloadChapter;
+    const done = [];
+    mockStorageService.downloadChapter = async (novelId, n) => { await new Promise((r) => setTimeout(r, 5)); done.push(`${novelId}:${n}`); return {}; };
+    try {
+      await DownloadQueueService.enqueueBatch([1, 2].map((n) => ({ novelId: 'cool-a', chapterNumber: n, options: RAW })));
+      await waitUntil(() => { const l = laneOf('cool-a'); return l && l.cooldown && l.cooldown.active; }, 'lane A waits out its cooldown');
+      await DownloadQueueService.enqueueBatch([1, 2].map((n) => ({ novelId: 'cool-b', chapterNumber: n, options: RAW })), { lane: 'new' });
+      await waitUntil(() => done.includes('cool-b:1'), "lane B is not held by lane A's cooldown");
+      const laneB = laneOf('cool-b').id;
+      const laneA = laneOf('cool-a').id;
+      DownloadQueueService.pause(laneB);
+      let s = DownloadQueueService.getState();
+      assert.strictEqual(s.lanes.find((l) => l.id === laneB).isPaused, true, 'lane B paused');
+      assert.strictEqual(s.lanes.find((l) => l.id === laneA).isPaused, false, 'lane A not paused');
+      assert.strictEqual(s.isPaused, false, 'the summary is paused only when every lane is');
+      DownloadQueueService.skipCooldown(laneA);
+      await waitUntil(() => done.includes('cool-a:2'), 'skipping lane A cooldown runs lane A');
+      assert(!done.includes('cool-b:2'), 'paused lane B did not run');
+      DownloadQueueService.resume(laneB);
+      await waitUntil(() => done.includes('cool-b:2') || (laneOf('cool-b') && laneOf('cool-b').cooldown), 'lane B resumes');
+      await DownloadQueueService.enqueue({ novelId: 'cool-c', chapterNumber: 1, options: RAW }, { lane: 'new' });
+      await DownloadQueueService.enqueue({ novelId: 'cool-d', chapterNumber: 1, options: RAW }, { lane: 'new' });
+      DownloadQueueService.pause();
+      s = DownloadQueueService.getState();
+      assert(s.lanes.length >= 2 && s.lanes.every((l) => l.isPaused) && s.isPaused, 'pause without a lane pauses every lane');
+    } finally {
+      mockStorageService.downloadChapter = original;
+      DownloadQueueService.clearAll();
+      DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+    }
+  });
+
+  await test('remove finds a chapter in any lane; Clear All empties every lane', async () => {
+    DownloadQueueService.clearAll();
+    const original = mockStorageService.downloadChapter;
+    const hold = gate();
+    mockStorageService.downloadChapter = async () => { await hold.p; return {}; };
+    try {
+      await DownloadQueueService.enqueueBatch([1, 2].map((n) => ({ novelId: 'rm-a', chapterNumber: n, options: RAW })));
+      await DownloadQueueService.enqueueBatch([1, 2].map((n) => ({ novelId: 'rm-b', chapterNumber: n, options: RAW })), { lane: 'new' });
+      assert.strictEqual(await DownloadQueueService.remove('rm-b_ch2'), true);
+      assert.strictEqual(DownloadQueueService.isQueued('rm-b', 2), false, 'removed from lane B');
+      assert.strictEqual(DownloadQueueService.isQueued('rm-a', 2), true, 'lane A untouched');
+      DownloadQueueService.clearAll();
+      assert.strictEqual(DownloadQueueService.getState().lanes.length, 0, 'Clear All empties every lane');
+    } finally {
+      hold.open();
+      mockStorageService.downloadChapter = original;
+      DownloadQueueService.clearAll();
+    }
+  });
+
+  await test('the saved queue keeps every lane, and a restart restores them; an old single-queue save loads as one lane', async () => {
+    DownloadQueueService.clearAll();
+    const original = mockStorageService.downloadChapter;
+    const hold = gate();
+    mockStorageService.downloadChapter = async () => { await hold.p; return {}; };
+    try {
+      await DownloadQueueService.enqueueBatch([1, 2].map((n) => ({ novelId: 'save-a', novelTitle: 'A', chapterNumber: n, options: RAW })));
+      await DownloadQueueService.enqueueBatch([1, 2].map((n) => ({ novelId: 'save-b', novelTitle: 'B', chapterNumber: n, options: RAW })), { lane: 'new' });
+      const saved = JSON.parse(JSON.stringify(global.chrome.storage.local.data['quickconverter_download_queue']));
+      assert.strictEqual(saved.lanes.length, 2, 'both lanes are saved');
+      assert(saved.activeTask && Array.isArray(saved.queue), 'with the summary at the top, as before');
+
+      DownloadQueueService.clearAll();
+      saved.lanes.forEach((l) => { l.isPaused = true; });
+      const restored = DownloadQueueService._restoreSnapshot(saved);
+      assert.strictEqual(restored.lanes.length, 2, 'both lanes come back');
+      const ids = restored.lanes.map((l) => l.queue.map((t) => `${t.novelId}:${t.chapterNumber}`).join(','));
+      assert(ids.includes('save-a:1,save-a:2') && ids.includes('save-b:1,save-b:2'), `each lane gets its chapters back, the active one first: ${ids}`);
+
+      DownloadQueueService.clearAll();
+      const legacy = DownloadQueueService._restoreSnapshot({ activeTask: null, queue: [{ id: 'old_ch1', novelId: 'old', chapterNumber: 1, status: 'queued' }], isPaused: true, cooldown: null, pauseError: null });
+      assert.deepStrictEqual(legacy.lanes.map((l) => [l.id, l.queue.length, l.isPaused]), [['main', 1, true]], 'an old save is one lane, "main"');
+    } finally {
+      hold.open();
+      mockStorageService.downloadChapter = original;
+      DownloadQueueService.clearAll();
+    }
+  });
+
+  await test('the worker answers queue messages for a lane', async () => {
+    DownloadQueueService.clearAll();
+    const original = mockStorageService.downloadChapter;
+    const hold = gate();
+    mockStorageService.downloadChapter = async () => { await hold.p; return {}; };
+    try {
+      let reply = await DownloadQueueService.handleWorkerMessage({ action: 'QUEUE_ENQUEUE', task: { novelId: 'msg-a', chapterNumber: 1, options: RAW } });
+      assert(reply.success && reply.state.lanes.length === 1);
+      reply = await DownloadQueueService.handleWorkerMessage({ action: 'QUEUE_ENQUEUE_BATCH', tasks: [{ novelId: 'msg-b', chapterNumber: 1, options: RAW }], lane: 'new' });
+      assert.strictEqual(reply.state.lanes.length, 2, 'the lane choice travels with the message');
+      const laneB = laneOf('msg-b').id;
+      reply = await DownloadQueueService.handleWorkerMessage({ action: 'QUEUE_PAUSE', laneId: laneB });
+      assert.strictEqual(reply.state.lanes.find((l) => l.id === laneB).isPaused, true, 'pause names its lane');
+      reply = await DownloadQueueService.handleWorkerMessage({ action: 'QUEUE_GET_STATE' });
+      assert.strictEqual(reply.lanes.length, 2, 'the state answer lists the lanes');
+      assert.strictEqual(DownloadQueueService.handleWorkerMessage({ action: 'SOMETHING_ELSE' }), null, 'other messages are not the queue\'s');
+    } finally {
+      hold.open();
+      mockStorageService.downloadChapter = original;
+      DownloadQueueService.clearAll();
+    }
+  });
+
+  await test('in the extension, a page mirrors every lane of the worker and acts on a lane by its id', async () => {
+    const vm = require('vm');
+    const fsMod = require('fs');
+    const pathMod = require('path');
+    const src = (...p) => fsMod.readFileSync(pathMod.join(__dirname, '..', 'src', ...p), 'utf8');
+    const contexts = [];
+    const data = {};
+    const makeChrome = (self) => ({
+      runtime: {
+        id: 'qc-test',
+        lastError: undefined,
+        onMessage: { addListener: (fn) => self.listeners.push(fn), removeListener: (fn) => { self.listeners = self.listeners.filter((l) => l !== fn); } },
+        sendMessage(msg, cb) {
+          const copy = JSON.parse(JSON.stringify(msg));
+          let answered = false;
+          let waiting = false;
+          const reply = (response) => {
+            if (answered) return;
+            answered = true;
+            if (cb) setTimeout(() => cb(response === undefined ? undefined : JSON.parse(JSON.stringify(response))), 0);
+          };
+          setTimeout(() => {
+            contexts.filter((c) => c !== self).forEach((c) => c.listeners.forEach((l) => { if (l(copy, { id: 'qc-test' }, reply) === true) waiting = true; }));
+            if (!waiting) reply(undefined);
+          }, 0);
+        }
+      },
+      storage: {
+        local: {
+          get: (keys, cb) => { const out = {}; (Array.isArray(keys) ? keys : [keys]).forEach((k) => { if (k in data) out[k] = JSON.parse(JSON.stringify(data[k])); }); setTimeout(() => cb(out), 0); },
+          set: (items, cb) => {
+            const changes = {};
+            Object.entries(items).forEach(([k, v]) => { data[k] = JSON.parse(JSON.stringify(v)); changes[k] = { newValue: JSON.parse(JSON.stringify(v)) }; });
+            contexts.forEach((c) => c.storageListeners.forEach((l) => setTimeout(() => l(changes, 'local'), 0)));
+            if (cb) setTimeout(cb, 0);
+          }
+        },
+        onChanged: { addListener: (fn) => self.storageListeners.push(fn) }
+      },
+      alarms: { create() {}, clear() { return Promise.resolve(true); }, onAlarm: { addListener() {} } }
+    });
+    const makeContext = (isPage) => {
+      const self = { listeners: [], storageListeners: [] };
+      const env = { console: { log() {}, warn() {}, error() {} }, setTimeout, clearTimeout, setInterval, clearInterval, AbortController, Promise };
+      env.chrome = makeChrome(self);
+      env.globalThis = env;
+      env.self = env;
+      if (isPage) {
+        env.window = env;
+        env.document = { addEventListener() {} };
+      }
+      vm.createContext(env);
+      vm.runInContext(src('services', 'platform.js'), env);
+      self.env = env;
+      contexts.push(self);
+      return self;
+    };
+    const worker = makeContext(false);
+    const gates = {};
+    worker.env.StorageService = {
+      downloadChapter: (novelId, n) => new Promise((resolve) => { gates[`${novelId}:${n}`] = () => resolve({ id: `${novelId}_ch${n}` }); })
+    };
+    vm.runInContext(src('services', 'download-queue.js'), worker.env);
+    worker.listeners.push((msg, sender, sendResponse) => {
+      const r = worker.env.DownloadQueueService.handleWorkerMessage(msg);
+      if (!r) return false;
+      r.then(sendResponse);
+      return true;
+    });
+    const page = makeContext(true);
+    vm.runInContext(src('services', 'download-queue.js'), page.env);
+    const W = worker.env.DownloadQueueService;
+    const P = page.env.DownloadQueueService;
+    W.setCooldownConfig({ enabled: false, minSec: 1, maxSec: 1 });
+    await new Promise((r) => setTimeout(r, 20));
+    const lanesOf = (svc) => JSON.parse(JSON.stringify(svc.getState().lanes.map((l) => ({ id: l.id, active: l.activeTask && `${l.activeTask.novelId}:${l.activeTask.chapterNumber}`, waiting: l.queue.length, paused: l.isPaused }))));
+
+    await P.enqueueBatch([1, 2].map((n) => ({ novelId: 'ext-a', novelTitle: 'A', chapterNumber: n, options: RAW })));
+    await P.enqueueBatch([1, 2].map((n) => ({ novelId: 'ext-b', novelTitle: 'B', chapterNumber: n, options: RAW })), { lane: 'new' });
+    await waitUntil(() => W.getState().lanes.length === 2, 'the worker made two lanes');
+    await waitUntil(() => JSON.stringify(lanesOf(P)) === JSON.stringify(lanesOf(W)), 'the page shows the same lanes');
+    assert.deepStrictEqual(lanesOf(P).map((l) => l.active), ['ext-a:1', 'ext-b:1'], 'both lanes active, as the page sees them');
+    assert.strictEqual(P.getChapterStatus('ext-b', 2).status, 'queued', 'chapter status on the page looks across lanes');
+
+    const laneB = lanesOf(P).find((l) => l.active === 'ext-b:1').id;
+    P.pause(laneB);
+    await waitUntil(() => W.getState().lanes.find((l) => l.id === laneB).isPaused, 'pausing on the page pauses that lane in the worker');
+    assert.strictEqual(W.getState().lanes.find((l) => l.id !== laneB).isPaused, false, 'and not the other lane');
+
+    gates['ext-a:1']();
+    await waitUntil(() => lanesOf(P).some((l) => l.active === 'ext-a:2'), 'the page follows the worker as lane A goes on');
+
+    P.clearAll();
+    await waitUntil(() => W.getState().lanes.length === 0 && P.getState().lanes.length === 0, 'Clear All empties every lane on both sides');
+    Object.values(gates).forEach((open) => open());
+  });
+
+  await test('the extension worker hands queue messages and cooldown alarms to the queue service', () => {
+    const bg = require('fs').readFileSync(require('path').join(__dirname, '..', 'extension', 'scripts', 'background.js'), 'utf8');
+    assert(/DownloadQueueService\.handleWorkerMessage\(message\)/.test(bg), 'queue messages go to handleWorkerMessage');
+    assert(!/message\.action === 'QUEUE_/.test(bg), 'no queue message is handled outside the service');
+    assert(/DownloadQueueService\.onCooldownAlarm\(alarm\.name\)/.test(bg) && /QUEUE_COOLDOWN_ALARM/.test(bg), "a lane's cooldown alarm wakes that lane");
+  });
+
   console.log(`\n🎉 All ${passedCount} DownloadQueueService tests passed!`);
 }
 
