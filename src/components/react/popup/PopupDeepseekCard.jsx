@@ -27,10 +27,7 @@ const PANEL_IDS = {
   balanceText: 'deepseek-balance-text',
   refreshBalanceBtn: 'deepseek-refresh-balance-btn',
   refreshBalanceIcon: 'deepseek-refresh-balance-icon',
-  pricingBadge: 'deepseek-pricing-badge',
-  cooldownToggle: 'popup-cooldown-toggle',
-  cooldownToggleLabel: 'popup-cooldown-toggle-label',
-  cooldownBadge: 'popup-cooldown-badge'
+  pricingBadge: 'deepseek-pricing-badge'
 };
 
 const PopupDeepseekCard = forwardRef(function PopupDeepseekCard({ novelId }, ref) {

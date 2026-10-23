@@ -31,15 +31,7 @@ const PANEL_IDS = {
   balanceText: 'deepseek-balance-text',
   refreshBalanceBtn: 'deepseek-refresh-balance-btn',
   refreshBalanceIcon: 'deepseek-refresh-balance-icon',
-  pricingBadge: 'deepseek-pricing-badge',
-  cooldownToggle: 'novel-cooldown-toggle',
-  cooldownToggleLabel: 'novel-cooldown-toggle-label',
-  cooldownMin: 'novel-cooldown-min',
-  cooldownMax: 'novel-cooldown-max',
-  cooldownMinLabel: 'novel-cooldown-min-label',
-  cooldownMaxLabel: 'novel-cooldown-max-label',
-  cooldownBadge: 'novel-cooldown-badge',
-  cooldownInputs: 'novel-cooldown-inputs-container'
+  pricingBadge: 'deepseek-pricing-badge'
 };
 
 const NovelDeepseekCard = forwardRef(function NovelDeepseekCard(_props, ref) {

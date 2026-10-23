@@ -1300,12 +1300,9 @@
               return;
             }
 
-            // Cooldown applies when enabled AND task was translated (or has cooldown: true).
-            // Raw chapter downloads without translation (options.translation.enabled: false) are not rate-limited and skip cooldown.
-            const isExplicitNoTranslation = task?.options?.translation && task.options.translation.enabled === false;
+            // The rate limit cooldown paces every chapter download (raw or translated) while it is on.
             const isExplicitNoCooldown = task?.options?.cooldown === false || task?.options?.translation?.cooldown === false;
             const shouldCooldown = this.cooldownEnabled &&
-              !isExplicitNoTranslation &&
               !isExplicitNoCooldown &&
               this.minCooldownSec > 0 &&
               this.maxCooldownSec >= this.minCooldownSec;

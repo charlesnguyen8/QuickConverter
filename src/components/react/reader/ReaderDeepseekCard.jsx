@@ -82,7 +82,6 @@ const ReaderDeepseekCard = forwardRef(function ReaderDeepseekCard({ idPrefix = '
     <AiConfigPanel
       ref={ref}
       variant={variant}
-      capabilities={{ cooldown: false }}
       options={{ readerPromptStyle: true }}
       ids={ids}
       hooks={hooks}

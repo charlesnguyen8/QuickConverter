@@ -3,9 +3,11 @@ import SettingsStorageTab from './SettingsStorageTab.jsx';
 import SettingsReaderTab from './SettingsReaderTab.jsx';
 import SettingsDeepSeekTab from './SettingsDeepSeekTab.jsx';
 import SettingsNotesTab from './SettingsNotesTab.jsx';
+import SettingsDownloadsTab from './SettingsDownloadsTab.jsx';
 
 const TABS = [
   { id: 'deepseek', icon: '🌐', label: 'DeepSeek AI' },
+  { id: 'downloads', icon: '⏳', label: 'Downloads' },
   { id: 'reader', icon: '📖', label: 'Reader Typography' },
   { id: 'storage', icon: '💾', label: 'Storage & Quota' },
   { id: 'notes', icon: '📝', label: 'Notes' },
@@ -125,6 +127,10 @@ export default function SettingsView() {
         <div className="flex-1 min-w-0 flex flex-col gap-6">
           <section id="tab-content-deepseek" className={`settings-tab-section flex flex-col gap-6${activeTab === 'deepseek' ? '' : ' hidden'}`}>
             <SettingsDeepSeekTab onSaved={showSaved} />
+          </section>
+
+          <section id="tab-content-downloads" className={`settings-tab-section flex flex-col gap-6${activeTab === 'downloads' ? '' : ' hidden'}`}>
+            <SettingsDownloadsTab onSaved={showSaved} />
           </section>
 
           <section id="tab-content-reader" className={`settings-tab-section flex flex-col gap-6${activeTab === 'reader' ? '' : ' hidden'}`}>

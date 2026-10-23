@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import PopupDeepseekCard from './PopupDeepseekCard.jsx';
+import CooldownPanel from '../shared/CooldownPanel.jsx';
 import { ChapterAccessBadge } from '../shared/ChapterAccessBadge.jsx';
 import { coverSrc, showDefaultCover } from '../shared/novelCover.js';
 import { ContinueReadingButton, LastReadBadge } from '../shared/lastRead.jsx';
@@ -322,6 +323,8 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
       <ProviderLoginBanner novel={novel} compact />
 
         <PopupDeepseekCard ref={deepseekRef} novelId={novelId} />
+
+        <CooldownPanel variant="compact" ids={{ toggle: 'popup-cooldown-toggle', toggleLabel: 'popup-cooldown-toggle-label', badge: 'popup-cooldown-badge' }} />
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between px-0.5">

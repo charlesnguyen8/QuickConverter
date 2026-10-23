@@ -48,14 +48,12 @@ const OPTION_DEFAULTS = {
   full: {
     testKeyProviderAware: true,
     customApiRowFlex: false,
-    cooldownBadgeMode: 'active',
     modelLabelReasoner: true,
     readerPromptStyle: false
   },
   compact: {
     testKeyProviderAware: false,
     customApiRowFlex: true,
-    cooldownBadgeMode: 'compact',
     modelLabelReasoner: false,
     readerPromptStyle: false
   }
@@ -65,7 +63,6 @@ const DEFAULT_CAPABILITIES = {
   provider: true,
   balance: true,
   prompt: true,
-  cooldown: true,
   modelSelect: true,
   testConnection: true
 };
@@ -166,7 +163,6 @@ const AiConfigPanel = forwardRef(function AiConfigPanel(props, ref) {
   const [showKey, setShowKey] = useState(false);
   const [keyError, setKeyError] = useState(false);
   const [pricing, setPricing] = useState(DEFAULT_PRICING);
-  const [cooldown, setCooldown] = useState({ enabled: true, minSec: 180, maxSec: 300 });
   const [balance, setBalance] = useState(null);
   const [balanceUpdating, setBalanceUpdating] = useState(false);
   const [testStatus, setTestStatus] = useState(null);
@@ -223,7 +219,6 @@ const AiConfigPanel = forwardRef(function AiConfigPanel(props, ref) {
       } else {
         setModel(storedModel);
       }
-      setCooldown(readCooldown());
 
       if (caps.prompt) {
         let text = prompt;
@@ -297,13 +292,6 @@ const AiConfigPanel = forwardRef(function AiConfigPanel(props, ref) {
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
-  const persistCooldown = useCallback((next) => {
-    setCooldown(next);
-    setStored('quickconverter_queue_cooldown', JSON.stringify(next));
-    const q = typeof window !== 'undefined' ? window.DownloadQueueService : null;
-    if (q && typeof q.setCooldownConfig === 'function') q.setCooldownConfig(next);
   }, []);
 
   const handleToggleEnabled = (checked) => {
@@ -488,7 +476,7 @@ const AiConfigPanel = forwardRef(function AiConfigPanel(props, ref) {
     refreshBalance,
     getDownloadOptions(opts) {
       const built = buildDownloadOptions(
-        { enabled, provider, customUrl, apiKey, model, prompt: promptText, cooldown },
+        { enabled, provider, customUrl, apiKey, model, prompt: promptText, cooldown: readCooldown() },
         opts
       );
       if (!built) {
@@ -501,9 +489,9 @@ const AiConfigPanel = forwardRef(function AiConfigPanel(props, ref) {
       return built;
     },
     getConfig() {
-      return { enabled, provider, customUrl, apiKey, model, prompt: promptText, cooldown: { ...cooldown } };
+      return { enabled, provider, customUrl, apiKey, model, prompt: promptText, cooldown: readCooldown() };
     }
-  }), [refreshBalance, enabled, provider, customUrl, apiKey, model, promptText, cooldown]);
+  }), [refreshBalance, enabled, provider, customUrl, apiKey, model, promptText]);
 
   const providerBadgeText = isOfficial ? texts.badgeOfficial : (isBridge ? texts.badgeBridge : texts.badgeCustom);
   const providerBadgeClass = compact
@@ -541,31 +529,6 @@ const AiConfigPanel = forwardRef(function AiConfigPanel(props, ref) {
   const pricingLabel = isOfficial ? pricing.label : texts.pricingFree;
   const pricingClass = `${compact ? 'text-[9px]' : 'text-[10px]'} font-semibold px-1.5 py-0.5 rounded border ${isOfficial ? pricing.badgeClass : 'border-purple-500/30 bg-purple-500/15 text-purple-300'}`;
   const pricingTitle = isOfficial ? pricing.title : texts.pricingFreeTitle;
-
-  const cooldownBadge = (() => {
-    if (!cooldown.enabled) {
-      return {
-        text: options.cooldownBadgeMode === 'compact' ? 'Off' : 'Disabled (No wait)',
-        cls: compact
-          ? 'text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-slate-700 text-slate-400 border border-slate-600'
-          : 'text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700'
-      };
-    }
-    if (options.cooldownBadgeMode === 'compact') {
-      return {
-        text: `${Math.round(cooldown.minSec / 60)}–${Math.round(cooldown.maxSec / 60)}m`,
-        cls: 'text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30'
-      };
-    }
-    return {
-      text: `Active (${formatSecondsHuman(cooldown.minSec)} ~ ${formatSecondsHuman(cooldown.maxSec)})`,
-      cls: 'text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30'
-    };
-  })();
-
-  const cooldownToggleLabelClass = cooldown.enabled
-    ? (compact ? 'text-[10px] font-mono font-bold text-amber-400' : 'text-xs font-bold text-amber-400 font-mono')
-    : (compact ? 'text-[10px] font-mono font-semibold text-slate-400' : 'text-xs font-semibold text-slate-400 font-mono');
 
   const balanceVisible = caps.balance && isOfficial && !!balance && (balance.success || !!balance.error) && (balance.success || !!apiKey.trim());
   let balanceClass = 'hidden';
@@ -760,26 +723,6 @@ const AiConfigPanel = forwardRef(function AiConfigPanel(props, ref) {
                 : 'w-full px-2.5 py-1.5 text-xs bg-slate-900/90 border border-slate-700 rounded-md text-slate-300 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition resize-none leading-relaxed cursor-default'}
             ></textarea>
           </div>
-
-          <div className="flex items-center justify-between pt-2 border-t border-slate-700/60">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-xs">⏳</span>
-              <div className="flex flex-col min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] font-bold text-slate-200">Rate Limit Cooldown</span>
-                  <span id={ids.cooldownBadge} className={cooldownBadge.cls}>{cooldownBadge.text}</span>
-                </div>
-                <p className="text-[10px] text-slate-400 truncate">Wait 3–5m between queued translations</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <span id={ids.cooldownToggleLabel} className={cooldownToggleLabelClass}>{cooldown.enabled ? 'ON' : 'OFF'}</span>
-              <label className="relative inline-flex items-center cursor-pointer flex-shrink-0" title="Toggle 3-5m randomized cooldown between translated chapters">
-                <input type="checkbox" id={ids.cooldownToggle} className="sr-only peer" checked={cooldown.enabled} onChange={(e) => persistCooldown({ ...cooldown, enabled: e.target.checked })} />
-                <div className="w-8 h-4.5 cooldown-popup-track rounded-full peer-focus:outline-none peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all"></div>
-              </label>
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -912,76 +855,6 @@ const AiConfigPanel = forwardRef(function AiConfigPanel(props, ref) {
         </div>
       </div>
 
-      {caps.cooldown ? (
-        <div className={`rounded-xl bg-slate-900/90 border border-slate-700/80 p-4 flex flex-col gap-3.5 shadow-sm ${enabled ? '' : 'opacity-40 pointer-events-none'}`}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0 text-sm">⏳</div>
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-bold text-slate-100">Rate Limit Cooldown</span>
-                  <span id={ids.cooldownBadge} className={cooldownBadge.cls}>{cooldownBadge.text}</span>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">Pause a randomized duration between queued chapters to avoid API rate limits.</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2.5 flex-shrink-0">
-              <span id={ids.cooldownToggleLabel} className={cooldownToggleLabelClass}>{cooldown.enabled ? 'ON' : 'OFF'}</span>
-              <label className="relative inline-flex items-center cursor-pointer flex-shrink-0" title="Enable or disable rate limit cooldown between chapters">
-                <input type="checkbox" id={ids.cooldownToggle} className="sr-only peer" checked={cooldown.enabled} onChange={(e) => persistCooldown({ ...cooldown, enabled: e.target.checked })} />
-                <div className="w-11 h-6 cooldown-slider-track rounded-full peer-focus:outline-none peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
-              </label>
-            </div>
-          </div>
-
-          <div id={ids.cooldownInputs} className={`grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-800 ${cooldown.enabled ? '' : 'opacity-30 pointer-events-none'}`}>
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="font-semibold text-slate-300">Minimum Wait</span>
-                <span id={ids.cooldownMinLabel} className="text-slate-400 font-mono font-medium">{formatSecondsHuman(cooldown.minSec)}</span>
-              </div>
-              <div className="flex items-center rounded-lg border border-slate-700 bg-slate-950 overflow-hidden focus-within:border-amber-500 focus-within:ring-1 focus-within:ring-amber-500/40 transition">
-                <input
-                  type="number"
-                  id={ids.cooldownMin}
-                  min="10"
-                  max="600"
-                  step="5"
-                  value={cooldown.minSec}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value, 10);
-                    if (!Number.isNaN(value)) persistCooldown({ ...cooldown, minSec: Math.max(10, value), maxSec: Math.max(Math.max(10, value), cooldown.maxSec) });
-                  }}
-                  className="cooldown-number-input flex-1 min-w-0 px-3 py-1.5 text-xs font-mono font-bold"
-                />
-                <span className="px-2.5 py-1.5 text-[11px] font-mono font-semibold text-slate-400 bg-slate-900 border-l border-slate-700/80 select-none flex-shrink-0">seconds</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="font-semibold text-slate-300">Maximum Wait</span>
-                <span id={ids.cooldownMaxLabel} className="text-slate-400 font-mono font-medium">{formatSecondsHuman(cooldown.maxSec)}</span>
-              </div>
-              <div className="flex items-center rounded-lg border border-slate-700 bg-slate-950 overflow-hidden focus-within:border-amber-500 focus-within:ring-1 focus-within:ring-amber-500/40 transition">
-                <input
-                  type="number"
-                  id={ids.cooldownMax}
-                  min="10"
-                  max="1200"
-                  step="5"
-                  value={cooldown.maxSec}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value, 10);
-                    if (!Number.isNaN(value)) persistCooldown({ ...cooldown, maxSec: Math.max(cooldown.minSec, value) });
-                  }}
-                  className="cooldown-number-input flex-1 min-w-0 px-3 py-1.5 text-xs font-mono font-bold"
-                />
-                <span className="px-2.5 py-1.5 text-[11px] font-mono font-semibold text-slate-400 bg-slate-900 border-l border-slate-700/80 select-none flex-shrink-0">seconds</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 });

@@ -134,9 +134,10 @@ async function testAsync(name, fn) {
   const card = render(h(PopupDeepseekCard));
   test('PopupDeepseekCard contains the panel ids AiConfigPanel wires', () => {
     for (const id of ['deepseek-toggle', 'popup-provider-btn-official', 'popup-provider-btn-custom',
-      'popup-custom-base-url', 'deepseek-model-select', 'deepseek-api-key', 'deepseek-prompt', 'popup-cooldown-toggle']) {
+      'popup-custom-base-url', 'deepseek-model-select', 'deepseek-api-key', 'deepseek-prompt']) {
       assert(card.includes(`id="${id}"`), `missing #${id}`);
     }
+    assert(!card.includes('popup-cooldown-toggle') && !card.includes('Rate Limit Cooldown'), 'the cooldown is not part of the DeepSeek panel');
   });
 
   // --- SettingsDeepSeekTab ---
@@ -144,9 +145,11 @@ async function testAsync(name, fn) {
   test('SettingsDeepSeekTab contains the controller ids', () => {
     for (const id of ['deepseek-master-toggle', 'provider-radio-official', 'provider-radio-bridge',
       'model-radio-flash', 'model-radio-chat', 'model-radio-reasoner', 'settings-api-key',
-      'settings-custom-prompt', 'queue-cooldown-toggle', 'queue-cooldown-min', 'queue-cooldown-max',
-      'queue-max-retries', 'bridge-url-input']) {
+      'settings-custom-prompt', 'bridge-url-input']) {
       assert(settingsTab.includes(`id="${id}"`), `missing #${id}`);
+    }
+    for (const id of ['queue-cooldown-toggle', 'queue-cooldown-min', 'queue-cooldown-max', 'queue-max-retries']) {
+      assert(!settingsTab.includes(`id="${id}"`), `#${id} moved out of the DeepSeek tab`);
     }
   });
 
@@ -291,6 +294,16 @@ async function testAsync(name, fn) {
     }
     assert(shell.includes('settings-nav-btn active'), 'expected the first tab to be active');
     assert(shell.includes('About QuickConverter'), 'expected the About content');
+  });
+
+  test('Settings has a Downloads tab holding the rate limit cooldown and retry settings', () => {
+    assert(/data-tab="downloads"/.test(shell) && shell.includes('Downloads'), 'a Downloads tab');
+    const section = shell.match(/<section id="tab-content-downloads"[^>]*>([\s\S]*?)<\/section>/);
+    assert(section, 'its content section');
+    for (const id of ['queue-cooldown-toggle', 'queue-cooldown-min', 'queue-cooldown-max', 'queue-max-retries']) {
+      assert(section[1].includes(`id="${id}"`), `#${id} is in the Downloads tab`);
+    }
+    assert(section[1].includes('Rate Limit Cooldown') && !/when DeepSeek Translation is enabled/i.test(section[1]), 'described for every download');
   });
 
   // --- SettingsNotesTab ---
@@ -1199,19 +1212,6 @@ async function testAsync(name, fn) {
     assert(html.includes('Translation timed out: no data received for 60 seconds.'), 'pause error message is shown');
   });
 
-  test('QueueDock says when a chapter is waiting for you and offers to show its page', () => {
-    const state = {
-      activeTask: { id: 'n1_ch3', novelId: 'n1', novelTitle: '门户', chapterNumber: 3, chapterTitle: 'Chapter 3', status: 'processing', progress: { phase: 'needs-user', text: 'Log in to 独阅读' } },
-      queue: [],
-      isPaused: false,
-      isProcessing: true,
-      totalCount: 1,
-      cooldown: null,
-      pauseError: null
-    };
-    const service = { getState: () => state, subscribe: (cb) => { cb(state); return () => {}; } };
-    const html = render(h(QueueDock, { queueService: service, isPopup: false }));
-    assert(html.includes('Waiting for you') && html.includes('Log in to 独阅读'), 'says what the page needs');
   test('QueueDock lists the chapters the site could not give, even when the queue is done, and can dismiss them', () => {
     const skipped = [
       { novelId: 'n1', chapterNumber: 60, chapterTitle: 'Chương 60', reason: 'VIP chapter the site cannot load: Đây là chương vip của qidian.' },
@@ -1229,6 +1229,19 @@ async function testAsync(name, fn) {
     assert.strictEqual(render(h(QueueDock, { queueService: { getState: () => empty, subscribe: (cb) => { cb(empty); return () => {}; } }, isPopup: false })), '', 'nothing to show: no dock');
   });
 
+  test('QueueDock says when a chapter is waiting for you and offers to show its page', () => {
+    const state = {
+      activeTask: { id: 'n1_ch3', novelId: 'n1', novelTitle: '门户', chapterNumber: 3, chapterTitle: 'Chapter 3', status: 'processing', progress: { phase: 'needs-user', text: 'Log in to 独阅读' } },
+      queue: [],
+      isPaused: false,
+      isProcessing: true,
+      totalCount: 1,
+      cooldown: null,
+      pauseError: null
+    };
+    const service = { getState: () => state, subscribe: (cb) => { cb(state); return () => {}; } };
+    const html = render(h(QueueDock, { queueService: service, isPopup: false }));
+    assert(html.includes('Waiting for you') && html.includes('Log in to 独阅读'), 'says what the page needs');
     assert(/<button[^>]*id="queue-show-page-btn"/.test(html), 'a Show page button');
     assert(/min-h-10/.test((html.match(/<button[^>]*id="queue-show-page-btn"[^>]*>/) || [''])[0]), 'tappable');
   });
@@ -1242,15 +1255,30 @@ async function testAsync(name, fn) {
       'deepseek-api-key', 'remember-deepseek-key', 'clear-deepseek-btn', 'deepseek-prompt',
       'toggle-key-visibility', 'deepseek-config-fields', 'edit-prompt-btn', 'deepseek-model-select',
       'test-deepseek-btn', 'deepseek-test-status', 'deepseek-balance-badge', 'deepseek-balance-text',
-      'deepseek-refresh-balance-btn', 'deepseek-refresh-balance-icon', 'deepseek-pricing-badge',
-      'novel-cooldown-toggle', 'novel-cooldown-toggle-label', 'novel-cooldown-min', 'novel-cooldown-max',
-      'novel-cooldown-min-label', 'novel-cooldown-max-label', 'novel-cooldown-badge',
-      'novel-cooldown-inputs-container']) {
+      'deepseek-refresh-balance-btn', 'deepseek-refresh-balance-icon', 'deepseek-pricing-badge']) {
       assert(novelCard.includes(`id="${id}"`), `missing #${id}`);
     }
     assert(novelCard.includes('value="deepseek-reasoner"'), 'expected the reasoner model option');
     assert(novelCard.includes('DeepSeek Translation on Download'), 'expected the card heading');
-    assert(novelCard.includes('Rate Limit Cooldown'), 'expected the cooldown section');
+    assert(!novelCard.includes('Rate Limit Cooldown') && !novelCard.includes('novel-cooldown-toggle'), 'the cooldown is its own card, not part of the DeepSeek card');
+  });
+
+  const CooldownPanel = (await loadComponent('components/react/shared/CooldownPanel.jsx')).default;
+  test('CooldownPanel is its own Rate Limit Cooldown card for every download, never greyed out by translation', () => {
+    const ids = {
+      toggle: 'novel-cooldown-toggle', toggleLabel: 'novel-cooldown-toggle-label', min: 'novel-cooldown-min', max: 'novel-cooldown-max',
+      minLabel: 'novel-cooldown-min-label', maxLabel: 'novel-cooldown-max-label', badge: 'novel-cooldown-badge', inputs: 'novel-cooldown-inputs-container'
+    };
+    const full = render(h(CooldownPanel, { variant: 'full', ids }));
+    for (const id of Object.values(ids)) assert(full.includes(`id="${id}"`), `missing #${id}`);
+    assert(full.includes('Rate Limit Cooldown'), 'heading');
+    assert(/between chapters/i.test(full) && /download/i.test(full), 'says it paces every chapter download');
+    assert(!/DeepSeek/.test(full), 'not tied to DeepSeek');
+    const root = full.match(/^<div[^>]*>/)[0];
+    assert(!/pointer-events-none/.test(root), 'never disabled as a whole');
+    const compact = render(h(CooldownPanel, { variant: 'compact', ids: { toggle: 'popup-cooldown-toggle', toggleLabel: 'popup-cooldown-toggle-label', badge: 'popup-cooldown-badge' } }));
+    assert(compact.includes('id="popup-cooldown-toggle"') && compact.includes('Rate Limit Cooldown'), 'a compact row for the popup');
+    assert(!compact.includes('novel-cooldown-min'), 'the compact row has only the toggle');
   });
 
   // --- buildDownloadOptions (shared panel) ---

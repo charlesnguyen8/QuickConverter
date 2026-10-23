@@ -303,9 +303,9 @@ async function runTests() {
     mockDelayMs = 20;
     mockFailChapter = 61; // Ch 61 will fail
 
-    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 60, options: { translation: { enabled: false } } });
-    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 61, options: { translation: { enabled: false } } }); // fails
-    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 62, options: { translation: { enabled: false } } });
+    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 60, options: { cooldown: false, translation: { enabled: false } } });
+    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 61, options: { cooldown: false, translation: { enabled: false } } }); // fails
+    await DownloadQueueService.enqueue({ novelId: 'novel-g', chapterNumber: 62, options: { cooldown: false, translation: { enabled: false } } });
 
     // Wait until Ch 61 fails and enters retry cooldown
     await new Promise((resolve) => {
@@ -679,8 +679,8 @@ async function runTests() {
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300 });
   });
 
-  // 15. Optional DeepSeek translation cooldown test: verifies raw downloads bypass cooldown and translation honors cooldown
-  await test('DeepSeek translation cooldown selectivity: raw downloads bypass cooldown, translation honors cooldown', async () => {
+  // 15. The rate limit cooldown paces every download (owner decision): raw downloads and translations both wait when it is on
+  await test('Rate limit cooldown applies to every download: raw downloads and translations wait between chapters; off means no wait', async () => {
     downloadedTasks = [];
     DownloadQueueService.clearAll();
     mockDelayMs = 20;
@@ -702,7 +702,19 @@ async function runTests() {
       }
     ]);
 
-    // Wait until both raw chapters finish
+    // Raw chapter 1 finishes, then the queue waits before chapter 2
+    await new Promise((resolve) => {
+      const checkUnsub = DownloadQueueService.subscribe((s) => {
+        if (s.cooldown && s.cooldown.active) {
+          checkUnsub();
+          resolve();
+        }
+      });
+    });
+    assert.strictEqual(downloadedTasks.length, 1, 'Raw chapter 1 finished');
+    assert(DownloadQueueService.cooldown && DownloadQueueService.cooldown.active, 'A raw download waits between chapters when the cooldown is on');
+    assert.strictEqual(DownloadQueueService.cooldown.nextChapterNumber, 2);
+    DownloadQueueService.skipCooldown();
     await new Promise((resolve) => {
       const waitDone = DownloadQueueService.subscribe((s) => {
         if (s.totalCount === 0 && !s.isProcessing && !s.cooldown) {
@@ -711,9 +723,26 @@ async function runTests() {
         }
       });
     });
+    assert.strictEqual(downloadedTasks.length, 2, 'Both raw chapters complete');
 
-    assert.strictEqual(downloadedTasks.length, 2, 'Both raw chapters should complete');
-    assert.strictEqual(DownloadQueueService.cooldown, null, 'Raw chapter downloads must NEVER trigger cooldown');
+    // A2. With the cooldown turned off (the panel sends cooldown: false), raw downloads go straight on
+    downloadedTasks = [];
+    await DownloadQueueService.enqueueBatch([
+      { novelId: 'raw-novel', chapterNumber: 3, options: { cooldown: false, translation: { enabled: false, cooldown: false } } },
+      { novelId: 'raw-novel', chapterNumber: 4, options: { cooldown: false, translation: { enabled: false, cooldown: false } } }
+    ]);
+    let waited = false;
+    await new Promise((resolve) => {
+      const waitDone = DownloadQueueService.subscribe((s) => {
+        if (s.cooldown && s.cooldown.active) waited = true;
+        if (s.totalCount === 0 && !s.isProcessing && !s.cooldown) {
+          waitDone();
+          resolve();
+        }
+      });
+    });
+    assert.strictEqual(downloadedTasks.length, 2, 'Both chapters complete');
+    assert.strictEqual(waited, false, 'No wait when the cooldown is off');
 
     // B. Enqueue 2 translated chapters with cooldown enabled
     downloadedTasks = [];
@@ -995,35 +1024,6 @@ async function runTests() {
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
   });
 
-  // 21b. Page sites where pages cannot be opened pause instead of backing off
-  await test('a page site without a page source pauses the queue with the reason and no retry backoff', async () => {
-    downloadedTasks = [];
-    DownloadQueueService.clearAll();
-    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
-
-    const originalDownload = mockStorageService.downloadChapter;
-    mockStorageService.downloadChapter = async () => {
-      throw new Error('独阅读: chapters are saved by opening its page.');
-    };
-
-    await DownloadQueueService.enqueue({ novelId: 'novel-manual', chapterNumber: 7 });
-
-    await new Promise((resolve) => {
-      let unsub;
-      unsub = DownloadQueueService.subscribe((s) => {
-        if (s.isPaused) {
-          if (unsub) unsub(); else setTimeout(() => unsub && unsub(), 0);
-          resolve();
-        }
-      });
-    });
-
-    const state = DownloadQueueService.getState();
-    assert.strictEqual(state.isPaused, true, 'queue pauses');
-    assert.strictEqual(state.cooldown, null, 'no retry backoff is started');
-    assert.strictEqual(state.queue[0].status, 'paused_error', 'chapter is parked as paused_error at the head');
-    assert(!state.queue[0].retryCount, 'retry budget is not consumed');
-    assert(state.pauseError && state.pauseError.includes('saved by opening its page'), 'pauseError explains why');
   // 21c. A chapter the site cannot give (VIP, missing) is skipped and the queue goes on
   await test('a chapter the site cannot give is skipped, listed with its reason, and the queue goes on', async () => {
     downloadedTasks = [];
@@ -1101,6 +1101,35 @@ async function runTests() {
     DownloadQueueService.setCooldownConfig({ enabled: false, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
   });
 
+  // 21b. Page sites where pages cannot be opened pause instead of backing off
+  await test('a page site without a page source pauses the queue with the reason and no retry backoff', async () => {
+    downloadedTasks = [];
+    DownloadQueueService.clearAll();
+    DownloadQueueService.setCooldownConfig({ enabled: true, minSec: 180, maxSec: 300, errorCooldownSec: 4500, maxRetries: 3 });
+
+    const originalDownload = mockStorageService.downloadChapter;
+    mockStorageService.downloadChapter = async () => {
+      throw new Error('独阅读: chapters are saved by opening its page.');
+    };
+
+    await DownloadQueueService.enqueue({ novelId: 'novel-manual', chapterNumber: 7 });
+
+    await new Promise((resolve) => {
+      let unsub;
+      unsub = DownloadQueueService.subscribe((s) => {
+        if (s.isPaused) {
+          if (unsub) unsub(); else setTimeout(() => unsub && unsub(), 0);
+          resolve();
+        }
+      });
+    });
+
+    const state = DownloadQueueService.getState();
+    assert.strictEqual(state.isPaused, true, 'queue pauses');
+    assert.strictEqual(state.cooldown, null, 'no retry backoff is started');
+    assert.strictEqual(state.queue[0].status, 'paused_error', 'chapter is parked as paused_error at the head');
+    assert(!state.queue[0].retryCount, 'retry budget is not consumed');
+    assert(state.pauseError && state.pauseError.includes('saved by opening its page'), 'pauseError explains why');
 
     mockStorageService.downloadChapter = originalDownload;
     DownloadQueueService.clearAll();

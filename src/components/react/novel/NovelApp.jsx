@@ -1,10 +1,22 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import NovelHero from './NovelHero.jsx';
 import NovelDeepseekCard from './NovelDeepseekCard.jsx';
+import CooldownPanel from '../shared/CooldownPanel.jsx';
 import NovelChapters from './NovelChapters.jsx';
 import NameListDrawer from './NameListDrawer.jsx';
 import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
 import { ConversionModeToggle } from './ConversionModeToggle.jsx';
+
+const COOLDOWN_IDS = {
+  toggle: 'novel-cooldown-toggle',
+  toggleLabel: 'novel-cooldown-toggle-label',
+  min: 'novel-cooldown-min',
+  max: 'novel-cooldown-max',
+  minLabel: 'novel-cooldown-min-label',
+  maxLabel: 'novel-cooldown-max-label',
+  badge: 'novel-cooldown-badge',
+  inputs: 'novel-cooldown-inputs-container'
+};
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -356,6 +368,8 @@ export default function NovelApp() {
               </button>
             </div>
           </div>
+
+          <CooldownPanel ids={COOLDOWN_IDS} />
 
           <NovelDeepseekCard ref={panelRef} />
 
