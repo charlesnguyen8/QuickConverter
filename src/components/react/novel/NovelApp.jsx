@@ -6,6 +6,7 @@ import NovelChapters from './NovelChapters.jsx';
 import NameListDrawer from './NameListDrawer.jsx';
 import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
 import { ConversionModeToggle } from './ConversionModeToggle.jsx';
+import { useQueueChooser } from '../shared/ChooseQueueDialog.jsx';
 
 const COOLDOWN_IDS = {
   toggle: 'novel-cooldown-toggle',
@@ -41,6 +42,7 @@ function Spinner({ className }) {
 }
 
 export default function NovelApp() {
+  const { dialog: queueDialog, chooseLane } = useQueueChooser();
   const [novelId] = useState(getNovelId);
   const [novel, setNovel] = useState(null);
   const [syncing, setSyncing] = useState(false);
@@ -96,13 +98,15 @@ export default function NovelApp() {
 
     const queueService = getQueueService();
     if (queueService && typeof queueService.enqueue === 'function') {
+      const lane = await chooseLane(queueService, novel);
+      if (!lane) return;
       await queueService.enqueue({
         novelId: novel.id,
         novelTitle: novel.title,
         chapterNumber: chNum,
         chapterTitle: chapterTitle || `Chapter ${chNum}`,
         options
-      });
+      }, { lane });
       refreshChapterList();
     } else {
       try {
@@ -115,7 +119,7 @@ export default function NovelApp() {
         console.error('Error downloading chapter:', err);
       }
     }
-  }, [novel, refreshChapterList]);
+  }, [novel, refreshChapterList, chooseLane]);
 
   useEffect(() => {
     const onDownload = (e) => {
@@ -207,13 +211,16 @@ export default function NovelApp() {
       };
     });
 
+    const lane = queueService ? await chooseLane(queueService, novel) : 'auto';
+    if (!lane) return;
+
     setQueuing(true);
     try {
       if (queueService && typeof queueService.enqueueBatch === 'function') {
-        await queueService.enqueueBatch(tasksToEnqueue);
+        await queueService.enqueueBatch(tasksToEnqueue, { lane });
       } else if (queueService && typeof queueService.enqueue === 'function') {
         for (const task of tasksToEnqueue) {
-          await queueService.enqueue(task);
+          await queueService.enqueue(task, { lane });
         }
       }
       refreshChapterList();
@@ -223,7 +230,7 @@ export default function NovelApp() {
     } finally {
       setQueuing(false);
     }
-  }, [novel, refreshChapterList]);
+  }, [novel, refreshChapterList, chooseLane]);
 
   const handleConversionMode = useCallback(async (next) => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -378,6 +385,7 @@ export default function NovelApp() {
       </main>
 
       <NameListDrawer />
+      {queueDialog}
     </>
   );
 }

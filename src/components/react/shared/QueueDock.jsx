@@ -63,109 +63,28 @@ function CancelIcon({ size = 13 }) {
   );
 }
 
-export default function QueueDock({ queueService, isPopup }) {
-  const popup = typeof isPopup === 'boolean' ? isPopup : detectPopup();
-  const service = queueService || (typeof window !== 'undefined' ? window.DownloadQueueService : null);
-
-  const [expanded, setExpanded] = useState(!popup);
-  const [state, setState] = useState(() => {
-    if (service && typeof service.getState === 'function') return service.getState();
-    return null;
-  });
-
-  useEffect(() => {
-    if (!service || typeof service.subscribe !== 'function') return undefined;
-    const unsubscribe = service.subscribe((next) => setState(next));
-    return () => {
-      if (typeof unsubscribe === 'function') unsubscribe();
-    };
-  }, [service]);
-
-  const active = state?.activeTask;
-  const cooldown = state?.cooldown;
-  const isCooldown = !!(cooldown && cooldown.active);
-  const queue = state?.queue || [];
-  const total = (active ? 1 : 0) + queue.length;
-  const isPaused = !!state?.isPaused;
-
-  const skipped = Array.isArray(state?.skipped) ? state.skipped : [];
-
-  if (total === 0 && !isCooldown && skipped.length === 0) return null;
-
-  const call = (method) => {
-    if (service && typeof service[method] === 'function') service[method]();
+function laneView(lane) {
+  const cooldown = lane.cooldown;
+  return {
+    active: lane.activeTask,
+    cooldown,
+    isCooldown: !!(cooldown && cooldown.active),
+    queue: lane.queue || [],
+    isPaused: !!lane.isPaused,
+    skipped: Array.isArray(lane.skipped) ? lane.skipped : []
   };
+}
 
-  const wrapperClass = `fixed ${popup ? 'bottom-2 right-2' : 'bottom-5 right-5'} z-50 flex flex-col items-end transition-all duration-200`;
+function laneNovelTitle(lane) {
+  const task = lane.activeTask || (lane.queue && lane.queue[0]) || (lane.skipped && lane.skipped[0]) || null;
+  return (task && task.novelTitle) || 'Novel';
+}
 
-  if (!expanded) {
-    const percent = active?.progress?.percent !== undefined ? active.progress.percent : (active ? 10 : 0);
-    const isRetry = isCooldown && cooldown.type === 'retry';
-    let activeText = `${total} Queued`;
-    if (isPaused) {
-      activeText = '⏸ Paused';
-    } else if (isCooldown) {
-      activeText = isRetry
-        ? `⚠️ Retry Ch. ${cooldown.nextChapterNumber || ''} in ${formatCooldownTime(cooldown.secondsRemaining)}`
-        : `⏳ Wait ${formatCooldownTime(cooldown.secondsRemaining)}`;
-    } else if (active) {
-      activeText = `Ch. ${active.chapterNumber} (${percent}%)`;
-    }
-
-    const borderClass = isRetry
-      ? 'border-rose-500 hover:border-rose-400'
-      : (isCooldown ? 'border-amber-500 hover:border-amber-400' : 'border-indigo-500 hover:border-indigo-400');
-    const pillTextClass = isRetry ? 'text-rose-300' : (isCooldown ? 'text-amber-300' : 'text-slate-100');
-
-    let indicator;
-    if (active && !isPaused) {
-      indicator = <ProgressRing percent={percent} size={20} strokeWidth={2.5} showText={false} />;
-    } else if (isRetry) {
-      indicator = (
-        <span className="flex h-2.5 w-2.5 relative flex-shrink-0">
-          <span className="animate-ping bg-rose-400 absolute inline-flex h-full w-full rounded-full opacity-75" />
-          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
-        </span>
-      );
-    } else if (isCooldown) {
-      indicator = (
-        <span className="flex h-2.5 w-2.5 relative flex-shrink-0">
-          <span className="animate-ping bg-amber-400 absolute inline-flex h-full w-full rounded-full opacity-75" />
-          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
-        </span>
-      );
-    } else {
-      indicator = (
-        <span className="flex h-2 w-2 relative flex-shrink-0">
-          <span className={`${isPaused ? 'bg-amber-400' : 'animate-ping bg-indigo-400'} absolute inline-flex h-full w-full rounded-full opacity-75`} />
-          <span className={`relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-indigo-500'}`} />
-        </span>
-      );
-    }
-
-    return (
-      <div className={wrapperClass}>
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className={`flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900 border ${borderClass} shadow-2xl text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer select-none`}
-          title="Click to expand Download Queue details"
-        >
-          <div className="flex items-center justify-center flex-shrink-0">{indicator}</div>
-          <span className={`truncate max-w-[150px] sm:max-w-[200px] ${pillTextClass}`}>{activeText}</span>
-          <span className="px-1.5 py-0.5 rounded-md bg-indigo-950 text-indigo-300 border border-indigo-500/40 text-[10px] font-mono font-bold flex-shrink-0">
-            {total}
-          </span>
-          <span className="text-[11px] font-medium text-indigo-300 flex items-center gap-0.5 pl-1 border-l border-slate-700 hover:text-white">
-            <span>Expand</span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="18 15 12 9 6 15" />
-            </svg>
-          </span>
-        </button>
-      </div>
-    );
-  }
+function LaneBody({ lane, laneId, service, popup }) {
+  const { active, cooldown, isCooldown, queue, isPaused, skipped } = laneView(lane);
+  const call = (method, id) => {
+    if (service && typeof service[method] === 'function') service[method](id);
+  };
 
   let activeSection = null;
   if (active) {
@@ -251,7 +170,7 @@ export default function QueueDock({ queueService, isPopup }) {
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <button
                 type="button"
-                onClick={() => { if (service && typeof service.retryNow === 'function') service.retryNow(); else call('skipCooldown'); }}
+                onClick={() => { if (service && typeof service.retryNow === 'function') service.retryNow(laneId); else call('skipCooldown', laneId); }}
                 className="px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 active:scale-95 shadow transition cursor-pointer flex items-center gap-1"
                 title="Retry failed chapter immediately without waiting"
               >
@@ -259,7 +178,7 @@ export default function QueueDock({ queueService, isPopup }) {
               </button>
               <button
                 type="button"
-                onClick={() => { if (service && typeof service.skipFailedChapter === 'function') service.skipFailedChapter(); }}
+                onClick={() => { if (service && typeof service.skipFailedChapter === 'function') service.skipFailedChapter(laneId); }}
                 className="px-2 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 shadow transition cursor-pointer flex items-center gap-1"
                 title="Discard this chapter and skip to remaining chapters"
               >
@@ -288,7 +207,7 @@ export default function QueueDock({ queueService, isPopup }) {
             </div>
             <button
               type="button"
-              onClick={() => call('skipCooldown')}
+              onClick={() => call('skipCooldown', laneId)}
               className="px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:scale-95 shadow transition cursor-pointer flex items-center gap-1 flex-shrink-0"
               title="Skip wait and start downloading next chapter immediately"
             >
@@ -302,7 +221,7 @@ export default function QueueDock({ queueService, isPopup }) {
       );
     }
   } else if (isPaused) {
-    const pausedMsg = state?.pauseError;
+    const pausedMsg = lane.pauseError;
     activeSection = (
       <div className="p-2.5 sm:p-3 rounded-xl bg-slate-800 border border-amber-500 text-xs text-amber-300 flex items-start gap-2 shadow-md">
         <span className="text-sm flex-shrink-0">⏸</span>
@@ -326,7 +245,7 @@ export default function QueueDock({ queueService, isPopup }) {
         <button
           type="button"
           id="queue-dismiss-skipped"
-          onClick={() => call('clearSkipped')}
+          onClick={() => call('clearSkipped', laneId)}
           className="min-h-10 px-3 rounded-lg text-[11px] font-semibold text-slate-300 bg-slate-900 border border-slate-600 hover:bg-slate-700 transition cursor-pointer"
           title="Forget the skipped chapters"
         >
@@ -345,6 +264,145 @@ export default function QueueDock({ queueService, isPopup }) {
   ) : null;
 
   const listMaxH = popup ? 'max-h-28' : 'max-h-48';
+
+  return (
+    <>
+      {activeSection}
+      {skippedSection}
+    {queue.length > 0 ? (
+      <div className={`flex flex-col gap-1.5 ${listMaxH} overflow-y-auto pr-1 select-none`}>
+        {queue.map((task, idx) => (
+          <div key={task.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-800 border border-slate-700 text-xs hover:border-slate-600 transition group shadow-sm">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-700 flex-shrink-0">
+                #{idx + 1}
+              </span>
+              <span className="text-slate-200 truncate font-medium">{task.chapterTitle || `Chapter ${task.chapterNumber}`}</span>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); if (service && task.id) service.remove(task.id); }}
+              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-700 transition cursor-pointer flex-shrink-0"
+              title={`Remove Chapter ${task.chapterNumber} from queue`}
+            >
+              <CancelIcon />
+            </button>
+          </div>
+        ))}
+      </div>
+    ) : null}
+    </>
+  );
+}
+
+export default function QueueDock({ queueService, isPopup }) {
+  const popup = typeof isPopup === 'boolean' ? isPopup : detectPopup();
+  const service = queueService || (typeof window !== 'undefined' ? window.DownloadQueueService : null);
+
+  const [expanded, setExpanded] = useState(!popup);
+  const [state, setState] = useState(() => {
+    if (service && typeof service.getState === 'function') return service.getState();
+    return null;
+  });
+
+  useEffect(() => {
+    if (!service || typeof service.subscribe !== 'function') return undefined;
+    const unsubscribe = service.subscribe((next) => setState(next));
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, [service]);
+
+  const lanes = state && Array.isArray(state.lanes) && state.lanes.length > 0 ? state.lanes : [state || {}];
+  const multi = lanes.length > 1;
+  const active = state?.activeTask;
+  const cooldown = state?.cooldown;
+  const isCooldown = !!(cooldown && cooldown.active);
+  const total = lanes.reduce((sum, lane) => sum + (lane.activeTask ? 1 : 0) + (lane.queue ? lane.queue.length : 0), 0);
+  const isPaused = !!state?.isPaused;
+  const skippedCount = lanes.reduce((sum, lane) => sum + (Array.isArray(lane.skipped) ? lane.skipped.length : 0), 0);
+  const anyCooldown = lanes.some((lane) => lane.cooldown && lane.cooldown.active);
+
+  if (total === 0 && !isCooldown && !anyCooldown && skippedCount === 0) return null;
+
+  const call = (method, laneId) => {
+    if (service && typeof service[method] === 'function') service[method](laneId);
+  };
+
+  const wrapperClass = `fixed ${popup ? 'bottom-2 right-2' : 'bottom-5 right-5'} z-50 flex flex-col items-end transition-all duration-200`;
+
+  if (!expanded) {
+    const percent = active?.progress?.percent !== undefined ? active.progress.percent : (active ? 10 : 0);
+    const isRetry = isCooldown && cooldown.type === 'retry';
+    let activeText = `${total} Queued`;
+    if (multi) {
+      activeText = `${lanes.length} queues · ${total} ${total === 1 ? 'chapter' : 'chapters'}`;
+    } else if (isPaused) {
+      activeText = '⏸ Paused';
+    } else if (isCooldown) {
+      activeText = isRetry
+        ? `⚠️ Retry Ch. ${cooldown.nextChapterNumber || ''} in ${formatCooldownTime(cooldown.secondsRemaining)}`
+        : `⏳ Wait ${formatCooldownTime(cooldown.secondsRemaining)}`;
+    } else if (active) {
+      activeText = `Ch. ${active.chapterNumber} (${percent}%)`;
+    }
+
+    const borderClass = isRetry
+      ? 'border-rose-500 hover:border-rose-400'
+      : (isCooldown ? 'border-amber-500 hover:border-amber-400' : 'border-indigo-500 hover:border-indigo-400');
+    const pillTextClass = isRetry ? 'text-rose-300' : (isCooldown ? 'text-amber-300' : 'text-slate-100');
+
+    let indicator;
+    if (active && !isPaused) {
+      indicator = <ProgressRing percent={percent} size={20} strokeWidth={2.5} showText={false} />;
+    } else if (isRetry) {
+      indicator = (
+        <span className="flex h-2.5 w-2.5 relative flex-shrink-0">
+          <span className="animate-ping bg-rose-400 absolute inline-flex h-full w-full rounded-full opacity-75" />
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
+        </span>
+      );
+    } else if (isCooldown) {
+      indicator = (
+        <span className="flex h-2.5 w-2.5 relative flex-shrink-0">
+          <span className="animate-ping bg-amber-400 absolute inline-flex h-full w-full rounded-full opacity-75" />
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+        </span>
+      );
+    } else {
+      indicator = (
+        <span className="flex h-2 w-2 relative flex-shrink-0">
+          <span className={`${isPaused ? 'bg-amber-400' : 'animate-ping bg-indigo-400'} absolute inline-flex h-full w-full rounded-full opacity-75`} />
+          <span className={`relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-indigo-500'}`} />
+        </span>
+      );
+    }
+
+    return (
+      <div className={wrapperClass}>
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className={`flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900 border ${borderClass} shadow-2xl text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer select-none`}
+          title="Click to expand Download Queue details"
+        >
+          <div className="flex items-center justify-center flex-shrink-0">{indicator}</div>
+          <span className={`truncate max-w-[150px] sm:max-w-[200px] ${pillTextClass}`}>{activeText}</span>
+          <span className="px-1.5 py-0.5 rounded-md bg-indigo-950 text-indigo-300 border border-indigo-500/40 text-[10px] font-mono font-bold flex-shrink-0">
+            {total}
+          </span>
+          <span className="text-[11px] font-medium text-indigo-300 flex items-center gap-0.5 pl-1 border-l border-slate-700 hover:text-white">
+            <span>Expand</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
+          </span>
+        </button>
+      </div>
+    );
+  }
+
+
   const cardWidth = popup ? 'w-[calc(100vw-1rem)] max-w-[344px]' : 'w-80 sm:w-96';
 
   return (
@@ -353,7 +411,7 @@ export default function QueueDock({ queueService, isPopup }) {
         <div className="flex items-center justify-between pb-2.5 border-b border-slate-800 gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-base flex-shrink-0">📥</span>
-            <span className="text-xs font-bold text-slate-100 truncate">Download Queue</span>
+            <span className="text-xs font-bold text-slate-100 truncate">{multi ? `${lanes.length} queues` : 'Download Queue'}</span>
             <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/40 flex-shrink-0">
               {total}
             </span>
@@ -365,7 +423,7 @@ export default function QueueDock({ queueService, isPopup }) {
               className={`px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 ${isPaused ? 'bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-500/60' : 'bg-amber-950 text-amber-300 hover:bg-amber-900 border border-amber-500/60'}`}
               title={isPaused ? 'Resume queued downloads' : 'Pause queue (finishes current chapter)'}
             >
-              <span>{isPaused ? '▶ Resume' : '⏸ Pause'}</span>
+              <span>{isPaused ? '▶ Resume' : '⏸ Pause'}{multi ? ' all' : ''}</span>
             </button>
             <button
               type="button"
@@ -389,31 +447,37 @@ export default function QueueDock({ queueService, isPopup }) {
           </div>
         </div>
 
-        {activeSection}
-        {skippedSection}
-
-        {queue.length > 0 ? (
-          <div className={`flex flex-col gap-1.5 ${listMaxH} overflow-y-auto pr-1 select-none`}>
-            {queue.map((task, idx) => (
-              <div key={task.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-800 border border-slate-700 text-xs hover:border-slate-600 transition group shadow-sm">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-700 flex-shrink-0">
-                    #{idx + 1}
-                  </span>
-                  <span className="text-slate-200 truncate font-medium">{task.chapterTitle || `Chapter ${task.chapterNumber}`}</span>
+        {multi ? lanes.map((lane) => {
+          const lanePaused = !!lane.isPaused;
+          return (
+            <div key={lane.id} id={`queue-lane-${lane.id}`} className="flex flex-col gap-2 pt-2 border-t border-slate-800 first:border-t-0 first:pt-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-slate-200 truncate min-w-0">{laneNovelTitle(lane)}</span>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    type="button"
+                    id={`queue-lane-pause-${lane.id}`}
+                    onClick={() => call(lanePaused ? 'resume' : 'pause', lane.id)}
+                    className={`min-h-10 px-2.5 rounded-lg text-[11px] font-semibold transition cursor-pointer ${lanePaused ? 'bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-500/60' : 'bg-amber-950 text-amber-300 hover:bg-amber-900 border border-amber-500/60'}`}
+                    title={lanePaused ? 'Resume this queue' : 'Pause this queue (finishes current chapter)'}
+                  >
+                    {lanePaused ? '▶ Resume' : '⏸ Pause'}
+                  </button>
+                  <button
+                    type="button"
+                    id={`queue-lane-clear-${lane.id}`}
+                    onClick={() => call('clearAll', lane.id)}
+                    className="min-h-10 px-2.5 rounded-lg text-[11px] font-medium text-slate-400 hover:text-rose-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition cursor-pointer"
+                    title="Clear this queue and abort its active chapter"
+                  >
+                    Clear
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); if (service && task.id) service.remove(task.id); }}
-                  className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-700 transition cursor-pointer flex-shrink-0"
-                  title={`Remove Chapter ${task.chapterNumber} from queue`}
-                >
-                  <CancelIcon />
-                </button>
               </div>
-            ))}
-          </div>
-        ) : null}
+              <LaneBody lane={lane} laneId={lane.id} service={service} popup={popup} />
+            </div>
+          );
+        }) : <LaneBody lane={lanes[0]} laneId={undefined} service={service} popup={popup} />}
       </div>
     </div>
   );

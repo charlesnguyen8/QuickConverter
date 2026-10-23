@@ -4,6 +4,7 @@ import { ChapterAccessBadge } from '../shared/ChapterAccessBadge.jsx';
 import { LastReadBadge } from '../shared/lastRead.jsx';
 import ReaderDeepseekCard from './ReaderDeepseekCard.jsx';
 import { navigateToChapter, useReaderSearch } from './readerLocation.js';
+import { useQueueChooser } from '../shared/ChooseQueueDialog.jsx';
 
 function getParams(search) {
   const params = new URLSearchParams(search || '');
@@ -129,6 +130,7 @@ export function ReaderChapterRow({ novel, chapter, chNum, downloadedChapter, que
 }
 
 export default function ReaderChapterList({ open = false, onClose }) {
+  const { dialog: queueDialog, chooseLane } = useQueueChooser();
   const search = useReaderSearch();
   const { id, ch } = useMemo(() => getParams(search), [search]);
   const [novel, setNovel] = useState(null);
@@ -213,12 +215,14 @@ export default function ReaderChapterList({ open = false, onClose }) {
     };
 
     if (queueService && typeof queueService.enqueue === 'function') {
-      await queueService.enqueue(payload);
+      const lane = await chooseLane(queueService, novel);
+      if (!lane) return;
+      await queueService.enqueue(payload, { lane });
     } else if (storage && typeof storage.downloadChapter === 'function') {
       await storage.downloadChapter(novel.id, chNum, options);
       load();
     }
-  }, [novel, load]);
+  }, [novel, load, chooseLane]);
 
   useEffect(() => {
     if (!open || !onClose) return undefined;
@@ -331,6 +335,7 @@ export default function ReaderChapterList({ open = false, onClose }) {
           ) : null}
         </div>
       </aside>
+      {queueDialog}
     </>
   );
 }

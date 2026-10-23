@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import PopupMainView from './PopupMainView.jsx';
 import PopupNovelView from './PopupNovelView.jsx';
+import { useQueueChooser } from '../shared/ChooseQueueDialog.jsx';
 
 const storage = () => (typeof window !== 'undefined' ? window.StorageService : null);
 const platform = () => (typeof window !== 'undefined' ? window.Platform : null);
@@ -143,6 +144,7 @@ async function buildStatus(url, pageTitle) {
 }
 
 export default function PopupApp() {
+  const { dialog: queueDialog, chooseLane } = useQueueChooser();
   const [novels, setNovels] = useState([]);
   const [status, setStatus] = useState(CHECKING);
   const [showDetail, setShowDetail] = useState(false);
@@ -223,13 +225,15 @@ export default function PopupApp() {
     if (!options) return;
     const q = window.DownloadQueueService;
     if (q && typeof q.enqueue === 'function') {
+      const lane = await chooseLane(q, novel);
+      if (!lane) return;
       await q.enqueue({
         novelId: novel.id,
         novelTitle: novel.title,
         chapterNumber: chNum,
         chapterTitle: chapterTitle || `Chapter ${chNum}`,
         options
-      });
+      }, { lane });
     } else if (storage()) {
       await storage().downloadChapter(novel.id, chNum, options);
       if (panelRef.current && options.translation.enabled && options.translation.provider === 'official') {
@@ -237,7 +241,7 @@ export default function PopupApp() {
       }
     }
     if (typeof onDone === 'function') await onDone();
-  }, [buildDownloadOptions]);
+  }, [buildDownloadOptions, chooseLane]);
 
   const downloadAll = useCallback(async (onDone) => {
     const S = storage();
@@ -281,15 +285,17 @@ export default function PopupApp() {
       };
     });
 
+    const lane = q ? await chooseLane(q, novel) : 'auto';
+    if (!lane) return;
     try {
-      if (q && typeof q.enqueueBatch === 'function') await q.enqueueBatch(tasks);
-      else if (q && typeof q.enqueue === 'function') { for (const t of tasks) await q.enqueue(t); }
+      if (q && typeof q.enqueueBatch === 'function') await q.enqueueBatch(tasks, { lane });
+      else if (q && typeof q.enqueue === 'function') { for (const t of tasks) await q.enqueue(t, { lane }); }
     } catch (err) {
       console.error('[PopupApp] Error queuing batch download:', err);
       alert('Error queuing chapters: ' + (err.message || err));
     }
     if (typeof onDone === 'function') await onDone();
-  }, [buildDownloadOptions]);
+  }, [buildDownloadOptions, chooseLane]);
 
   const handleDeleteNovel = useCallback(async (novel) => {
     const S = storage();
@@ -382,6 +388,7 @@ export default function PopupApp() {
         onOpenSettings={openSettings}
         deepseekRef={panelRef}
       />
+      {queueDialog}
     </>
   );
 }

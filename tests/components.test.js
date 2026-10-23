@@ -1246,6 +1246,111 @@ async function testAsync(name, fn) {
     assert(/min-h-10/.test((html.match(/<button[^>]*id="queue-show-page-btn"[^>]*>/) || [''])[0]), 'tappable');
   });
 
+  const laneOf = (id, novelId, novelTitle, n, extra) => ({
+    id,
+    activeTask: { id: `${novelId}_ch${n}`, novelId, novelTitle, chapterNumber: n, chapterTitle: `Chapter ${n}`, status: 'processing', progress: { percent: 40, text: 'Translating' } },
+    queue: [{ id: `${novelId}_ch${n + 1}`, novelId, novelTitle, chapterNumber: n + 1, chapterTitle: `Chapter ${n + 1}` }],
+    isPaused: false,
+    isProcessing: true,
+    cooldown: null,
+    pauseError: null,
+    skipped: [],
+    ...extra
+  });
+
+  test('QueueDock shows each queue with its novel and its own Pause and Clear', () => {
+    const lanes = [laneOf('main', 'n1', 'Novel One', 3), laneOf('lane-2', 'n2', 'Novel Two', 7, { isPaused: true, isProcessing: false, activeTask: null })];
+    const state = { activeTask: lanes[0].activeTask, queue: [...lanes[0].queue, ...lanes[1].queue], isPaused: false, isProcessing: true, totalCount: 3, cooldown: null, pauseError: null, skipped: [], lanes };
+    const service = { getState: () => state, subscribe: (cb) => { cb(state); return () => {}; } };
+    const html = render(h(QueueDock, { queueService: service, isPopup: false }));
+    assert(html.includes('2 queues'), 'header says how many queues');
+    assert(html.includes('id="queue-lane-main"') && html.includes('id="queue-lane-lane-2"'), 'one card per queue');
+    assert(html.includes('Novel One') && html.includes('Novel Two'), 'each queue names its novel');
+    const pauseMain = html.match(/<button[^>]*id="queue-lane-pause-main"[^>]*>[\s\S]*?<\/button>/);
+    const pauseTwo = html.match(/<button[^>]*id="queue-lane-pause-lane-2"[^>]*>[\s\S]*?<\/button>/);
+    assert(pauseMain && pauseMain[0].includes('Pause'), 'the running queue offers Pause');
+    assert(pauseTwo && pauseTwo[0].includes('Resume'), 'the paused queue offers Resume');
+    assert(/min-h-10/.test(pauseMain[0]), 'lane controls are tappable');
+    assert(/<button[^>]*id="queue-lane-clear-lane-2"/.test(html), 'each queue can be cleared');
+    const collapsed = render(h(QueueDock, { queueService: service, isPopup: true }));
+    assert(collapsed.includes('2 queues') && collapsed.includes('3 chapters'), 'collapsed pill: "2 queues · 3 chapters"');
+  });
+
+  test('QueueDock with one queue keeps the single-queue look', () => {
+    const lanes = [laneOf('main', 'n1', 'Novel One', 3)];
+    const state = { activeTask: lanes[0].activeTask, queue: lanes[0].queue, isPaused: false, isProcessing: true, totalCount: 2, cooldown: null, pauseError: null, skipped: [], lanes };
+    const service = { getState: () => state, subscribe: (cb) => { cb(state); return () => {}; } };
+    const html = render(h(QueueDock, { queueService: service, isPopup: false }));
+    assert(html.includes('Download Queue') && !html.includes('2 queues'), 'no lane header');
+    assert(!html.includes('id="queue-lane-pause-main"'), 'pause stays in the dock header');
+  });
+
+  const chooseQueue = await loadComponent('components/react/shared/ChooseQueueDialog.jsx');
+  test('the queue question is asked only when another novel is busy', () => {
+    const { busyLanesFor } = chooseQueue;
+    const busy = { lanes: [laneOf('main', 'n1', 'Novel One', 3)] };
+    assert.deepStrictEqual(busyLanesFor({ lanes: [] }, 'n2'), [], 'no queue: no question');
+    assert.deepStrictEqual(busyLanesFor(busy, 'n1'), [], 'the novel already has a queue: it joins it');
+    assert.deepStrictEqual(busyLanesFor(busy, 'n2').map((l) => [l.id, l.novelTitle, l.count]), [['main', 'Novel One', 2]], 'another novel busy: ask');
+    const onlySkipped = { lanes: [{ ...laneOf('main', 'n1', 'Novel One', 3), activeTask: null, queue: [], isProcessing: false, skipped: [{ novelId: 'n1', chapterNumber: 4 }] }] };
+    assert.deepStrictEqual(busyLanesFor(onlySkipped, 'n2'), [], 'a finished queue with skipped chapters is not busy');
+    const withNovel2 = { lanes: [busy.lanes[0], laneOf('lane-2', 'n2', 'Novel Two', 1)] };
+    assert.deepStrictEqual(busyLanesFor(withNovel2, 'n2'), [], 'a novel with its own queue among several: no question');
+    assert.deepStrictEqual(busyLanesFor(withNovel2, 'n3').map((l) => l.id), ['main', 'lane-2'], 'one choice per busy queue');
+    assert.deepStrictEqual(busyLanesFor({ activeTask: busy.lanes[0].activeTask, queue: [] }, 'n2'), [], 'an old service without lanes: no question');
+  });
+
+  test('ChooseQueueDialog offers each busy queue and a new queue', () => {
+    const ChooseQueueDialog = chooseQueue.default;
+    const html = render(h(ChooseQueueDialog, {
+      novelTitle: 'Novel Three',
+      lanes: [{ id: 'main', novelTitle: 'Novel One', count: 2 }, { id: 'lane-2', novelTitle: 'Novel Two', count: 5 }],
+      onChoose: () => {},
+      onCancel: () => {}
+    }));
+    assert(html.includes('Novel Three'), 'names the novel being downloaded');
+    const join = html.match(/<button[^>]*data-queue-choice="main"[^>]*>[\s\S]*?<\/button>/);
+    assert(join && join[0].includes('Novel One'), 'add to the queue of Novel One');
+    assert(/data-queue-choice="lane-2"/.test(html), 'add to the queue of Novel Two');
+    const fresh = html.match(/<button[^>]*data-queue-choice="new"[^>]*>[\s\S]*?<\/button>/);
+    assert(fresh && /new queue/i.test(fresh[0]), 'start a new queue');
+    assert(/min-h-10/.test(fresh[0]) && /min-h-10/.test(join[0]), 'tappable choices');
+    assert(/<button[^>]*id="choose-queue-cancel"/.test(html), 'can cancel');
+  });
+
+  await (async () => {
+    const { askForLane } = chooseQueue;
+    const busy = { lanes: [laneOf('main', 'n1', 'Novel One', 3)] };
+    const service = { getState: () => busy };
+    const asked = [];
+    const ask = (q) => { asked.push(q); return Promise.resolve('new'); };
+    const own = await askForLane(service, { id: 'n1', title: 'Novel One' }, ask);
+    const other = await askForLane(service, { id: 'n2', title: 'Novel Two' }, ask);
+    const cancelled = await askForLane(service, { id: 'n2', title: 'Novel Two' }, () => Promise.resolve(null));
+    const noService = await askForLane(null, { id: 'n2' }, ask);
+    test('starting a download asks for a queue only when another novel is busy, and passes the answer on', () => {
+      assert.strictEqual(own, 'auto', 'own queue: no question');
+      assert.strictEqual(other, 'new', 'the answer is the lane');
+      assert.strictEqual(asked.length, 1, 'asked once');
+      assert.strictEqual(asked[0].novelTitle, 'Novel Two');
+      assert.deepStrictEqual(asked[0].lanes.map((l) => l.id), ['main']);
+      assert.strictEqual(cancelled, null, 'cancel: nothing is queued');
+      assert.strictEqual(noService, 'auto');
+    });
+  })();
+
+  test('the novel page, popup and reader chapter list ask which queue and pass the lane to the queue', () => {
+    const fs = require('fs');
+    const path = require('path');
+    for (const file of ['novel/NovelApp.jsx', 'popup/PopupApp.jsx', 'reader/ReaderChapterList.jsx']) {
+      const text = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'react', file), 'utf8');
+      assert(/useQueueChooser\(\)/.test(text), `${file} uses the queue chooser`);
+      assert(/chooseLane\(/.test(text), `${file} asks before queuing`);
+      assert(/\{ lane \}\)/.test(text), `${file} passes the chosen lane`);
+      assert(/\{queueDialog\}/.test(text), `${file} renders the dialog`);
+    }
+  });
+
   const NovelDeepseekCard = (await loadComponent('components/react/novel/NovelDeepseekCard.jsx')).default;
   const novelCard = render(h(NovelDeepseekCard));
   test('NovelDeepseekCard renders the AiConfigPanel ids and cooldown controls', () => {

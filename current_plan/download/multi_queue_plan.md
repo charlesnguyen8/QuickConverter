@@ -1,6 +1,6 @@
 # Several download queues in parallel
 
-**Status (2026-10-23):** phases 1-2 built; phases 3-4 to do.
+**Status (2026-10-23):** phases 1-3 built; phase 4 to do.
 
 ## Goal
 
@@ -98,6 +98,12 @@ The foreground service stays on while any lane works; its text summarizes the la
      No UI yet, so nothing visible changes until phase 3.
 3. **UI.** `ChooseQueueDialog` at the three places downloads start; the dock shows lanes; chapter
    rows keep their status across lanes.
+   - **Built:** `shared/ChooseQueueDialog.jsx` (`busyLanesFor`, `askForLane`, `useQueueChooser`)
+     asks in `NovelApp`, `PopupApp` and `ReaderChapterList` and passes `{ lane }` to the queue;
+     Cancel queues nothing. With several lanes the dock header reads "N queues" with Pause all /
+     Clear All, each lane gets a card (novel title, its own Pause/Resume and Clear, active chapter,
+     cooldown, skipped, waiting list), and the collapsed pill reads "2 queues · 5 chapters". One
+     lane keeps the old look.
 4. **App background text and docs** (`context.md`, AGENTS.md, README).
 
 Each phase ends with `npm test`, `build:ext`, `build:app` and a check in the extension and on the
