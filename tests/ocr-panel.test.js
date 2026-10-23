@@ -910,8 +910,17 @@ process.on('beforeExit', () => {
     assert(vite.includes('ort-wasm-simd-threaded.wasm'), 'vite copies the ONNX Runtime wasm binary');
     assert(vite.includes('ort-wasm-simd-threaded.mjs'), 'vite copies the ONNX Runtime wasm loader');
     assert(/onnxruntime-web\/wasm/.test(vite), 'onnxruntime-web is aliased to its wasm-only build');
-    for (const f of ['PP-OCRv6_tiny_det.ort', 'PP-OCRv6_tiny_rec.ort', 'ppocrv6_tiny_dict.txt']) {
+    for (const f of ['PP-OCRv6_small_det.ort', 'PP-OCRv6_small_rec.ort', 'ppocrv6_dict.txt']) {
       assert(fs.existsSync(path.join(repoRoot, 'src', 'ocr', 'models', f)), `src/ocr/models/${f} is bundled`);
+    }
+    for (const f of ['PP-OCRv6_tiny_det.ort', 'PP-OCRv6_tiny_rec.ort', 'ppocrv6_tiny_dict.txt']) {
+      assert(!fs.existsSync(path.join(repoRoot, 'src', 'ocr', 'models', f)), `the tiny model ${f} is no longer bundled`);
+    }
+    const dictionary = read('src', 'ocr', 'models', 'ppocrv6_dict.txt').split('\n').length;
+    assert(dictionary > 15000, `the full dictionary covers rare characters (${dictionary} entries; tiny had about 6,900)`);
+    const worker = read('src', 'components', 'react', 'ocr', 'ocr.worker.js');
+    for (const f of ['PP-OCRv6_small_det.ort', 'PP-OCRv6_small_rec.ort', 'ppocrv6_dict.txt']) {
+      assert(worker.includes(`../ocr/models/${f}`), `the OCR worker loads ${f}`);
     }
     const html = read('src', 'views', 'ocr-panel.html');
     assert(html.includes('id="ocr-root"'), 'panel shell has #ocr-root');

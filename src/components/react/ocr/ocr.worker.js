@@ -15,9 +15,9 @@ function getService() {
     ort.env.wasm.numThreads = 1;
     const service = new PaddleOcrService({
       model: {
-        detection: assetUrl('../ocr/models/PP-OCRv6_tiny_det.ort'),
-        recognition: assetUrl('../ocr/models/PP-OCRv6_tiny_rec.ort'),
-        charactersDictionary: assetUrl('../ocr/models/ppocrv6_tiny_dict.txt')
+        detection: assetUrl('../ocr/models/PP-OCRv6_small_det.ort'),
+        recognition: assetUrl('../ocr/models/PP-OCRv6_small_rec.ort'),
+        charactersDictionary: assetUrl('../ocr/models/ppocrv6_dict.txt')
       },
       detection: { paddingVertical: 0.6, paddingHorizontal: 1.0 },
       session: { executionProviders: ['wasm'] }
