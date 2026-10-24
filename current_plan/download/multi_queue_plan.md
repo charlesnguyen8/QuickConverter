@@ -1,6 +1,6 @@
 # Several download queues in parallel
 
-**Status (2026-10-23):** phases 1-3 built; phase 4 to do.
+**Status (2026-10-23):** all four phases built.
 
 ## Goal
 
@@ -105,6 +105,9 @@ The foreground service stays on while any lane works; its text summarizes the la
      cooldown, skipped, waiting list), and the collapsed pill reads "2 queues · 5 chapters". One
      lane keeps the old look.
 4. **App background text and docs** (`context.md`, AGENTS.md, README).
+   - **Built:** `backgroundWorkText` sums up the working lanes ("2 queues · Chapter 12 of Novel A,
+     waiting before Chapter 4 of Novel B"); paused or backing-off lanes are left out, and one
+     working lane reads as before. Docs describe lanes, the dialog and the dock.
 
 Each phase ends with `npm test`, `build:ext`, `build:app` and a check in the extension and on the
 phone.

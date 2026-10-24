@@ -85,7 +85,29 @@
 
   // What keeps the app working in the background (the app's notification text), or null when the
   // queue can rest: paused, empty, or waiting out a long error backoff.
+  function laneWorkPart(lane) {
+    if (!lane || lane.isPaused) return null;
+    const task = lane.activeTask;
+    if (task) {
+      if (task.progress && task.progress.phase === 'needs-user') {
+        return `waiting for you: ${task.progress.text} (${task.novelTitle || 'Novel'})`;
+      }
+      return `${chapterLabel(task)} of ${task.novelTitle || 'Novel'}`;
+    }
+    const cooldown = lane.cooldown;
+    if ((lane.queue || []).length > 0 && cooldown && cooldown.active && cooldown.type !== 'retry') {
+      return `waiting before ${cooldown.nextChapterTitle || 'next chapter'} of ${cooldown.nextNovelTitle || 'Novel'}`;
+    }
+    return null;
+  }
+
   function backgroundWorkText(state) {
+    if (state && Array.isArray(state.lanes) && state.lanes.length > 1) {
+      const working = state.lanes.filter((lane) => laneWorkPart(lane));
+      if (working.length === 0) return null;
+      if (working.length === 1) return backgroundWorkText({ ...working[0], lanes: undefined });
+      return `${working.length} queues · ${working.map(laneWorkPart).join(', ')}`;
+    }
     if (!state || state.isPaused) return null;
     const queued = (state.queue || []).length;
     if (state.activeTask) {

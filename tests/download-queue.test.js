@@ -1320,6 +1320,32 @@ async function runTests() {
     assert.strictEqual(text({ activeTask: null, queue: [], isPaused: false, cooldown: null }), null, 'nothing to do');
   });
 
+  await test('backgroundWorkText sums up several working queues, and ignores the ones resting', () => {
+    const text = DownloadQueueService.backgroundWorkText;
+    const task = (title, n) => ({ novelTitle: title, chapterNumber: n, chapterTitle: `Chapter ${n}` });
+    const lane = (id, extra) => ({ id, activeTask: null, queue: [], isPaused: false, cooldown: null, ...extra });
+    const summary = (lanes) => ({ activeTask: lanes.map((l) => l.activeTask).find(Boolean) || null, queue: [].concat(...lanes.map((l) => l.queue)), isPaused: lanes.every((l) => l.isPaused), cooldown: null, lanes });
+    assert.strictEqual(
+      text(summary([lane('main', { activeTask: task('Novel A', 12), queue: [task('Novel A', 13)] }), lane('lane-2', { activeTask: task('Novel B', 3) })])),
+      '2 queues · Chapter 12 of Novel A, Chapter 3 of Novel B'
+    );
+    assert.strictEqual(
+      text(summary([lane('main', { activeTask: task('Novel A', 12) }), lane('lane-2', { queue: [task('Novel B', 4)], isPaused: true })])),
+      'Downloading Novel A · Chapter 12',
+      'a paused queue is left out: one working queue reads as before'
+    );
+    assert.strictEqual(
+      text(summary([lane('main', { activeTask: task('Novel A', 12) }), lane('lane-2', { queue: [task('Novel B', 4)], cooldown: { active: true, type: 'normal', nextNovelTitle: 'Novel B', nextChapterTitle: 'Chapter 4' } })])),
+      '2 queues · Chapter 12 of Novel A, waiting before Chapter 4 of Novel B'
+    );
+    const needsUser = { ...task('Novel B', 3), progress: { phase: 'needs-user', text: 'Log in to 独阅读' } };
+    assert.strictEqual(
+      text(summary([lane('main', { activeTask: task('Novel A', 12) }), lane('lane-2', { activeTask: needsUser })])),
+      '2 queues · Chapter 12 of Novel A, waiting for you: Log in to 独阅读 (Novel B)'
+    );
+    assert.strictEqual(text(summary([lane('main', { queue: [task('Novel A', 1)], isPaused: true }), lane('lane-2', { queue: [task('Novel B', 1)], cooldown: { active: true, type: 'retry' } })])), null, 'all resting: nothing held');
+  });
+
   await test('In the app, the queue holds the app awake while it works and lets go when done or failing', async () => {
     const calls = [];
     const realPlatform = require('../src/services/platform.js');

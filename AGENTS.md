@@ -101,7 +101,9 @@ nodes, so the helper's `render` strips `<!-- -->`).
   wrap it with view-specific `variant`/`ids`/`hooks` and read it back through its imperative ref
   (`getDownloadOptions`/`refreshBalance`). Remaining classic globals (`src/services/`,
   `src/providers/`) still load via `<script>`; register new ones as IIFE + `window.*` export.
-- Keep `DownloadQueueService` runnable both in-thread and via background worker delegation.
+- Keep `DownloadQueueService` runnable both in-thread and via background worker delegation. It holds
+  several lanes (one per novel); new download buttons ask through `useQueueChooser()`
+  (`shared/ChooseQueueDialog.jsx`) and pass `{ lane }` to `enqueue`/`enqueueBatch`.
 
 ## View rewrite status
 

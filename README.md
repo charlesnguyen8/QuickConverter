@@ -72,7 +72,10 @@ library lists your books with their download progress.
 
 - Press **Download** on a chapter or **Download All**, on every site. Chapters download one at a
   time in the background (you can close the tab); the dock at the bottom shows the queue, and you
-  can pause, cancel or retry. Turn on **DeepSeek Translation on Download** to save translated
+  can pause, cancel or retry.
+- **Several books at once:** if another book is already downloading, you're asked whether to add
+  the chapters to its queue or start a new queue. Queues run side by side, each with its own
+  Pause, Clear and cooldown; two books on the same site take turns, so the site sees one reader. Turn on **DeepSeek Translation on Download** to save translated
   chapters instead of the raw text.
 - **nkwwlkj and sangtacviet** only show chapters to a real browser, so each download opens the
   chapter in a background tab, which closes once the chapter is read. If the page needs you (a
