@@ -16,15 +16,17 @@
   // show() brings the page to the user, once; onNeedsUser(reason) hears each new reason.
   const MAX_SITE_RELOADS = 2;
 
-  function create({ expect = null, onNeedsUser = null, show = () => {}, finish }) {
+  function create({ expect = null, onNeedsUser = null, show = () => {}, finish, reloadWaitMs = 30000 }) {
     let done = false;
     let reloads = 0;
+    let reloadTimer = null;
     let shown = false;
     let lastReason = null;
 
     const end = (error, source) => {
       if (done) return;
       done = true;
+      clearTimeout(reloadTimer);
       finish(error, source);
     };
 
@@ -53,6 +55,7 @@
 
     function handle(message) {
       if (done || !message || message.type === 'page') return;
+      clearTimeout(reloadTimer);
       if (message.type === 'closed') {
         closed();
         return;
@@ -68,7 +71,9 @@
           const error = new Error(message.reason || 'The site kept reloading the chapter page.');
           error.outcome = 'retry';
           end(error);
+          return;
         }
+        reloadTimer = setTimeout(() => needUser('The page is taking long to show the chapter.'), reloadWaitMs);
         return;
       }
       if (message.type === 'failed') {

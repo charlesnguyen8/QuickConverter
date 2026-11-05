@@ -255,7 +255,7 @@
   }
 
   // A tab the download queue opened: report what the page shows and let the queue save it.
-  function askDownloadTab() {
+  function askDownloadTabOnce() {
     return new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage({ action: 'PAGE_SOURCE_QUERY' }, (response) => {
@@ -266,6 +266,15 @@
         resolve(null);
       }
     });
+  }
+
+  async function askDownloadTab() {
+    const marked = String(window.location.hash || '').indexOf('qc-download') !== -1;
+    for (let attempt = 0; ; attempt++) {
+      const download = await askDownloadTabOnce();
+      if (download || !marked || attempt >= 10) return download;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
   }
 
   async function handlePage() {

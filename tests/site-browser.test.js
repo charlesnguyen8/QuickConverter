@@ -528,6 +528,37 @@ process.on('beforeExit', () => {
     assert(/timed out/.test(posted[0].reason), posted[0].reason);
   });
 
+  await test('after saying the site is reloading, the page script keeps watching in case the chapter shows up without a reload', async () => {
+    const STV_TEXT = '<html><body><div id="booknameholder">Book</div><div class="contentbox" id="cld-1047557032-935406276"><i h="x" t="第一章">Chương 1</i><br><i h="y" t="林动">Lâm Động</i></div></body></html>';
+    const posted = await runPage(STV_URL + '#qc-download', stvPage('<center>Tải quá thời gian, vui lòng tải lại trang.</center>'), {
+      waitMs: 200,
+      during: (env) => setTimeout(() => { env.document.documentElement.outerHTML = STV_TEXT; }, 40)
+    });
+    assert.deepStrictEqual(posted.map((m) => m.type), ['reloading', 'chapter'], 'reloading once, then the chapter');
+  });
+
+  await test('a download whose page said it would reload but then goes quiet asks for the user instead of waiting forever', async () => {
+    const env = { console, setTimeout, clearTimeout, atob, btoa };
+    env.globalThis = env;
+    vm.createContext(env);
+    vm.runInContext(read('src', 'services', 'page-session.js'), env);
+    const seen = { asked: [], shown: 0, finished: [] };
+    const session = env.PageSession.create({
+      expect: null,
+      reloadWaitMs: 30,
+      onNeedsUser: (reason) => seen.asked.push(reason),
+      show: () => { seen.shown++; },
+      finish: (error) => seen.finished.push(error)
+    });
+    session.handle({ type: 'reloading', reason: 'Sáng Tác Việt timed out loading the chapter.' });
+    session.slow();
+    assert.strictEqual(seen.shown, 0, 'not right away');
+    await new Promise((r) => setTimeout(r, 60));
+    assert.strictEqual(seen.shown, 1, 'the page comes forward');
+    assert.strictEqual(seen.asked.length, 1, 'with a reason');
+    assert.deepStrictEqual(seen.finished, [], 'and the download keeps waiting for the chapter');
+  });
+
   await test('a download waits through the site reloading the page, and retries after it reloaded too often', () => {
     const env = { console, setTimeout, clearTimeout, atob, btoa };
     env.globalThis = env;
@@ -630,6 +661,40 @@ process.on('beforeExit', () => {
     assert.strictEqual(sent[1].message.type, 'chapter');
     assert.strictEqual(sent[1].message.chapterSlug, '100043460');
     assert(!sent.some((m) => m.action === 'SAVE_CHAPTER' || m.action === 'CHECK_CHAPTER'), 'the download pipeline saves, not the content script');
+  });
+
+  await test('extension: a marked download tab asks again when the worker has not registered it yet', async () => {
+    const sent = [];
+    let queries = 0;
+    const document = { documentElement: { outerHTML: NK_RENDERED }, getElementById: () => null, createElement: () => ({ style: {} }), body: { appendChild() {} } };
+    const env = {
+      console: { log() {}, warn() {}, error() {} },
+      URL, URLSearchParams, setTimeout, clearTimeout, btoa,
+      MutationObserver: class { observe() {} },
+      document,
+      chrome: {
+        runtime: {
+          lastError: undefined,
+          getURL: (p) => `chrome-extension://abc/${p}`,
+          sendMessage: (msg, cb) => {
+            sent.push(JSON.parse(JSON.stringify(msg)));
+            if (msg.action === 'PAGE_SOURCE_QUERY') { queries++; setTimeout(() => cb(queries < 3 ? null : { expect: EXPECT }), 0); }
+            else if (cb) setTimeout(() => cb({ success: true }), 0);
+          }
+        }
+      }
+    };
+    env.window = { location: { href: NK_CHAPTER_URL + '#qc-download', hash: '#qc-download' }, addEventListener() {}, removeEventListener() {} };
+    env.location = env.window.location;
+    env.globalThis = env;
+    vm.createContext(env);
+    for (const file of [['src', 'providers', 'nkwwlkj.js'], ['src', 'providers', 'registry.js'], ['src', 'services', 'site-page.js'], ['extension', 'scripts', 'content.js']]) {
+      vm.runInContext(read(...file), env);
+    }
+    await new Promise((r) => setTimeout(r, 2500));
+    assert.strictEqual(queries, 3, 'asked until the worker knew the tab');
+    const result = sent.find((m) => m.action === 'PAGE_SOURCE_RESULT');
+    assert(result && result.message.type === 'chapter', 'then reported the chapter');
   });
 
   await test('extension: the worker answers download tabs, offers the page source and reads images offscreen', () => {

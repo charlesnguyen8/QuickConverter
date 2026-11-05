@@ -78,6 +78,7 @@
     });
 
     let captureError = null;
+    let reloadPosted = false;
     for (;;) {
       if (!info.slug) info = chapterTarget(provider, href, doc) || info;
       if (typeof provider.isImageChapter === 'function' && provider.isImageChapter(doc)) {
@@ -104,8 +105,13 @@
       const timeUp = Date.now() - started >= limit;
       const failure = classified(provider, doc, timeUp);
       if (failure && failure.outcome === 'reload') {
-        post({ type: 'reloading', ...base(), reason: failure.reason });
-        return;
+        if (!reloadPosted) {
+          reloadPosted = true;
+          post({ type: 'reloading', ...base(), reason: failure.reason });
+        }
+        if (Date.now() - started >= limit * 2) return;
+        await wait(intervalMs);
+        continue;
       }
       if (failure) {
         post({ type: 'failed', ...base(), outcome: failure.outcome, reason: failure.reason });
