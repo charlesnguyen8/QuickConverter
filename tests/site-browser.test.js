@@ -520,6 +520,42 @@ process.on('beforeExit', () => {
     assert.strictEqual(other.seen.asked.length, 1, 'it asks for the user instead');
   });
 
+  await test('a page the site is about to reload says so once and stops, instead of failing the download', async () => {
+    const posted = await runPage(STV_URL + '#qc-download', stvPage('<center>Tải quá thời gian, vui lòng tải lại trang.</center>'));
+    assert.strictEqual(posted.length, 1, 'one message');
+    assert.strictEqual(posted[0].type, 'reloading', 'the site is reloading the page');
+    assert.strictEqual(posted[0].chapterSlug, '935406276', 'for this chapter');
+    assert(/timed out/.test(posted[0].reason), posted[0].reason);
+  });
+
+  await test('a download waits through the site reloading the page, and retries after it reloaded too often', () => {
+    const env = { console, setTimeout, clearTimeout, atob, btoa };
+    env.globalThis = env;
+    vm.createContext(env);
+    vm.runInContext(read('src', 'services', 'page-session.js'), env);
+    const seen = { asked: [], shown: 0, finished: [] };
+    const session = env.PageSession.create({
+      expect: { slug: 'qidian-1047557032', chapterSlug: '935406276' },
+      onNeedsUser: (reason) => seen.asked.push(reason),
+      show: () => { seen.shown++; },
+      finish: (error, source) => seen.finished.push(error ? { message: error.message, outcome: error.outcome } : source)
+    });
+    const reloading = { type: 'reloading', slug: 'qidian-1047557032', chapterSlug: '935406276', reason: 'Sáng Tác Việt timed out loading the chapter.' };
+    session.handle(reloading);
+    session.slow();
+    session.handle(reloading);
+    assert.deepStrictEqual(seen.finished, [], 'two reloads: still waiting');
+    assert.strictEqual(seen.shown, 0, 'a page that is reloading is not brought forward as slow');
+    assert.deepStrictEqual(seen.asked, []);
+    session.handle({ type: 'chapter', slug: 'qidian-1047557032', chapterSlug: '935406276', title: 'T', rawText: '正文', url: 'u' });
+    assert.strictEqual(plain(seen.finished)[0].rawText, '正文', 'the chapter that loads after the reload is used');
+
+    const again = { finished: [] };
+    const s2 = env.PageSession.create({ expect: null, show: () => {}, finish: (error) => again.finished.push(error && { message: error.message, outcome: error.outcome }) });
+    s2.handle(reloading); s2.handle(reloading); s2.handle(reloading);
+    assert.deepStrictEqual(plain(again.finished), [{ message: 'Sáng Tác Việt timed out loading the chapter.', outcome: 'retry' }], 'the third reload in a row: retry the chapter later');
+  });
+
   await test('page script reports the chapter URL without the download tab marker', async () => {
     const posted = await runPage(STV_URL + '#qc-download', STV_PROMPT);
     assert.strictEqual(posted[0].url, STV_URL);

@@ -294,7 +294,11 @@ const EXPECTED_CHINESE = [
     }
     assert.strictEqual(of({ document: page(loadingPrompt), alerts: ['Lỗi không xác định, vui lòng thử lại sau, mã báo lỗi: 4005\nhttps://x'], final: true }).outcome, 'blocked', 'from the alert too (the app wording has a space)');
 
-    assert.strictEqual(of({ document: page('<center>Tải quá thời gian, vui lòng tải lại trang.</center>'), alerts: [] }).outcome, 'retry', 'a site timeout is retried');
+    const TIMEOUT = '<center>Tải quá thời gian, vui lòng tải lại trang.</center>';
+    const reload = of({ document: page(TIMEOUT), alerts: [] });
+    assert.strictEqual(reload.outcome, 'reload', 'a site timeout: the site reloads the page itself, so wait for it');
+    assert(/timed out/.test(reload.reason), reload.reason);
+    assert.strictEqual(of({ document: page(TIMEOUT), alerts: [], final: true }).outcome, 'reload', 'also when our wait is over');
 
     const prompt = of({ document: page(loadingPrompt), alerts: [], final: true });
     assert.strictEqual(prompt.outcome, 'needs-user', 'a load prompt that never started needs the user');

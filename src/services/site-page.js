@@ -103,6 +103,10 @@
       }
       const timeUp = Date.now() - started >= limit;
       const failure = classified(provider, doc, timeUp);
+      if (failure && failure.outcome === 'reload') {
+        post({ type: 'reloading', ...base(), reason: failure.reason });
+        return;
+      }
       if (failure) {
         post({ type: 'failed', ...base(), outcome: failure.outcome, reason: failure.reason });
         return;

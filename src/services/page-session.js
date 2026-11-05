@@ -14,8 +14,11 @@
   // finish(error, source) is called once: with { kind: 'text', title, rawText, url } or
   // { kind: 'image', image: { bytes, base64, mimeType, width, height }, url }, or an error.
   // show() brings the page to the user, once; onNeedsUser(reason) hears each new reason.
+  const MAX_SITE_RELOADS = 2;
+
   function create({ expect = null, onNeedsUser = null, show = () => {}, finish }) {
     let done = false;
+    let reloads = 0;
     let shown = false;
     let lastReason = null;
 
@@ -54,9 +57,18 @@
         closed();
         return;
       }
-      const isChapter = message.type === 'chapter' || message.type === 'image' || message.type === 'failed';
+      const isChapter = message.type === 'chapter' || message.type === 'image' || message.type === 'failed' || message.type === 'reloading';
       if (isChapter && !isExpected(message)) {
         needUser('The site showed a different chapter. Open the right one, or close the page.');
+        return;
+      }
+      if (message.type === 'reloading') {
+        reloads += 1;
+        if (reloads > MAX_SITE_RELOADS) {
+          const error = new Error(message.reason || 'The site kept reloading the chapter page.');
+          error.outcome = 'retry';
+          end(error);
+        }
         return;
       }
       if (message.type === 'failed') {
@@ -99,7 +111,7 @@
       closed,
       fail: (error) => end(error),
       needUser,
-      slow: () => needUser('The page is taking long to show the chapter.'),
+      slow: () => { if (reloads === 0) needUser('The page is taking long to show the chapter.'); },
       isDone: () => done
     };
   }

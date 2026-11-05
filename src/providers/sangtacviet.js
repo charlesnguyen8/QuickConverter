@@ -207,7 +207,7 @@ const SangtacvietProvider = (() => {
       return { outcome: 'blocked', reason: `Sáng Tác Việt refused to load chapters in this browser (error ${code[1]}).` };
     }
     if (/tải quá thời gian/i.test(message)) {
-      return { outcome: 'retry', reason: 'Sáng Tác Việt timed out loading the chapter.' };
+      return { outcome: 'reload', reason: 'Sáng Tác Việt timed out loading the chapter.' };
     }
     return null;
   }
