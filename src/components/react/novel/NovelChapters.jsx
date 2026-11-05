@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ProgressRing } from '../shared/QueueDock.jsx';
 import { ChapterAccessBadge } from '../shared/ChapterAccessBadge.jsx';
 import { LastReadBadge } from '../shared/lastRead.jsx';
+import { activeTaskIds, chapterFinished } from '../shared/queueActive.js';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -258,14 +259,12 @@ export default function NovelChapters() {
     const queueService = getQueueService();
     if (!queueService || typeof queueService.subscribe !== 'function') return undefined;
     const initial = typeof queueService.getState === 'function' ? queueService.getState() : null;
-    let prevActiveId = initial && initial.activeTask ? initial.activeTask.id : null;
+    let prevIds = activeTaskIds(initial);
     const unsubscribe = queueService.subscribe((state) => {
       setQueueState(state);
-      const activeId = state && state.activeTask ? state.activeTask.id : null;
-      if (prevActiveId && activeId !== prevActiveId) {
-        load();
-      }
-      prevActiveId = activeId;
+      const ids = activeTaskIds(state);
+      if (chapterFinished(prevIds, ids)) load();
+      prevIds = ids;
     });
     return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
   }, [load]);

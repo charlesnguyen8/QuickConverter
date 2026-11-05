@@ -1351,6 +1351,45 @@ async function testAsync(name, fn) {
     }
   });
 
+  const queueActive = await loadComponent('components/react/shared/queueActive.js');
+  test('a chapter finishing in any queue is noticed, not only in the first one', () => {
+    const { activeTaskIds, chapterFinished } = queueActive;
+    const two = { activeTask: laneOf('main', 'n1', 'One', 3).activeTask, lanes: [laneOf('main', 'n1', 'One', 3), laneOf('lane-2', 'n2', 'Two', 7)] };
+    assert.deepStrictEqual(activeTaskIds(two), ['n1_ch3', 'n2_ch7'], 'every queue\'s active chapter');
+    const secondMovedOn = { ...two, lanes: [two.lanes[0], laneOf('lane-2', 'n2', 'Two', 8)] };
+    assert.strictEqual(chapterFinished(activeTaskIds(two), activeTaskIds(secondMovedOn)), true, 'the second queue finished chapter 7');
+    assert.strictEqual(chapterFinished(activeTaskIds(two), activeTaskIds(two)), false, 'nothing finished');
+    const secondDone = { ...two, lanes: [two.lanes[0]] };
+    assert.strictEqual(chapterFinished(activeTaskIds(two), activeTaskIds(secondDone)), true, 'the second queue finished its last chapter');
+    assert.deepStrictEqual(activeTaskIds({ activeTask: { id: 'n1_ch1' }, queue: [] }), ['n1_ch1'], 'an old state without lanes');
+    assert.deepStrictEqual(activeTaskIds(null), []);
+  });
+
+  test('the popup marks the active chapter of every queue as downloading', () => {
+    const { queueStatusIndex } = queueActive;
+    const state = { activeTask: laneOf('main', 'n1', 'One', 3).activeTask, queue: [], lanes: [laneOf('main', 'n1', 'One', 3), laneOf('lane-2', 'n2', 'Two', 7)] };
+    const forTwo = queueStatusIndex(state, 'n2');
+    assert.deepStrictEqual(forTwo.get(7), { status: 'processing' }, 'second queue\'s active chapter');
+    assert.strictEqual(forTwo.get(8).status, 'queued', 'second queue\'s waiting chapter');
+    assert.strictEqual(forTwo.get(8).queuePosition, 1, 'position within its own queue');
+    assert.strictEqual(forTwo.has(3), false, 'other novels left out');
+    const retry = { lanes: [{ ...laneOf('main', 'n1', 'One', 3), activeTask: null, queue: [{ id: 'n1_ch4', novelId: 'n1', chapterNumber: 4, status: 'retry_pending', retryCount: 2 }] }] };
+    assert.deepStrictEqual(queueStatusIndex(retry, 'n1').get(4), { status: 'retry_pending', queuePosition: 1, retryCount: 2 });
+  });
+
+  test('the novel chapters, reader chapter list and popup reload on a chapter finishing in any queue', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const read = (f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'react', f), 'utf8');
+    for (const file of ['novel/NovelChapters.jsx', 'reader/ReaderChapterList.jsx', 'novel/NovelApp.jsx']) {
+      const text = read(file);
+      assert(/chapterFinished\(/.test(text) && /activeTaskIds\(/.test(text), `${file} watches every queue`);
+      assert(!/prevActiveId|hadActiveTask/.test(text), `${file} no longer watches only the first queue`);
+    }
+    const popup = read('popup/PopupNovelView.jsx');
+    assert(/queueStatusIndex\(/.test(popup) && /activeTaskIds\(/.test(popup), 'popup uses every queue');
+  });
+
   const NovelDeepseekCard = (await loadComponent('components/react/novel/NovelDeepseekCard.jsx')).default;
   const novelCard = render(h(NovelDeepseekCard));
   test('NovelDeepseekCard renders the AiConfigPanel ids and cooldown controls', () => {

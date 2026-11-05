@@ -5,15 +5,15 @@ import { ChapterAccessBadge } from '../shared/ChapterAccessBadge.jsx';
 import { coverSrc, showDefaultCover } from '../shared/novelCover.js';
 import { ContinueReadingButton, LastReadBadge } from '../shared/lastRead.jsx';
 import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
+import { activeTaskIds, queueStatusIndex } from '../shared/queueActive.js';
 
 const storage = () => (typeof window !== 'undefined' ? window.StorageService : null);
 const queue = () => (typeof window !== 'undefined' ? window.DownloadQueueService : null);
 const actions = () => (typeof window !== 'undefined' ? window.__popupActions : null);
 
 function structural(state) {
-  const at = state && state.activeTask;
   const q = (state && state.queue) || [];
-  return `${at && at.id}|${q.map((t) => `${t.id}:${t.status}`).join(',')}|${!!(state && state.isPaused)}`;
+  return `${activeTaskIds(state).join(',')}|${q.map((t) => `${t.id}:${t.status}`).join(',')}|${!!(state && state.isPaused)}`;
 }
 
 function ActiveButton({ novelId, chNum, onCancel }) {
@@ -213,24 +213,10 @@ export default function PopupNovelView({ hidden, novelId, onBack, onOpenSettings
   const displayList = novel ? (catalog.length > 0 ? catalog : downloaded) : [];
   const totalChapters = (novel && novel.totalChapters) || catalog.length || 100;
 
-  const statusIndex = useMemo(() => {
-    const map = new Map();
-    if (!qState || !novel) return map;
-    const at = qState.activeTask;
-    if (at && at.novelId === novel.id) {
-      map.set(Number(at.chapterNumber), { status: 'processing' });
-    }
-    (qState.queue || []).forEach((t, i) => {
-      if (t.novelId !== novel.id) return;
-      const retry = t.status === 'retry_pending';
-      map.set(Number(t.chapterNumber), {
-        status: retry ? 'retry_pending' : 'queued',
-        queuePosition: i + 1,
-        retryCount: t.retryCount || 1
-      });
-    });
-    return map;
-  }, [qState, novel]);
+  const statusIndex = useMemo(
+    () => (qState && novel ? queueStatusIndex(qState, novel.id) : new Map()),
+    [qState, novel]
+  );
 
   const unqueuedMissingCount = catalog.filter((c) => {
     const chNum = Number(c.chapterNumber !== undefined ? c.chapterNumber : c.number);

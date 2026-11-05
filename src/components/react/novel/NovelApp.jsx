@@ -7,6 +7,7 @@ import NameListDrawer from './NameListDrawer.jsx';
 import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
 import { ConversionModeToggle } from './ConversionModeToggle.jsx';
 import { useQueueChooser } from '../shared/ChooseQueueDialog.jsx';
+import { activeTaskIds, chapterFinished } from '../shared/queueActive.js';
 
 const COOLDOWN_IDS = {
   toggle: 'novel-cooldown-toggle',
@@ -133,13 +134,13 @@ export default function NovelApp() {
   useEffect(() => {
     const queueService = getQueueService();
     if (!queueService || typeof queueService.subscribe !== 'function') return undefined;
-    let hadActiveTask = false;
+    let prevIds = [];
     const unsubscribe = queueService.subscribe((state) => {
-      const hasActive = !!(state && state.activeTask);
-      if (hadActiveTask && !hasActive) {
+      const ids = activeTaskIds(state);
+      if (chapterFinished(prevIds, ids) && ids.length === 0) {
         if (panelRef.current) panelRef.current.refreshBalance(true);
       }
-      hadActiveTask = hasActive;
+      prevIds = ids;
     });
     return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
   }, []);

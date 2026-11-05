@@ -5,6 +5,7 @@ import { LastReadBadge } from '../shared/lastRead.jsx';
 import ReaderDeepseekCard from './ReaderDeepseekCard.jsx';
 import { navigateToChapter, useReaderSearch } from './readerLocation.js';
 import { useQueueChooser } from '../shared/ChooseQueueDialog.jsx';
+import { activeTaskIds, chapterFinished } from '../shared/queueActive.js';
 
 function getParams(search) {
   const params = new URLSearchParams(search || '');
@@ -180,12 +181,12 @@ export default function ReaderChapterList({ open = false, onClose }) {
     const queueService = getQueueService();
     if (!queueService || typeof queueService.subscribe !== 'function') return undefined;
     const initial = typeof queueService.getState === 'function' ? queueService.getState() : null;
-    let prevActiveId = initial && initial.activeTask ? initial.activeTask.id : null;
+    let prevIds = activeTaskIds(initial);
     const unsubscribe = queueService.subscribe((state) => {
       setQueueState(state);
-      const activeId = state && state.activeTask ? state.activeTask.id : null;
-      if (prevActiveId && activeId !== prevActiveId) load();
-      prevActiveId = activeId;
+      const ids = activeTaskIds(state);
+      if (chapterFinished(prevIds, ids)) load();
+      prevIds = ids;
     });
     return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
   }, [load]);
