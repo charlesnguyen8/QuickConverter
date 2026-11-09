@@ -479,7 +479,8 @@ const StorageService = {
     try {
       const converter = await this._titleConverter(novel);
       if (!converter) return chapters;
-      return chapters.map((c) => (c && hasChineseText(c.title) ? { ...c, title: converter.convert(c.title) } : c));
+      const traditional = converter.isTraditional(chapters.map((c) => (c && c.title) || '').join('\n'));
+      return chapters.map((c) => (c && hasChineseText(c.title) ? { ...c, title: converter.convert(c.title, { traditional }) } : c));
     } catch (e) {
       console.warn('[QuickConverter] Could not convert chapter titles:', e);
       return chapters;

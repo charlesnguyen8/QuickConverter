@@ -216,14 +216,29 @@
     return (out + chars[chars.length - 1]).split('. . . . . .').join('...');
   }
 
+  const CJK_CHAR = /[\u3400-\u9FFF\uF900-\uFAFF]/;
+  const TRADITIONAL_SHARE = 0.2;
+  const MIN_TRADITIONAL_CHARS = 2;
+
   function createStandardizer(hanViet, simplified) {
     const isChinese = (ch) => !!ch && hanViet.has(ch);
     const simplify = simplified
       ? (text) => Array.from(text).map((ch) => (simplified.has(ch) ? simplified.get(ch) : ch)).join('')
       : (text) => text;
-    const standardize = (line) => {
+    const isTraditional = (text) => {
+      if (!simplified) return false;
+      let chinese = 0;
+      let traditional = 0;
+      for (const ch of String(text || '')) {
+        if (!CJK_CHAR.test(ch)) continue;
+        chinese++;
+        if (simplified.has(ch) && simplified.get(ch) !== ch) traditional++;
+      }
+      return traditional >= MIN_TRADITIONAL_CHARS && traditional / chinese >= TRADITIONAL_SHARE;
+    };
+    const standardize = (line, convertScript = true) => {
       let out = '';
-      for (const ch of decodeEntities(simplify(line))) {
+      for (const ch of decodeEntities(convertScript ? simplify(line) : line)) {
         if (PUNCTUATION[ch] !== undefined) {
           out += PUNCTUATION[ch];
           continue;
@@ -233,7 +248,7 @@
       }
       return insertQtSpacing(out.replace(/[ \t]+/g, ' ').replace(/ ,/g, ','), isChinese).replace(/ {2,}/g, ' ').trim();
     };
-    return { standardize, simplify };
+    return { standardize, simplify, isTraditional };
   }
 
   function capitalize(text) {
@@ -250,9 +265,16 @@
   }
 
   function ignoredPatterns(phrases, standardize) {
+    const seen = new Set();
     return (Array.isArray(phrases) ? phrases : [])
-      .map((phrase) => Array.from(standardize(String(phrase || ''))).filter((ch) => !/\s/.test(ch)))
-      .filter((chars) => chars.length > 0)
+      .flatMap((phrase) => [standardize(String(phrase || '')), standardize(String(phrase || ''), false)])
+      .map((text) => Array.from(text).filter((ch) => !/\s/.test(ch)))
+      .filter((chars) => {
+        const key = chars.join('');
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
       .map((chars) => new RegExp(chars.map(escapeRegExp).join('\\s*'), 'g'));
   }
 
@@ -270,8 +292,8 @@
   const RULE_WINDOW = 30;
 
   function convertLine(line, context, segments, layout) {
-    const { matcher, hanViet, ignored, rules, numbers, vietPhraseHas, minUserTier, nameTier, standardize } = context;
-    let source = standardize(line);
+    const { matcher, hanViet, ignored, rules, numbers, vietPhraseHas, minUserTier, nameTier, standardize, convertScript } = context;
+    let source = standardize(line, convertScript);
     if (ignored.length > 0) {
       ignored.forEach((pattern) => { source = source.replace(pattern, ''); });
       source = source.replace(/ {2,}/g, ' ').trim();
@@ -405,9 +427,14 @@
     const tiers = api ? api.TIERS : { namelist: 6, locked: 5, soft: 4, qtNames: 3, vietPhrase: 1 };
     const dicts = options.dictionaries || {};
     const isMap = (m) => !!m && typeof m.get === 'function' && typeof m.has === 'function';
-    const { standardize, simplify } = createStandardizer(hanViet, isMap(dicts.traditional) ? dicts.traditional : null);
+    const { standardize, simplify, isTraditional } = createStandardizer(hanViet, isMap(dicts.traditional) ? dicts.traditional : null);
     const simplified = (list) => (Array.isArray(list)
-      ? list.map((entry) => (entry && entry.original ? { ...entry, original: simplify(String(entry.original)) } : entry))
+      ? list.flatMap((entry) => {
+        if (!entry || !entry.original) return [entry];
+        const original = String(entry.original);
+        const simple = simplify(original);
+        return simple === original ? [entry] : [entry, { ...entry, original: simple }];
+      })
       : list);
     const names = simplified(options.names);
     const entries = [
@@ -460,15 +487,22 @@
       });
     }
     const context = { matcher, hanViet, ignored, rules, numbers, vietPhraseHas, minUserTier: tiers.soft, nameTier: tiers.qtNames, standardize };
+    const contextFor = (text, opts) => {
+      const traditional = opts && typeof opts.traditional === 'boolean' ? opts.traditional : isTraditional(text);
+      return { ...context, convertScript: traditional };
+    };
     return {
-      convert(text) {
-        return String(text || '').split('\n').map((line) => convertLine(line, context)).join('\n');
+      isTraditional,
+      convert(text, opts) {
+        const ctx = contextFor(text, opts);
+        return String(text || '').split('\n').map((line) => convertLine(line, ctx)).join('\n');
       },
-      convertDetailed(text) {
+      convertDetailed(text, opts) {
+        const ctx = contextFor(text, opts);
         return String(text || '').split('\n').map((line) => {
           const segments = [];
           const layout = { source: '', hidden: [] };
-          const converted = convertLine(line, context, segments, layout);
+          const converted = convertLine(line, ctx, segments, layout);
           return { text: converted, segments: segments.filter((seg) => seg.end > seg.start), source: layout.source, hidden: layout.hidden };
         });
       }

@@ -82,6 +82,56 @@ const LOCKED = [{ id: 'g1', original: '青阳镇', translation: 'Thanh Dương t
     assert.strictEqual(cleanConvert('蕭炎說', { names }), 'Tiêu Viêm thuyết');
   });
 
+  const REAL_T2S = new Map(fs.readFileSync(path.join(repoRoot, 'src', 'dict', 'TraditionalToSimplified.txt'), 'utf8')
+    .split(/\r?\n/).filter((l) => /^[0-9A-F]+=[0-9A-F]+$/i.test(l.trim()))
+    .map((l) => l.trim().split('=').map((h) => String.fromCodePoint(parseInt(h, 16)))));
+  const S2T = new Map();
+  REAL_T2S.forEach((s, t) => { if (s !== t && !S2T.has(s)) S2T.set(s, t); });
+  const toTraditional = (text) => Array.from(text).map((ch) => S2T.get(ch) || ch).join('');
+  const SIMPLIFIED = '正是张郃。张郃虽然年轻，不过在军中很有名气，他说：我们这些人都来了，这个时候还要等什么？' +
+    '将领们听了以后，都觉得他说得对。张郃站在城头瞭望，远处的敌军已经开始准备进攻，这一战关系到整个战局。' +
+    '他是著名的将军，这些年来经历过无数次战斗，从来没有怕过谁。';
+  const PASSAGE = '我们这些人都来了，这个时候还要等什么？将领们听了以后，都觉得他说得对，远处的敌军已经开始准备进攻。';
+  const realConvert = (text, lists = {}) => T.createConverter({ hanViet: CLEAN_HV, dictionaries: { traditional: REAL_T2S }, ...lists });
+  const sourceOf = (converter, text) => converter.convertDetailed(text).map((line) => line.source).join('\n');
+
+  await test('a chapter already in Simplified Chinese is not run through the Traditional table (张郃 stays 张郃)', () => {
+    assert.strictEqual(REAL_T2S.get('郃'), '合', 'the table itself maps 郃 to 合');
+    const converter = realConvert(SIMPLIFIED, { names: [{ id: 'n1', original: '张郃', translation: 'Trương Cáp' }] });
+    assert.strictEqual(converter.isTraditional(SIMPLIFIED), false);
+    const source = sourceOf(converter, SIMPLIFIED);
+    assert(source.includes('张郃') && !source.includes('张合'), '张郃 kept');
+    assert(source.includes('著名') && source.includes('瞭望'), '著名 and 瞭望 kept');
+    assert(converter.convert(SIMPLIFIED).includes('Trương Cáp'), 'the Name List entry 张郃 matches');
+  });
+
+  await test('a chapter in Traditional Chinese is still converted to Simplified before matching', () => {
+    const traditional = toTraditional(PASSAGE);
+    const converter = realConvert(traditional);
+    assert.notStrictEqual(traditional, PASSAGE, 'the sample really is Traditional');
+    assert.strictEqual(converter.isTraditional(traditional), true);
+    assert.strictEqual(sourceOf(converter, traditional), sourceOf(converter, PASSAGE), 'same text as the Simplified original');
+    assert.strictEqual(converter.convert(traditional), converter.convert(PASSAGE));
+  });
+
+  await test('Simplified text quoting a couple of Traditional words, or a short title with one stray character, counts as Simplified', () => {
+    const converter = realConvert('');
+    const mixed = SIMPLIFIED + '他写下了「說話」两个字。';
+    assert.strictEqual(converter.isTraditional(mixed), false, 'well under 20% Traditional');
+    assert.strictEqual(converter.isTraditional('张郃来了'), false, 'one ambiguous character in a short title');
+    assert(sourceOf(converter, '张郃来了').includes('张郃'));
+    assert.strictEqual(converter.isTraditional('第一章 說話'), true, 'a short Traditional title still converts');
+  });
+
+  await test('a caller can say which script a short text is in, and catalog titles are checked together', () => {
+    const converter = realConvert('');
+    assert(converter.convertDetailed('张郃', { traditional: true })[0].source.includes('张合'), 'told it is Traditional: converted');
+    assert(converter.convertDetailed('第一章 說話', { traditional: false })[0].source.includes('說話'), 'told it is Simplified: left alone');
+    const storage = read('src', 'services', 'storage.js');
+    const catalog = storage.slice(storage.indexOf('async _convertCatalogTitles'), storage.indexOf('async _convertChapterTitle'));
+    assert(/isTraditional\(/.test(catalog) && /convert\(c\.title, \{ traditional/.test(catalog), 'titles of a chapter list are judged as one sample');
+  });
+
   await test('without the traditional table, text converts as before', () => {
     assert.strictEqual(T.createConverter({ hanViet: CLEAN_HV }).convert('这是本书'), 'Giá thị bản thư');
   });
