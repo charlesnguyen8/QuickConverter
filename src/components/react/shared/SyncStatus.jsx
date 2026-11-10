@@ -11,7 +11,7 @@ function ago(iso, now) {
   return `${Math.floor(hours / 24)} d ago`;
 }
 
-const BASE = 'inline-flex items-center gap-1.5 min-h-10 px-2.5 py-1 rounded-full border text-xs font-medium transition';
+const BASE = "relative inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition before:absolute before:inset-x-0 before:-inset-y-2 before:content-['']";
 
 export function SyncStatusBadgeView({ status, now, onSyncNow }) {
   if (!status || status.state === 'off' || status.state === 'waiting') return null;

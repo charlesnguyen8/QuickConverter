@@ -1017,7 +1017,10 @@ async function testAsync(name, fn) {
     const failed = badge({ state: 'error', error: 'Google Drive upload failed (503)' });
     assert(failed.includes('Sync failed') && failed.includes('Google Drive upload failed (503)'), 'says what failed');
     const idle = badge({ state: 'idle', lastSyncAt: '2026-10-19T11:58:00Z' });
-    assert(/<button[^>]*id="library-sync-status"/.test(idle) && /min-h-10/.test(idle), 'a tappable button that syncs now');
+    const btn = (idle.match(/<button[^>]*id="library-sync-status"[^>]*>/) || [''])[0];
+    assert(btn, 'a button that syncs now');
+    assert(/before:-inset-y-2/.test(btn) && /\brelative\b/.test(btn), 'its tap area reaches 40px above and below the slim pill');
+    assert(!/min-h-10/.test(btn), 'the pill itself is as slim as the other header badges');
   });
 
   const { refreshOnSync } = await loadComponent('components/react/shared/SyncStatus.jsx');
