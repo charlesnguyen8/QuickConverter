@@ -957,6 +957,13 @@ async function testAsync(name, fn) {
     assert(/moveNovelToBin\(/.test(handler) && !/deleteNovel\(/.test(handler), 'to the bin, not deleted for good');
   });
 
+  const AddBookButtonView = (await loadComponent('components/react/shared/AddBookButton.jsx')).default;
+  test('the header Add Book button is as tall as the other header pills', () => {
+    const AddBookButton = AddBookButtonView;
+    const btn = (render(h(AddBookButton)).match(/<button[^>]*title="Add novel from web link"[^>]*>/) || [''])[0];
+    assert(/\bpy-1\b/.test(btn) && !/py-1\.5/.test(btn), 'py-1 like the sync, disk and Recycle Bin pills');
+  });
+
   test('the library header opens the Recycle Bin', () => {
     const html = render(h(libraryMod.default));
     const btn = (html.match(/<a[^>]*id="library-bin-btn"[^>]*>/) || [''])[0];

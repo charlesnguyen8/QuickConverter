@@ -204,7 +204,7 @@ export default function AddBookButton({ compact = false, buttonClass = '' }) {
         title="Add novel from web link"
         className={compact
           ? `inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 transition cursor-pointer active:scale-[0.98] ${buttonClass}`
-          : `inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-sm shadow-indigo-500/20 transition cursor-pointer active:scale-[0.98] ${buttonClass}`}
+          : `inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-sm shadow-indigo-500/20 transition cursor-pointer active:scale-[0.98] ${buttonClass}`}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width={compact ? 11 : 13} height={compact ? 11 : 13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <line x1="12" y1="5" x2="12" y2="19"></line>
