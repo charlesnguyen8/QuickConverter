@@ -300,7 +300,9 @@ export default function PopupApp() {
   const handleDeleteNovel = useCallback(async (novel) => {
     const S = storage();
     if (!S) return;
-    const updated = await S.deleteNovel(novel.id);
+    if (!confirm(`Delete "${novel.title}"?\n\nIt moves to the Recycle Bin with its saved chapters. You can restore it from the library's Recycle Bin for 60 days; after that it is deleted for good.`)) return;
+    await S.moveNovelToBin(novel.id);
+    const updated = await S.getManagedNovels();
     setNovels(Array.isArray(updated) ? updated : []);
     refreshStatus();
   }, [refreshStatus]);

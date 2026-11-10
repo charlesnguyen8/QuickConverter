@@ -628,6 +628,70 @@ process.on('beforeExit', () => {
     assert.strictEqual(stores.novels['namelist::n5'].updatedAt, 55);
   });
 
+  // --- Recycle bin ---
+
+  const DAY = 24 * 60 * 60 * 1000;
+
+  await test('deleting a book moves it to the recycle bin: hidden from the library, chapters kept, restorable', async () => {
+    const { S, stores } = makeEnv();
+    await S.addNovel({ id: 'n1', title: 'One', slug: 'one' });
+    await S.addNovel({ id: 'n2', title: 'Two', slug: 'two' });
+    await S.saveChapter({ novelId: 'n1', chapterNumber: 1, title: 'C1', rawText: 'x' });
+    await S.moveNovelToBin('n1');
+    assert.deepStrictEqual((await S.getManagedNovels()).map((n) => n.id), ['n2'], 'gone from the library');
+    assert.strictEqual(await S.isNovelManaged('one'), false, 'no longer counts as a library book');
+    assert(stores.chapters.n1_ch1, 'its chapters stay');
+    assert(Number.isFinite(stores.novels.n1.deletedAt), 'marked with when it was deleted');
+    const bin = await S.getRecycleBin();
+    assert.deepStrictEqual(bin.map((b) => [b.id, b.title, b.daysLeft]), [['n1', 'One', 60]], 'in the bin, 60 days left');
+    assert.strictEqual((await S.getNovelById('n1')).title, 'One', 'still readable by id while in the bin');
+    const book = (await S.exportAll()).novels.find((b) => b.id === 'n1');
+    assert(Number.isFinite(book.deletedAt), 'sync carries the bin to other devices');
+    await S.restoreNovel('n1');
+    assert.deepStrictEqual((await S.getManagedNovels()).map((n) => n.id).sort(), ['n1', 'n2'], 'restored');
+    assert.deepStrictEqual(await S.getRecycleBin(), [], 'bin empty again');
+    assert(!stores.novels.n1.deletedAt, 'mark cleared');
+  });
+
+  await test('adding a book that is in the recycle bin brings it back instead of making a copy', async () => {
+    const { S, stores } = makeEnv();
+    await S.addNovel({ id: 'n1', title: 'One', slug: 'one' });
+    await S.moveNovelToBin('n1');
+    await S.addNovel({ id: 'n9', title: 'One', slug: 'one' });
+    assert.deepStrictEqual((await S.getManagedNovels()).map((n) => n.id), ['n1'], 'the same book, restored');
+    assert.strictEqual(stores.novels.n9, undefined, 'no copy');
+  });
+
+  await test('books in the recycle bin for more than 60 days are deleted for good; newer ones stay', async () => {
+    const { S, stores } = makeEnv();
+    await S.addNovel({ id: 'old', title: 'Old', slug: 'old' });
+    await S.addNovel({ id: 'new', title: 'New', slug: 'new' });
+    await S.saveChapter({ novelId: 'old', chapterNumber: 1, title: 'C1', rawText: 'x' });
+    await S.moveNovelToBin('old');
+    await S.moveNovelToBin('new');
+    const now = Date.now();
+    stores.novels.old.deletedAt = now - 61 * DAY;
+    stores.novels.new.deletedAt = now - 10 * DAY;
+    assert.deepStrictEqual((await S.getRecycleBin(now)).map((b) => [b.id, b.daysLeft]), [['new', 50], ['old', 0]], 'newest first, days left');
+    const purged = await S.purgeRecycleBin(now);
+    assert.deepStrictEqual(purged, ['old']);
+    assert.strictEqual(stores.novels.old, undefined, 'deleted for good');
+    assert.strictEqual(stores.chapters.old_ch1, undefined, 'with its chapters');
+    assert(stores.novels.new, 'the newer one stays in the bin');
+    assert(Number.isFinite((await S.exportAll()).deleted.novels.old), 'and the deletion syncs');
+  });
+
+  await test('Delete forever from the bin removes the book and its chapters now', async () => {
+    const { S, stores } = makeEnv();
+    await S.addNovel({ id: 'n1', title: 'One', slug: 'one' });
+    await S.saveChapter({ novelId: 'n1', chapterNumber: 1, title: 'C1', rawText: 'x' });
+    await S.moveNovelToBin('n1');
+    await S.deleteNovelForever('n1');
+    assert.strictEqual(stores.novels.n1, undefined);
+    assert.strictEqual(stores.chapters.n1_ch1, undefined);
+    assert.deepStrictEqual(await S.getRecycleBin(), []);
+  });
+
   console.log(`--- Library Sync Test Suite: ${passed}/${passed + failed} passed ---`);
   if (failed > 0) {
     console.error('Library Sync Test Suite FAILED');

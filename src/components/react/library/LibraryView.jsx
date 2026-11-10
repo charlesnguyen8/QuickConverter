@@ -3,6 +3,7 @@ import AddBookButton from '../shared/AddBookButton.jsx';
 import SyncStatusBadge from '../shared/SyncStatus.jsx';
 import { coverSrc, showDefaultCover } from '../shared/novelCover.js';
 import { continueHref, lastReadLabel } from '../shared/lastRead.jsx';
+import { RecycleBinPage } from './RecycleBin.jsx';
 
 function SettingsLink() {
   return (
@@ -21,7 +22,67 @@ function SettingsLink() {
   );
 }
 
-export function NovelCard({ novel, stats }) {
+function RecycleBinLink({ count }) {
+  return (
+    <a
+      id="library-bin-btn"
+      href="#recycle-bin"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-slate-300 hover:text-white transition shadow-sm cursor-pointer"
+      title="Open the Recycle Bin"
+    >
+      <span aria-hidden="true">🗑️</span>
+      <span>Recycle Bin</span>
+      {count > 0 ? <span className="px-1.5 rounded-full bg-slate-700 text-[10px] font-mono">{count}</span> : null}
+    </a>
+  );
+}
+
+export function NovelCardMenu({ novel, onDelete, onClose }) {
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); onClose(); }} />
+      <div
+        role="menu"
+        className="absolute bottom-14 right-2 z-50 min-w-[10rem] rounded-xl bg-slate-900 border border-slate-700 shadow-2xl p-1 flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          id={`novel-delete-${novel.id}`}
+          onClick={() => { onClose(); onDelete(novel); }}
+          className="min-h-10 px-3 rounded-lg text-left text-xs font-semibold text-rose-300 hover:bg-rose-900/40 transition cursor-pointer"
+        >
+          Delete
+        </button>
+      </div>
+    </>
+  );
+}
+
+export function DeleteNovelDialog({ novel, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" onClick={onCancel}>
+      <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-4 flex flex-col gap-3 text-slate-100" onClick={(e) => e.stopPropagation()}>
+        <span className="text-sm font-bold">Delete this book?</span>
+        <span className="text-xs text-slate-400">
+          <strong className="text-slate-200">{novel.title}</strong> moves to the Recycle Bin with its saved chapters. You can restore it from there for 60 days; after that it is deleted for good.
+        </span>
+        <div className="flex justify-end gap-2">
+          <button type="button" id="cancel-delete-btn" onClick={onCancel} className="min-h-10 px-3 rounded-lg text-xs font-semibold text-slate-300 bg-slate-800 border border-slate-700 hover:bg-slate-700 transition cursor-pointer">
+            Cancel
+          </button>
+          <button type="button" id="confirm-delete-btn" onClick={onConfirm} className="min-h-10 px-3 rounded-lg text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 transition cursor-pointer">
+            Move to Recycle Bin
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function NovelCard({ novel, stats, onDelete }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const downloaded = stats.downloadedCount || 0;
   const total = novel.totalChapters || stats.totalChapters || 100;
   const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
@@ -31,11 +92,11 @@ export function NovelCard({ novel, stats }) {
 
   return (
     <div
-      className="flex flex-col rounded-lg border border-slate-800 bg-slate-800/80 hover:border-indigo-500/60 hover:bg-slate-800 hover:shadow-md transition overflow-hidden shadow-sm group cursor-pointer"
+      className="relative flex flex-col rounded-lg border border-slate-800 bg-slate-800/80 hover:border-indigo-500/60 hover:bg-slate-800 hover:shadow-md transition shadow-sm group cursor-pointer"
       title={`Click to view chapters for ${novel.title}`}
       onClick={() => { window.location.href = `novel.html?id=${encodeURIComponent(novel.id)}`; }}
     >
-      <div className="aspect-[3/4] w-full bg-slate-900 overflow-hidden relative">
+      <div className="aspect-[3/4] w-full bg-slate-900 overflow-hidden relative rounded-t-lg">
         <img
           src={thumbnailSrc}
           alt={novel.title}
@@ -70,7 +131,7 @@ export function NovelCard({ novel, stats }) {
           ) : null}
         </div>
 
-        <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-700/50">
+        <div className="flex flex-col gap-1.5 pt-2 pr-11 border-t border-slate-700/50">
           <div className="w-full bg-slate-700/60 rounded-full h-2 overflow-hidden">
             <div className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
           </div>
@@ -87,6 +148,22 @@ export function NovelCard({ novel, stats }) {
           </div>
         </div>
       </div>
+      <button
+        type="button"
+        id={`novel-menu-${novel.id}`}
+        aria-label={`More options for ${novel.title}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={(e) => { e.stopPropagation(); setMenuOpen((open) => !open); }}
+        className="absolute bottom-2 right-2 min-h-10 min-w-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition cursor-pointer"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="12" cy="5" r="2" />
+          <circle cx="12" cy="12" r="2" />
+          <circle cx="12" cy="19" r="2" />
+        </svg>
+      </button>
+      {menuOpen ? <NovelCardMenu novel={novel} onDelete={onDelete || (() => {})} onClose={() => setMenuOpen(false)} /> : null}
     </div>
   );
 }
@@ -95,6 +172,9 @@ export default function LibraryView() {
   const [novels, setNovels] = useState([]);
   const [diskUsage, setDiskUsage] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [binCount, setBinCount] = useState(0);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [showBin, setShowBin] = useState(() => typeof window !== 'undefined' && !!window.location && window.location.hash === '#recycle-bin');
 
   const load = useCallback(async () => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -103,6 +183,14 @@ export default function LibraryView() {
       return;
     }
     try {
+      if (typeof storage.purgeRecycleBin === 'function') {
+        try {
+          await storage.purgeRecycleBin();
+          setBinCount((await storage.getRecycleBin()).length);
+        } catch (binErr) {
+          console.warn('Failed to check the recycle bin:', binErr);
+        }
+      }
       const list = await storage.getManagedNovels();
       let disk = null;
       if (typeof storage.getDiskUsage === 'function') {
@@ -139,6 +227,30 @@ export default function LibraryView() {
     };
   }, [load]);
 
+  useEffect(() => {
+    const onHash = () => setShowBin(window.location.hash === '#recycle-bin');
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    const novel = pendingDelete;
+    setPendingDelete(null);
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!novel || !storage) return;
+    try {
+      await storage.moveNovelToBin(novel.id);
+    } catch (err) {
+      console.error('Error deleting novel:', err);
+    }
+    load();
+  }, [pendingDelete, load]);
+
+  const leaveBin = useCallback(() => {
+    if (window.location.hash === '#recycle-bin') window.history.back();
+    setShowBin(false);
+  }, []);
+
   const count = novels.length;
   const countText = `${count} Novel${count === 1 ? '' : 's'} Managed`;
   const diskText = diskUsage ? `Disk: ${diskUsage.formatted}` : 'Disk: Available';
@@ -174,13 +286,16 @@ export default function LibraryView() {
             </span>
             <SyncStatusBadge />
             <AddBookButton />
+            <RecycleBinLink count={binCount} />
             <SettingsLink />
           </div>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 flex-1 flex flex-col gap-6">
-        {loaded && count === 0 ? (
+        {showBin ? (
+          <RecycleBinPage onBack={leaveBin} onChanged={load} />
+        ) : loaded && count === 0 ? (
           <div id="library-grid" className="flex flex-col items-center justify-center py-24 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-3xl mb-4">
               📚
@@ -194,11 +309,12 @@ export default function LibraryView() {
         ) : (
           <div id="library-grid" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {novels.map(({ novel, stats }) => (
-              <NovelCard key={novel.id} novel={novel} stats={stats} />
+              <NovelCard key={novel.id} novel={novel} stats={stats} onDelete={setPendingDelete} />
             ))}
           </div>
         )}
       </main>
+      {pendingDelete ? <DeleteNovelDialog novel={pendingDelete} onConfirm={confirmDelete} onCancel={() => setPendingDelete(null)} /> : null}
     </>
   );
 }

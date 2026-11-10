@@ -897,6 +897,72 @@ async function testAsync(name, fn) {
     assert(!render(h(NovelCard, { novel: { id: 'n2', title: 'M', totalChapters: 3 }, stats: {} })).includes('Last read'), 'nothing for an unread novel');
   });
 
+  const libraryMod = await loadComponent('components/react/library/LibraryView.jsx');
+  const binMod = await loadComponent('components/react/library/RecycleBin.jsx');
+  const buttonTag = (html, id) => (html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>[\\s\\S]*?</button>`)) || [''])[0];
+
+  test('each library card has a tappable ⋮ menu button in its lower right corner', () => {
+    const html = render(h(NovelCard, { novel: { id: 'n1', title: 'Book One', totalChapters: 3 }, stats: {} }));
+    const btn = buttonTag(html, 'novel-menu-n1');
+    assert(btn, 'menu button');
+    assert(/aria-label="More options for Book One"/.test(btn), 'labelled');
+    assert(/min-h-10/.test(btn) && /min-w-10/.test(btn), '40px touch target');
+    assert(/bottom-/.test(btn) && /right-/.test(btn), 'in the lower right corner');
+    assert(!html.includes('id="novel-delete-n1"'), 'the menu starts closed');
+  });
+
+  test('the card menu offers Delete', () => {
+    const { NovelCardMenu } = libraryMod;
+    const html = render(h(NovelCardMenu, { novel: { id: 'n1', title: 'Book One' }, onDelete: () => {}, onClose: () => {} }));
+    const del = buttonTag(html, 'novel-delete-n1');
+    assert(del && del.includes('Delete'), 'Delete item');
+    assert(/min-h-10/.test(del), 'tappable');
+  });
+
+  test('Delete asks first and says the book goes to the Recycle Bin for 60 days', () => {
+    const { DeleteNovelDialog } = libraryMod;
+    const html = render(h(DeleteNovelDialog, { novel: { id: 'n1', title: 'Book One' }, onConfirm: () => {}, onCancel: () => {} }));
+    assert(html.includes('Book One'), 'names the book');
+    assert(/Recycle Bin/.test(html) && /60 days/.test(html), 'explains the bin');
+    assert(buttonTag(html, 'confirm-delete-btn').includes('Move to Recycle Bin'), 'confirm button');
+    assert(buttonTag(html, 'cancel-delete-btn'), 'cancel button');
+  });
+
+  test('the Recycle Bin lists deleted books with days left, Restore and Delete forever', () => {
+    const RecycleBinView = binMod.default;
+    const items = [{ id: 'n1', title: 'Book One', daysLeft: 50 }, { id: 'n2', title: 'Book Two', daysLeft: 1 }];
+    const html = render(h(RecycleBinView, { items, onRestore: () => {}, onDeleteForever: () => {}, onBack: () => {} }));
+    assert(html.includes('Book One') && html.includes('Book Two'));
+    assert(html.includes('50 days left') && html.includes('1 day left'), 'days left, singular too');
+    assert(buttonTag(html, 'bin-restore-n1').includes('Restore'), 'Restore');
+    assert(buttonTag(html, 'bin-delete-n2').includes('Delete forever'), 'Delete forever');
+    assert(/min-h-10/.test(buttonTag(html, 'bin-restore-n1')), 'tappable');
+    assert(/60 days/.test(html), 'says books are deleted for good after 60 days');
+    assert(buttonTag(html, 'bin-back-btn'), 'a way back to the library');
+    const empty = render(h(RecycleBinView, { items: [], onRestore: () => {}, onDeleteForever: () => {}, onBack: () => {} }));
+    assert(/Recycle Bin is empty/.test(empty), 'empty state');
+  });
+
+  test('Delete forever asks first too, and says it cannot be undone', () => {
+    const { DeleteForeverDialog } = binMod;
+    const html = render(h(DeleteForeverDialog, { novel: { id: 'n1', title: 'Book One' }, onConfirm: () => {}, onCancel: () => {} }));
+    assert(html.includes('Book One') && /cannot be undone/i.test(html));
+    assert(buttonTag(html, 'confirm-forever-btn').includes('Delete forever'));
+  });
+
+  test('deleting from the popup asks first and moves the book to the Recycle Bin', () => {
+    const popup = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'components', 'react', 'popup', 'PopupApp.jsx'), 'utf8');
+    const handler = popup.slice(popup.indexOf('const handleDeleteNovel'), popup.indexOf('const handleAddNovel'));
+    assert(/confirm\(/.test(handler), 'asks first');
+    assert(/moveNovelToBin\(/.test(handler) && !/deleteNovel\(/.test(handler), 'to the bin, not deleted for good');
+  });
+
+  test('the library header opens the Recycle Bin', () => {
+    const html = render(h(libraryMod.default));
+    const btn = (html.match(/<a[^>]*id="library-bin-btn"[^>]*>/) || [''])[0];
+    assert(btn && /href="#recycle-bin"/.test(btn), 'Recycle Bin link');
+  });
+
   const providerLoginMod = await loadComponent('components/react/shared/ProviderLogin.jsx');
   const { ProviderLoginStatus } = providerLoginMod;
   const ProviderLoginBanner = providerLoginMod.default;

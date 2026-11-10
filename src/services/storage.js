@@ -200,6 +200,9 @@ function textProcessors() {
 
 // A name list / locked / soft glossary is stored in the `novels` object store under
 // `<kind>::<novelId>` with an `owner` and `list`, so it must never be treated as a novel.
+const RECYCLE_BIN_DAYS = 60;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 function isListRecord(record) {
   return !!record && typeof record.id === 'string' && record.id.indexOf('::') !== -1 && !!record.owner && Array.isArray(record.list);
 }
@@ -525,6 +528,10 @@ const StorageService = {
   },
 
   async getManagedNovels() {
+    return (await this._novelRecords()).filter((n) => !n.deletedAt);
+  },
+
+  async _novelRecords() {
     const db = await openDatabase();
     const isInitialized = await this._isDbInitialized();
 
@@ -631,7 +638,7 @@ const StorageService = {
 
   async getNovelById(novelId) {
     if (!novelId) return null;
-    const novels = await this.getManagedNovels();
+    const novels = await this._novelRecords();
     const record = novels.find((n) => n.id === novelId) || null;
     if (!record) return null;
 
@@ -646,6 +653,11 @@ const StorageService = {
   },
 
   async addNovel(novel) {
+    const binned = await this._binnedNovelMatching(novel.slug || novel.title);
+    if (binned) {
+      await this.restoreNovel(binned.id);
+      return this.getManagedNovels();
+    }
     const alreadyExists = await this.isNovelManaged(novel.slug || novel.title);
     if (alreadyExists) {
       return this.getManagedNovels();
@@ -1240,6 +1252,47 @@ const StorageService = {
     return novel;
   },
 
+
+  async _binnedNovelMatching(slugOrTitle) {
+    if (!slugOrTitle) return null;
+    const query = String(slugOrTitle).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const records = await this._novelRecords();
+    return records.find((novel) => novel.deletedAt && (
+      (novel.slug && novel.slug.toLowerCase().replace(/[^a-z0-9]/g, '') === query) ||
+      (novel.title && novel.title.toLowerCase().replace(/[^a-z0-9]/g, '') === query)
+    )) || null;
+  },
+
+  async moveNovelToBin(novelId) {
+    if (!novelId) return null;
+    return this.updateNovel(novelId, { deletedAt: Date.now() });
+  },
+
+  async restoreNovel(novelId) {
+    if (!novelId) return null;
+    return this.updateNovel(novelId, { deletedAt: null });
+  },
+
+  async getRecycleBin(now = Date.now()) {
+    const records = await this._novelRecords();
+    return records
+      .filter((n) => n.deletedAt)
+      .sort((a, b) => b.deletedAt - a.deletedAt)
+      .map((n) => ({
+        ...n,
+        daysLeft: Math.max(0, Math.ceil((n.deletedAt + RECYCLE_BIN_DAYS * DAY_MS - now) / DAY_MS))
+      }));
+  },
+
+  async purgeRecycleBin(now = Date.now()) {
+    const expired = (await this.getRecycleBin(now)).filter((n) => now - n.deletedAt > RECYCLE_BIN_DAYS * DAY_MS);
+    for (const novel of expired) await this.deleteNovel(novel.id);
+    return expired.map((n) => n.id);
+  },
+
+  async deleteNovelForever(novelId) {
+    return this.deleteNovel(novelId);
+  },
 
   async deleteNovel(novelIdOrSlug) {
     if (!novelIdOrSlug) return this.getManagedNovels();
