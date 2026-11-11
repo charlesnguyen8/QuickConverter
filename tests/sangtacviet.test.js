@@ -175,6 +175,29 @@ const EXPECTED_CHINESE = [
     assert.strictEqual(list[0].url, `${QIDIAN_URL}878314492/`);
   });
 
+  await test('parseChapterList keeps an oldest-first list in order when it starts with newer author notes, and drops the unvip marker', () => {
+    const QIDIAN_URL = 'https://sangtacviet.com/truyen/qidian/1/1036693023/';
+    const data = [
+      '1-/-768883953-/- Bản hoàn tất cảm nghĩ ',
+      '1-/-782654974-/- Sách mới đã upload 《 Hokage 》',
+      '1-/-747931426-/- Chương 1: Họa diệt tộc ',
+      '1-/-747932699-/- Chương 02: Phục sinh trở về ',
+      '1-/-768883723-/- Thứ 231 chương Ōtsutsuki Kaguya-/-vip',
+      '1-/-768883739-/- Thứ 232 chương Nhược điểm-/-vip',
+      '1-/-768883799-/- Thứ 234 chương Giới Ninja tương lai-/-unvip\n'
+    ].join('-//-');
+    const list = plain(P.parseChapterList(data, QIDIAN_URL));
+    assert.deepStrictEqual(list.map((c) => [c.chapterNumber, c.slug, c.title]), [
+      [1, '768883953', 'Bản hoàn tất cảm nghĩ'],
+      [2, '782654974', 'Sách mới đã upload 《 Hokage 》'],
+      [3, '747931426', 'Chương 1: Họa diệt tộc'],
+      [4, '747932699', 'Chương 02: Phục sinh trở về'],
+      [5, '768883723', 'Thứ 231 chương Ōtsutsuki Kaguya'],
+      [6, '768883739', 'Thứ 232 chương Nhược điểm'],
+      [7, '768883799', 'Thứ 234 chương Giới Ninja tương lai']
+    ]);
+  });
+
   await test('fetchChapterList asks the same chapter-list endpoint the book page uses, once, with the browser cookies', async () => {
     const calls = [];
     const fetchEnv = loadEnv({

@@ -93,13 +93,18 @@ const SangtacvietProvider = (() => {
   function parseChapterList(data, seriesUrl) {
     const base = seriesUrlFor('', seriesUrl);
     const entries = String(data || '').split('-//-').map((entry) => entry.split('-/-')).filter((parts) => parts.length >= 3 && parts[1].trim());
-    const first = entries.length ? Number(entries[0][1].trim()) : NaN;
-    const last = entries.length ? Number(entries[entries.length - 1][1].trim()) : NaN;
-    const newestFirst = Number.isFinite(first) && Number.isFinite(last) ? first > last : true;
+    const ids = entries.map((parts) => Number(parts[1].trim()));
+    let steps = 0;
+    for (let i = 1; i < ids.length; i += 1) {
+      if (Number.isFinite(ids[i - 1]) && Number.isFinite(ids[i]) && ids[i] !== ids[i - 1]) steps += ids[i] < ids[i - 1] ? 1 : -1;
+    }
+    const first = ids.length ? ids[0] : NaN;
+    const last = ids.length ? ids[ids.length - 1] : NaN;
+    const newestFirst = steps !== 0 ? steps > 0 : (Number.isFinite(first) && Number.isFinite(last) ? first > last : true);
     const ordered = newestFirst ? entries.slice().reverse() : entries;
     return ordered.map((parts, i) => {
       const id = parts[1].trim();
-      const titleParts = parts.length > 3 && parts[parts.length - 1].trim().toLowerCase() === 'vip' ? parts.slice(2, -1) : parts.slice(2);
+      const titleParts = parts.length > 3 && /^(un)?vip$/.test(parts[parts.length - 1].trim().toLowerCase()) ? parts.slice(2, -1) : parts.slice(2);
       const title = titleParts.join('-/-').replace(/\s+/g, ' ').trim();
       return {
         chapterNumber: i + 1,
