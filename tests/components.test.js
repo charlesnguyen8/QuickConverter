@@ -964,6 +964,49 @@ async function testAsync(name, fn) {
     assert(/\bpy-1\b/.test(btn) && !/py-1\.5/.test(btn), 'py-1 like the sync, disk and Recycle Bin pills');
   });
 
+  test('the library list view shows each book as a row with cover, title, progress, size and the ⋮ menu', () => {
+    const { NovelListRow } = libraryMod;
+    const novel = { id: 'n1', title: 'Book One', domain: 'sangtacviet.com', totalChapters: 10, thumbnail: 'cover.jpg' };
+    const html = render(h(NovelListRow, { novel, stats: { downloadedCount: 4, formattedSize: '12 KB' } }));
+    assert(/<li\b[^>]*cursor-pointer/.test(html), 'a list item');
+    assert(html.includes('Book One') && html.includes('sangtacviet.com'), 'title and site');
+    assert(/src="cover\.jpg"/.test(html), 'cover');
+    assert(html.includes('40%') && html.includes('4/10'), 'progress and chapter count');
+    assert(html.includes('12 KB'), 'size');
+    const btn = buttonTag(html, 'novel-menu-n1');
+    assert(btn && /min-h-10/.test(btn) && /min-w-10/.test(btn), 'tappable ⋮ menu');
+    assert(!html.includes('id="novel-delete-n1"'), 'the menu starts closed');
+    const read = render(h(NovelListRow, { novel: { ...readNovel, id: 'n3' }, stats: {} }));
+    assert(/data-continue-reading="true"/.test(read) && read.includes('Last read'), 'Continue link');
+  });
+
+  test('the library can switch between card and list views', () => {
+    const { LibraryViewToggle } = libraryMod;
+    const cards = render(h(LibraryViewToggle, { mode: 'cards', onChange: () => {} }));
+    const cardBtn = buttonTag(cards, 'library-view-cards');
+    const listBtn = buttonTag(cards, 'library-view-list');
+    assert(cardBtn && listBtn, 'both choices');
+    assert(/aria-pressed="true"/.test(cardBtn) && /aria-pressed="false"/.test(listBtn), 'cards chosen');
+    assert(/min-h-10/.test(cardBtn) && /min-h-10/.test(listBtn), 'tappable');
+    const list = render(h(LibraryViewToggle, { mode: 'list', onChange: () => {} }));
+    assert(/aria-pressed="true"/.test(buttonTag(list, 'library-view-list')), 'list chosen');
+    assert(buttonTag(render(h(libraryMod.default)), 'library-view-list'), 'the library shows the switch');
+  });
+
+  test('the library remembers the chosen view, and falls back to cards', () => {
+    const { readLibraryViewMode, saveLibraryViewMode } = libraryMod;
+    const store = {};
+    const fake = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } };
+    assert.strictEqual(readLibraryViewMode(fake), 'cards');
+    saveLibraryViewMode('list', fake);
+    assert.strictEqual(readLibraryViewMode(fake), 'list');
+    store[Object.keys(store)[0]] = 'bogus';
+    assert.strictEqual(readLibraryViewMode(fake), 'cards');
+    const broken = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
+    assert.strictEqual(readLibraryViewMode(broken), 'cards');
+    saveLibraryViewMode('list', broken);
+  });
+
   test('the library header opens the Recycle Bin', () => {
     const html = render(h(libraryMod.default));
     const btn = (html.match(/<a[^>]*id="library-bin-btn"[^>]*>/) || [''])[0];

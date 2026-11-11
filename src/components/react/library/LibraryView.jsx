@@ -37,13 +37,106 @@ function RecycleBinLink({ count }) {
   );
 }
 
-export function NovelCardMenu({ novel, onDelete, onClose }) {
+const VIEW_MODE_KEY = 'quickconverter_library_view';
+const VIEW_MODES = ['cards', 'list'];
+
+function defaultStore() {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+export function readLibraryViewMode(store = defaultStore()) {
+  try {
+    const saved = store ? store.getItem(VIEW_MODE_KEY) : null;
+    return VIEW_MODES.includes(saved) ? saved : 'cards';
+  } catch (e) {
+    return 'cards';
+  }
+}
+
+export function saveLibraryViewMode(mode, store = defaultStore()) {
+  try {
+    if (store) store.setItem(VIEW_MODE_KEY, mode);
+  } catch (e) {}
+}
+
+export function LibraryViewToggle({ mode, onChange }) {
+  const option = (value, label, icon) => (
+    <button
+      type="button"
+      id={`library-view-${value}`}
+      aria-pressed={mode === value}
+      title={`Show books as ${label.toLowerCase()}`}
+      onClick={() => onChange(value)}
+      className={`inline-flex items-center gap-1.5 min-h-10 px-3 rounded-lg text-xs font-semibold transition cursor-pointer ${mode === value ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+  return (
+    <div role="group" aria-label="Library view" className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-800 border border-slate-700/80">
+      {option('cards', 'Cards', (
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" />
+        </svg>
+      ))}
+      {option('list', 'List', (
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <path d="M8 6h13M8 12h13M8 18h13" />
+          <circle cx="4" cy="6" r="1" />
+          <circle cx="4" cy="12" r="1" />
+          <circle cx="4" cy="18" r="1" />
+        </svg>
+      ))}
+    </div>
+  );
+}
+
+function MenuButton({ novel, open, onToggle, className = '' }) {
+  return (
+    <button
+      type="button"
+      id={`novel-menu-${novel.id}`}
+      aria-label={`More options for ${novel.title}`}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      className={`${className} min-h-10 min-w-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition cursor-pointer`}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <circle cx="12" cy="5" r="2" />
+        <circle cx="12" cy="12" r="2" />
+        <circle cx="12" cy="19" r="2" />
+      </svg>
+    </button>
+  );
+}
+
+function novelProgress(novel, stats) {
+  const downloaded = stats.downloadedCount || 0;
+  const total = novel.totalChapters || stats.totalChapters || 100;
+  const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
+  return { downloaded, total, percent, formattedSize: stats.formattedSize || '0 B' };
+}
+
+function openNovel(novel) {
+  window.location.href = `novel.html?id=${encodeURIComponent(novel.id)}`;
+}
+
+export function NovelCardMenu({ novel, onDelete, onClose, placement = 'bottom-14 right-2' }) {
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); onClose(); }} />
       <div
         role="menu"
-        className="absolute bottom-14 right-2 z-50 min-w-[10rem] rounded-xl bg-slate-900 border border-slate-700 shadow-2xl p-1 flex flex-col"
+        className={`absolute ${placement} z-50 min-w-[10rem] rounded-xl bg-slate-900 border border-slate-700 shadow-2xl p-1 flex flex-col`}
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -83,10 +176,7 @@ export function DeleteNovelDialog({ novel, onConfirm, onCancel }) {
 
 export function NovelCard({ novel, stats, onDelete }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const downloaded = stats.downloadedCount || 0;
-  const total = novel.totalChapters || stats.totalChapters || 100;
-  const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
-  const formattedSize = stats.formattedSize || '0 B';
+  const { total, percent, formattedSize } = novelProgress(novel, stats);
   const thumbnailSrc = coverSrc(novel.thumbnail);
   const continueLink = continueHref(novel);
 
@@ -94,7 +184,7 @@ export function NovelCard({ novel, stats, onDelete }) {
     <div
       className="relative flex flex-col rounded-lg border border-slate-800 bg-slate-800/80 hover:border-indigo-500/60 hover:bg-slate-800 hover:shadow-md transition shadow-sm group cursor-pointer"
       title={`Click to view chapters for ${novel.title}`}
-      onClick={() => { window.location.href = `novel.html?id=${encodeURIComponent(novel.id)}`; }}
+      onClick={() => openNovel(novel)}
     >
       <div className="aspect-[3/4] w-full bg-slate-900 overflow-hidden relative rounded-t-lg">
         <img
@@ -148,23 +238,64 @@ export function NovelCard({ novel, stats, onDelete }) {
           </div>
         </div>
       </div>
-      <button
-        type="button"
-        id={`novel-menu-${novel.id}`}
-        aria-label={`More options for ${novel.title}`}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        onClick={(e) => { e.stopPropagation(); setMenuOpen((open) => !open); }}
-        className="absolute bottom-2 right-2 min-h-10 min-w-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition cursor-pointer"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <circle cx="12" cy="5" r="2" />
-          <circle cx="12" cy="12" r="2" />
-          <circle cx="12" cy="19" r="2" />
-        </svg>
-      </button>
+      <MenuButton novel={novel} open={menuOpen} onToggle={() => setMenuOpen((open) => !open)} className="absolute bottom-2 right-2" />
       {menuOpen ? <NovelCardMenu novel={novel} onDelete={onDelete || (() => {})} onClose={() => setMenuOpen(false)} /> : null}
     </div>
+  );
+}
+
+export function NovelListRow({ novel, stats, onDelete }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { downloaded, total, percent, formattedSize } = novelProgress(novel, stats);
+  const continueLink = continueHref(novel);
+
+  return (
+    <li
+      className="relative flex items-center gap-3 p-2.5 sm:p-3 rounded-lg border border-slate-800 bg-slate-800/80 hover:border-indigo-500/60 hover:bg-slate-800 transition shadow-sm group cursor-pointer"
+      title={`Click to view chapters for ${novel.title}`}
+      onClick={() => openNovel(novel)}
+    >
+      <img
+        src={coverSrc(novel.thumbnail)}
+        alt={novel.title}
+        onError={showDefaultCover}
+        className="w-12 h-16 rounded object-cover bg-slate-900 flex-shrink-0 self-start"
+      />
+      <div className="flex flex-col gap-1 min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 text-[11px] text-indigo-400 font-medium min-w-0">
+          <span aria-hidden="true">🌐</span>
+          <span className="truncate">{novel.domain || 'wetriedtls.com'}</span>
+        </div>
+        <h3 className="font-bold text-sm text-slate-100 group-hover:text-indigo-300 transition line-clamp-1 leading-snug">
+          {novel.title}
+        </h3>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex-1 min-w-[3rem] bg-slate-700/60 rounded-full h-1.5 overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-500 to-purple-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
+          </div>
+          <span className="text-[11px] text-indigo-400 font-semibold">{percent}%</span>
+          <span className="text-[11px] text-slate-400 font-mono" title="Saved chapters of all chapters">{downloaded}/{total}</span>
+          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-400" title="Disk storage used by this novel">
+            <span aria-hidden="true">💾</span>
+            <span>{formattedSize}</span>
+          </span>
+        </div>
+        {continueLink ? (
+          <a
+            href={continueLink}
+            data-continue-reading="true"
+            onClick={(e) => e.stopPropagation()}
+            title={novel.lastRead.title ? `Continue: ${novel.lastRead.title}` : 'Continue reading'}
+            className="self-start inline-flex items-center gap-1.5 min-h-10 px-3 rounded-lg text-xs font-semibold text-indigo-200 bg-indigo-500/15 border border-indigo-500/30 hover:bg-indigo-500/25 transition max-w-full"
+          >
+            <span aria-hidden="true">▶</span>
+            <span className="truncate">Last read: {lastReadLabel(novel)}</span>
+          </a>
+        ) : null}
+      </div>
+      <MenuButton novel={novel} open={menuOpen} onToggle={() => setMenuOpen((open) => !open)} className="flex-shrink-0 self-start" />
+      {menuOpen ? <NovelCardMenu novel={novel} placement="top-12 right-2" onDelete={onDelete || (() => {})} onClose={() => setMenuOpen(false)} /> : null}
+    </li>
   );
 }
 
@@ -174,6 +305,7 @@ export default function LibraryView() {
   const [loaded, setLoaded] = useState(false);
   const [binCount, setBinCount] = useState(0);
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [viewMode, setViewMode] = useState(() => readLibraryViewMode());
   const [showBin, setShowBin] = useState(() => typeof window !== 'undefined' && !!window.location && window.location.hash === '#recycle-bin');
 
   const load = useCallback(async () => {
@@ -246,6 +378,11 @@ export default function LibraryView() {
     load();
   }, [pendingDelete, load]);
 
+  const chooseView = useCallback((mode) => {
+    setViewMode(mode);
+    saveLibraryViewMode(mode);
+  }, []);
+
   const leaveBin = useCallback(() => {
     if (window.location.hash === '#recycle-bin') window.history.back();
     setShowBin(false);
@@ -307,11 +444,24 @@ export default function LibraryView() {
             <AddBookButton />
           </div>
         ) : (
-          <div id="library-grid" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {novels.map(({ novel, stats }) => (
-              <NovelCard key={novel.id} novel={novel} stats={stats} onDelete={setPendingDelete} />
-            ))}
-          </div>
+          <>
+            <div className="flex justify-end -mb-2">
+              <LibraryViewToggle mode={viewMode} onChange={chooseView} />
+            </div>
+            {viewMode === 'list' ? (
+              <ul id="library-grid" className="flex flex-col gap-2">
+                {novels.map(({ novel, stats }) => (
+                  <NovelListRow key={novel.id} novel={novel} stats={stats} onDelete={setPendingDelete} />
+                ))}
+              </ul>
+            ) : (
+              <div id="library-grid" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {novels.map(({ novel, stats }) => (
+                  <NovelCard key={novel.id} novel={novel} stats={stats} onDelete={setPendingDelete} />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
       {pendingDelete ? <DeleteNovelDialog novel={pendingDelete} onConfirm={confirmDelete} onCancel={() => setPendingDelete(null)} /> : null}
