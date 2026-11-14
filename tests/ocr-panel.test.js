@@ -787,7 +787,7 @@ process.on('beforeExit', () => {
     assert.strictEqual(P.isImageChapter({ documentElement: { outerHTML: textPage } }), false);
   });
 
-  await test('captureChapterImage reuses the image the page already shows and never re-requests it', async () => {
+  await test('captureChapterImage falls back to the image the page already shows when no fresh code can be had, and never re-requests it', async () => {
     const env = { console, URL };
     env.globalThis = env;
     vm.createContext(env);
@@ -796,7 +796,7 @@ process.on('beforeExit', () => {
 
     const imageUrl = 'https://www.nkwwlkj.cn/chapter/book_chapter_image?chapter_id=1&image_code=once';
     const loaded = [];
-    let fetched = false;
+    const fetched = [];
     class FakeImage {
       set src(v) {
         this._src = v;
@@ -821,12 +821,12 @@ process.on('beforeExit', () => {
     };
     const fakeWin = {
       Image: FakeImage,
-      fetch: () => { fetched = true; throw new Error('must not fetch'); },
+      fetch: (url) => { fetched.push(String(url)); throw new Error('offline'); },
       getComputedStyle: () => ({ backgroundImage: `url("${imageUrl}")` })
     };
 
     const result = await P.captureChapterImage(fakeDoc, fakeWin);
-    assert.strictEqual(fetched, false, 'the one-time image URL is never fetched again');
+    assert(!fetched.some((url) => url.includes('book_chapter_image')), 'the one-time image URL is never fetched again');
     assert.deepStrictEqual(loaded, [imageUrl], 'loads the URL the page already displayed');
     assert.deepStrictEqual(drawn, [[imageUrl, 0, 0, 939, 4200]], 'draws it at full size');
     assert.strictEqual(result.width, 939);

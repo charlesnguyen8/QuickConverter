@@ -599,6 +599,65 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
     assert.deepStrictEqual(cs.js, ['providers/nkwwlkj.js', 'providers/registry.js', 'services/site-page.js', 'scripts/content.js']);
   });
 
+  const IMAGE_CODE_REPLY = {
+    code: 100000,
+    encryt_keys: ['ScO3ky4k+wEzN5hSDvVa84mDQffwZ6doHiN0UsNgYt4=', 'BxB3TxCI8vWZ231Kl2o0qKaYZjqPSEN3h9V9zAgINow=', 'eMxyumeutHvLXv/9Sm50ZF5PjXPFHbAn0caSdUT0pgc=', 'y37Lw7MVuy3mBJz/IbZvni+3JL6KcOb6K2GPdY13FRM=', 'SFbf0ALG5JOJJmcD6NFnmCRJZNAjsU+ighdG2acoNbY=', 'UyyDqgsJfX+YsMW7fflc4cBATcAizQzMbjI+zeoooXU=', 'OQprhclNeAtOilpJf4e5VLofQYBI2zgRFGErE4uKaqo=', 'QY/3PMqtDepk5fd+zYh62nm0VHWNIRuYJCdVhu/8gCI=', 'AIo0cyMoB06+6ILPaP3S8dwIp4iCyqOI/j080Y47ODQ=', 'Nrm9/aRukhi8Kh5/bLrAPBlc5E/52s3nJrYg5r4jpaM=', 'ALnIF5CJpKrHTzs7893ZikfHKoG1Phi0UeOfL0zEono=', 'U0tdCSFQ/t1EStakKmueudFPRzMT5pFc3ks2yfV0H2Q=', 'tofeUBEtEBLnySjgzRh7N0Y+S0lArvwBfAkSJYIwgXc=', 'LL59wNyyucOvaAVJRmfcPeZgSIiaLNYhuCT2fz0lMp0=', 'jK5EdwzCMpGyc2Xw6LfU0NAYwhrMjpQTdv/loQ0syYM=', 'l9p7LGJ+hIUVICyb5rmb9aZtFzqQ4jnzv9LUTqD9Ha4='],
+    access_key: 'aWVAENqcze4HcDd8',
+    image_code: '+9ZZvBm+mpDhriYFkalkI3SxFiXb1x30AFN1ZSvJj9aF2yxb06T5vXNR1alM0+cUoSFM5PzMkA9mngYlu4nRF8oVbaobvFj8Y245LSYjRd9C4zAe76eLDvsXk6YzT2aTx78RHPqHZ/XAKQ1XYuqWmg=='
+  };
+  const FRESH_CODE = 'm7yaWjm1MlxM15QOQn58bpNKqGiz2UsQ';
+  const webEnv = (extra) => loadEnv({ atob, btoa, TextDecoder, crypto: globalThis.crypto, ...extra });
+
+  await test('decryptImageCode turns the site image-code reply into the code its own script would get', async () => {
+    const P = webEnv().NkwwlkjProvider;
+    assert.strictEqual(await P.decryptImageCode(IMAGE_CODE_REPLY), FRESH_CODE);
+    assert.strictEqual(await P.decryptImageCode({ code: 100000, encryt_keys: [], access_key: '', image_code: '' }), null);
+  });
+
+  function imagePage(pageUrl, fetchReply) {
+    const loaded = [];
+    const fetched = [];
+    const ctx = { fillRect() {}, drawImage() {}, set fillStyle(v) {} };
+    const doc = {
+      getElementById: (id) => (id === 'J_BookImage' ? { id } : null),
+      createElement: () => ({ getContext: () => ctx, toBlob: (cb) => cb({ arrayBuffer: async () => new ArrayBuffer(8) }) })
+    };
+    const win = {
+      getComputedStyle: () => ({ backgroundImage: `url("${pageUrl}")` }),
+      fetch: async (url, init) => { fetched.push([url, init]); return fetchReply(); },
+      Image: class {
+        set src(v) { loaded.push(v); this.naturalWidth = 798; this.naturalHeight = 158; setTimeout(() => this.onload(), 0); }
+      }
+    };
+    return { doc, win, loaded, fetched };
+  }
+  const SPENT_URL = 'https://www.nkwwlkj.cn/chapter/book_chapter_image?chapter_id=100374104&area_width=798&font=undefined&font_size=18&image_code=SPENTCODE&bg_color_name=white&text_color_name=white';
+
+  await test('captureChapterImage asks for a fresh image code instead of re-using the one the page already spent', async () => {
+    const P = webEnv().NkwwlkjProvider;
+    const page = imagePage(SPENT_URL, () => ({ ok: true, json: async () => IMAGE_CODE_REPLY }));
+    const image = await P.captureChapterImage(page.doc, page.win);
+    assert(image && image.width === 798, 'captured the chapter image');
+    assert.strictEqual(page.fetched.length, 1);
+    assert.strictEqual(page.fetched[0][0], 'https://www.nkwwlkj.cn/chapter/ajax_get_image_session_code');
+    assert.strictEqual(page.fetched[0][1].credentials, 'include');
+    const url = new URL(page.loaded[0]);
+    assert.strictEqual(url.searchParams.get('image_code'), FRESH_CODE, 'fresh code');
+    assert.strictEqual(url.searchParams.get('chapter_id'), '100374104');
+    assert.strictEqual(url.searchParams.get('area_width'), '798');
+    assert.strictEqual(url.searchParams.get('font_size'), '18');
+  });
+
+  await test('captureChapterImage falls back to the page image when no fresh code can be had', async () => {
+    const P = webEnv().NkwwlkjProvider;
+    const failing = imagePage(SPENT_URL, () => { throw new Error('offline'); });
+    assert(await P.captureChapterImage(failing.doc, failing.win), 'still captures');
+    assert.strictEqual(failing.loaded[0], SPENT_URL);
+    const refused = imagePage(SPENT_URL, () => ({ ok: true, json: async () => ({ code: 200001, tip: 'x' }) }));
+    await P.captureChapterImage(refused.doc, refused.win);
+    assert.strictEqual(refused.loaded[0], SPENT_URL);
+  });
+
   await test('every view and the background worker load the provider before the registry', () => {
     const sources = ['library', 'novel', 'popup', 'reader', 'settings'].map((v) => [`views/${v}.html`, read('src', 'views', `${v}.html`)]);
     sources.push(['scripts/background.js', read('extension', 'scripts', 'background.js')]);

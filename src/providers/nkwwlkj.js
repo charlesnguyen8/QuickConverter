@@ -192,6 +192,50 @@ const NkwwlkjProvider = (() => {
     return `${ORIGIN}/signup/login?redirect=${encodeURIComponent(redirect || `${ORIGIN}/`)}`;
   }
 
+  function bytesFromBase64(text) {
+    const binary = atob(String(text || ''));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function decryptImageCode(reply) {
+    const keys = reply && Array.isArray(reply.encryt_keys) ? reply.encryt_keys : [];
+    const access = String((reply && reply.access_key) || '');
+    const subtle = typeof crypto !== 'undefined' && crypto ? crypto.subtle : null;
+    if (!keys.length || !access || !reply.image_code || !subtle) return null;
+    const order = [keys[access.charCodeAt(access.length - 1) % keys.length], keys[access.charCodeAt(0) % keys.length]];
+    try {
+      let data = bytesFromBase64(reply.image_code);
+      for (let i = 0; i < order.length; i += 1) {
+        const key = await subtle.importKey('raw', bytesFromBase64(order[i]), { name: 'AES-CBC' }, false, ['decrypt']);
+        const plain = new Uint8Array(await subtle.decrypt({ name: 'AES-CBC', iv: data.slice(0, 16) }, key, data.slice(16)));
+        if (i === order.length - 1) return new TextDecoder().decode(plain) || null;
+        data = bytesFromBase64(String.fromCharCode(...plain));
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
+  async function freshImageUrl(pageUrl, win) {
+    const fetchFn = win && typeof win.fetch === 'function' ? win.fetch.bind(win) : (typeof fetch === 'function' ? fetch : null);
+    if (!fetchFn) return pageUrl;
+    try {
+      const resp = await fetchFn(new URL('/chapter/ajax_get_image_session_code', pageUrl).href, { credentials: 'include', cache: 'no-store' });
+      const reply = resp && resp.ok ? await resp.json() : null;
+      if (!reply || Number(reply.code) !== 100000) return pageUrl;
+      const code = await decryptImageCode(reply);
+      if (!code) return pageUrl;
+      const url = new URL(pageUrl);
+      url.searchParams.set('image_code', code);
+      return url.href;
+    } catch (e) {
+      return pageUrl;
+    }
+  }
+
   function nativeHttp() {
     const platform = typeof Platform !== 'undefined' ? Platform : null;
     return platform && platform.http ? platform.http : null;
@@ -268,12 +312,13 @@ const NkwwlkjProvider = (() => {
       if (!holder || !win || typeof win.getComputedStyle !== 'function') return null;
       const match = (win.getComputedStyle(holder).backgroundImage || '').match(/url\(["']?(.*?)["']?\)/);
       if (!match) return null;
+      const imageUrl = await freshImageUrl(match[1], win);
 
       const img = new win.Image();
       await new Promise((resolve, reject) => {
         img.onload = () => resolve();
         img.onerror = () => reject(new Error('The chapter image could not be loaded.'));
-        img.src = match[1];
+        img.src = imageUrl;
       });
       const canvas = doc.createElement('canvas');
       canvas.width = img.naturalWidth;
@@ -286,6 +331,8 @@ const NkwwlkjProvider = (() => {
       if (!blob) return null;
       return { bytes: await blob.arrayBuffer(), mimeType: 'image/png', width: canvas.width, height: canvas.height };
     },
+
+    decryptImageCode,
 
     isImageChapter(doc) {
       return parseChapterPageHtml(docHtml(doc)).imageOnly;
