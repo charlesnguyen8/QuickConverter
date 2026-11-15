@@ -178,7 +178,71 @@ const LIST_TABS = [
 
 const FORMAT_PROMPT = 'For each source term below, output its translation. Return ONLY one block in this exact format, with no extra text or explanation:\n<<<TRANSLATION_START>>>\nname=translation|name=translation|...\n<<<TRANSLATION_END>>>';
 
-const PROMPT_SELECTABLE_TABS = ['namelist', 'locked'];
+export const SELECTABLE_TABS = ['namelist', 'locked', 'soft'];
+
+export function selectedTermsFrom(lists, keys) {
+  const terms = [];
+  SELECTABLE_TABS.forEach((kind) => {
+    ((lists && lists[kind]) || []).forEach((entry) => {
+      if (keys.has(`${kind}::${entry.id}`)) terms.push({ kind, id: entry.id, original: entry.original, translation: entry.translation });
+    });
+  });
+  return terms;
+}
+
+export function SelectEntryButton({ original, selected, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      className={`inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-8 sm:min-w-8 p-2 rounded transition cursor-pointer ${selected ? 'text-amber-300 bg-amber-500/20' : 'text-slate-400 hover:text-amber-300 hover:bg-slate-700/60'}`}
+      title="Select"
+      aria-label={`Select ${original}`}
+      aria-pressed={selected}
+    >
+      <span className={`inline-flex items-center justify-center w-4 h-4 rounded border ${selected ? 'bg-amber-500 border-amber-400 text-slate-900' : 'border-slate-500'}`}>
+        {selected ? <CheckIcon size={11} /> : null}
+      </span>
+    </button>
+  );
+}
+
+export function SelectAllButton({ total, selectedCount, onSelectAll, onClear }) {
+  const all = total > 0 && selectedCount >= total;
+  return (
+    <button
+      type="button"
+      id="name-list-select-all-btn"
+      onClick={all ? onClear : onSelectAll}
+      className="inline-flex items-center gap-2 min-h-10 sm:min-h-8 px-2 rounded-md text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+    >
+      <span className={`inline-flex items-center justify-center w-4 h-4 rounded border ${all ? 'bg-amber-500 border-amber-400 text-slate-900' : 'border-slate-500'}`}>
+        {all ? <CheckIcon size={11} /> : null}
+      </span>
+      <span>{all ? 'Unselect all' : 'Select all'}</span>
+    </button>
+  );
+}
+
+export function SelectionBar({ count, onPrompt, onCommon, onClear }) {
+  if (!count) return null;
+  return (
+    <div id="name-list-selection-bar" className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-t border-amber-500/30 bg-slate-950/95 backdrop-blur flex-shrink-0">
+      <span id="name-list-selected-count" className="text-xs font-bold text-amber-300 mr-auto">{count} selected</span>
+      <button type="button" id="name-list-selection-prompt-btn" onClick={onPrompt} className="inline-flex items-center gap-1 min-h-10 px-3 rounded-lg text-xs font-semibold text-amber-100 bg-amber-500/15 hover:bg-amber-600 border border-amber-500/40 transition cursor-pointer">
+        ✨ Add to prompt
+      </button>
+      {onCommon ? (
+        <button type="button" id="name-list-selection-common-btn" onClick={onCommon} className="inline-flex items-center gap-1 min-h-10 px-3 rounded-lg text-xs font-semibold text-indigo-100 bg-indigo-500/15 hover:bg-indigo-600 border border-indigo-500/40 transition cursor-pointer">
+          📚 Add to common list
+        </button>
+      ) : null}
+      <button type="button" id="name-list-selection-clear-btn" onClick={onClear} className="inline-flex items-center min-h-10 px-3 rounded-lg text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition cursor-pointer">
+        Clear
+      </button>
+    </div>
+  );
+}
 
 function SourceSnippet({ snippet }) {
   return (
@@ -238,7 +302,7 @@ export default function NameListDrawer() {
   const [resultText, setResultText] = useState('');
   const [promptStatus, setPromptStatus] = useState(null);
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
-  const [promptLists, setPromptLists] = useState({ namelist: [], locked: [] });
+  const [promptLists, setPromptLists] = useState({ namelist: [], locked: [], soft: [] });
   const promptPanelRef = useRef(false);
   promptPanelRef.current = promptPanelOpen;
   const [strictConflicts, setStrictConflicts] = useState(() => {
@@ -499,20 +563,17 @@ export default function NameListDrawer() {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
     if (!storage || !novelId || typeof storage.getNameList !== 'function') return;
     try {
-      const [names, locked] = await Promise.all([
-        storage.getNameList(novelId, 'namelist'),
-        storage.getNameList(novelId, 'locked')
-      ]);
-      setPromptLists({ namelist: Array.isArray(names) ? names : [], locked: Array.isArray(locked) ? locked : [] });
+      const [names, locked, soft] = await Promise.all(SELECTABLE_TABS.map((kind) => storage.getNameList(novelId, kind)));
+      setPromptLists({ namelist: Array.isArray(names) ? names : [], locked: Array.isArray(locked) ? locked : [], soft: Array.isArray(soft) ? soft : [] });
     } catch (e) {
       console.error('Error loading prompt lists:', e);
     }
   }, [novelId]);
 
   useEffect(() => {
-    if (!promptPanelOpen) return;
+    if (!promptPanelOpen && !open) return;
     loadPromptLists();
-  }, [promptPanelOpen, loadPromptLists, entries]);
+  }, [promptPanelOpen, open, loadPromptLists, entries]);
 
   useEffect(() => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
@@ -543,15 +604,8 @@ export default function NameListDrawer() {
 
   const clearSelected = useCallback(() => setSelectedKeys(new Set()), []);
 
-  const selectedTerms = useMemo(() => {
-    const terms = [];
-    PROMPT_SELECTABLE_TABS.forEach((kind) => {
-      (promptLists[kind] || []).forEach((entry) => {
-        if (selectedKeys.has(`${kind}::${entry.id}`)) terms.push(entry.original);
-      });
-    });
-    return terms;
-  }, [promptLists, selectedKeys]);
+  const selectedEntries = useMemo(() => selectedTermsFrom(promptLists, selectedKeys), [promptLists, selectedKeys]);
+  const selectedTerms = useMemo(() => selectedEntries.map((term) => term.original), [selectedEntries]);
 
   const finalPrompt = useMemo(() => {
     const parts = [];
@@ -590,9 +644,11 @@ export default function NameListDrawer() {
       return;
     }
     try {
-      const names = await storage.getNameList(novelId, 'namelist');
-      const locked = await storage.getNameList(novelId, 'locked');
-      const kindLists = [['namelist', Array.isArray(names) ? names : []], ['locked', Array.isArray(locked) ? locked : []]];
+      const kindLists = [];
+      for (const kind of SELECTABLE_TABS) {
+        const list = await storage.getNameList(novelId, kind);
+        kindLists.push([kind, Array.isArray(list) ? list : []]);
+      }
       let updated = 0;
       const changed = new Map();
       for (const pair of pairs) {
@@ -612,7 +668,7 @@ export default function NameListDrawer() {
       await reload();
       await loadPromptLists();
       if (updated === 0) {
-        setPromptStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 block', msg: 'No matching Name List / Locked entries were updated (unknown sources are ignored).' });
+        setPromptStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 block', msg: 'No matching Name List, Locked or Soft entries were updated (unknown sources are ignored).' });
         return;
       }
       setPromptStatus({ cls: 'text-xs font-semibold py-1 px-2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 block', msg: `Updated ${updated} entr${updated === 1 ? 'y' : 'ies'}. ✓` });
@@ -680,6 +736,22 @@ export default function NameListDrawer() {
 
   const activeMeta = LIST_TABS.find((tab) => tab.id === activeTab) || LIST_TABS[0];
   const filtered = useMemo(() => sortAndFilter(entries, search.trim(), sort), [entries, search, sort]);
+
+  const selectAllShown = useCallback(() => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      filtered.forEach((entry) => next.add(`${activeTab}::${entry.id}`));
+      return next;
+    });
+  }, [filtered, activeTab]);
+
+  const unselectAllShown = useCallback(() => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      filtered.forEach((entry) => next.delete(`${activeTab}::${entry.id}`));
+      return next;
+    });
+  }, [filtered, activeTab]);
   const filteredRef = useRef([]);
   filteredRef.current = filtered;
   const virtualize = !editingId && filtered.length > VIRTUALIZE_AT;
@@ -1097,7 +1169,7 @@ export default function NameListDrawer() {
                   >
                     Process Result
                   </button>
-                  <span className="text-[11px] text-slate-500 text-right">Updates Name List &amp; Locked entries that already exist.</span>
+                  <span className="text-[11px] text-slate-500 text-right">Updates Name List, Locked and Soft entries that already exist.</span>
                 </div>
                 {promptStatus ? <div id="name-list-prompt-status" className={promptStatus.cls}>{promptStatus.msg}</div> : null}
               </div>
@@ -1297,6 +1369,16 @@ export default function NameListDrawer() {
             </div>
           ) : null}
 
+          {SELECTABLE_TABS.includes(activeTab) && filtered.length > 0 ? (
+            <div className="flex items-center justify-between gap-2 px-4 pt-2 flex-shrink-0">
+              <SelectAllButton
+                total={filtered.length}
+                selectedCount={filtered.filter((entry) => selectedKeys.has(`${activeTab}::${entry.id}`)).length}
+                onSelectAll={selectAllShown}
+                onClear={unselectAllShown}
+              />
+            </div>
+          ) : null}
           <div id="name-list-items" ref={listRef} onScroll={onListScroll} className="flex-1 overflow-y-auto p-4">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
@@ -1316,7 +1398,7 @@ export default function NameListDrawer() {
               <>
                 {virtualize && windowRange.start > 0 ? <div style={{ height: windowRange.start * ROW_HEIGHT }} aria-hidden="true" /> : null}
                 {visibleEntries.map((entry) => {
-                  const isSelectable = PROMPT_SELECTABLE_TABS.includes(activeTab);
+                  const isSelectable = SELECTABLE_TABS.includes(activeTab);
                   const isSelected = isSelectable && selectedKeys.has(`${activeTab}::${entry.id}`);
                   return editingId === entry.id ? (
                     <div key={entry.id} className="pb-2">
@@ -1365,9 +1447,7 @@ export default function NameListDrawer() {
                         </div>
                         <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition flex-shrink-0">
                           {isSelectable ? (
-                            <button type="button" onClick={(e) => { e.stopPropagation(); toggleSelected(activeTab, entry.id); }} className={`inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded transition cursor-pointer ${isSelected ? 'text-amber-300 bg-amber-500/20' : 'text-slate-400 hover:text-amber-300 hover:bg-slate-700/60'}`} title={isSelected ? 'Remove from translation prompt' : 'Include in translation prompt'} aria-pressed={isSelected}>
-                              <CheckIcon />
-                            </button>
+                            <SelectEntryButton original={entry.original} selected={isSelected} onToggle={() => toggleSelected(activeTab, entry.id)} />
                           ) : null}
                           <MoveEntryButtons tab={activeTab} onMove={(to) => moveEntry(entry, to)} />
                           <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(entry); }} className="inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700/60 transition cursor-pointer" title="Edit entry">
@@ -1385,6 +1465,7 @@ export default function NameListDrawer() {
               </>
             )}
           </div>
+          <SelectionBar count={selectedEntries.length} onPrompt={openPromptPanel} onClear={clearSelected} />
         </div>
       </div>
     </div>

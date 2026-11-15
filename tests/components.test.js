@@ -776,7 +776,54 @@ async function testAsync(name, fn) {
     assert(!novelApp.includes('id="name-list-prompt-panel"'), 'translation prompt panel must not render until opened');
   });
 
-  const { MoveEntryButtons } = await loadComponent('components/react/novel/NameListDrawer.jsx');
+  const drawerMod = await loadComponent('components/react/novel/NameListDrawer.jsx');
+  const plainArr = (v) => JSON.parse(JSON.stringify(v));
+
+  test('each name list entry has a Select toggle instead of "Include in translation prompt"', () => {
+    const { SelectEntryButton } = drawerMod;
+    const off = render(h(SelectEntryButton, { original: '张郃', selected: false, onToggle() {} }));
+    const on = render(h(SelectEntryButton, { original: '张郃', selected: true, onToggle() {} }));
+    assert(/title="Select"/.test(off) && /aria-label="Select 张郃"/.test(off), 'called Select');
+    assert(/aria-pressed="false"/.test(off) && /aria-pressed="true"/.test(on), 'shows whether it is selected');
+    assert(/min-h-10/.test(off) && /min-w-10/.test(off), '40px touch target');
+    assert(!/translation prompt/i.test(off + on), 'no longer named after the prompt');
+  });
+
+  test('Name List, Locked and Soft entries can all be selected, and the selected terms come from every tab', () => {
+    const { SELECTABLE_TABS, selectedTermsFrom } = drawerMod;
+    assert.deepStrictEqual(plainArr(SELECTABLE_TABS), ['namelist', 'locked', 'soft']);
+    const lists = {
+      namelist: [{ id: 'a', original: '张郃', translation: 'Trương Cáp' }, { id: 'b', original: '萧炎', translation: 'Tiêu Viêm' }],
+      locked: [{ id: 'c', original: '长老', translation: 'trưởng lão' }],
+      soft: [{ id: 'd', original: '师兄', translation: 'sư huynh' }]
+    };
+    const picked = selectedTermsFrom(lists, new Set(['namelist::a', 'locked::c', 'soft::d', 'soft::gone']));
+    assert.deepStrictEqual(plainArr(picked.map((t) => [t.kind, t.original, t.translation])), [['namelist', '张郃', 'Trương Cáp'], ['locked', '长老', 'trưởng lão'], ['soft', '师兄', 'sư huynh']], 'entries that no longer exist are left out');
+  });
+
+  test('Select all picks every entry shown on the tab, and turns into Unselect all', () => {
+    const { SelectAllButton } = drawerMod;
+    const none = render(h(SelectAllButton, { total: 5, selectedCount: 2, onSelectAll() {}, onClear() {} }));
+    const all = render(h(SelectAllButton, { total: 5, selectedCount: 5, onSelectAll() {}, onClear() {} }));
+    assert(/id="name-list-select-all-btn"/.test(none) && none.includes('Select all'), 'Select all');
+    assert(all.includes('Unselect all'), 'Unselect all once everything is selected');
+    assert(/min-h-10/.test(none), 'tappable');
+  });
+
+  test('the selection bar shows the count with Add to prompt and Clear, and only offers Add to common list when it can', () => {
+    const { SelectionBar } = drawerMod;
+    assert.strictEqual(render(h(SelectionBar, { count: 0, onPrompt() {}, onClear() {} })), '', 'hidden with nothing selected');
+    const bar = render(h(SelectionBar, { count: 3, onPrompt() {}, onClear() {} }));
+    const button = (id) => (bar.match(new RegExp(`<button[^>]*id="${id}"[^>]*>[\\s\\S]*?</button>`)) || [''])[0];
+    assert(/id="name-list-selection-bar"/.test(bar) && bar.includes('3 selected'), 'count');
+    assert(button('name-list-selection-prompt-btn').includes('Add to prompt') && /min-h-10/.test(button('name-list-selection-prompt-btn')), 'Add to prompt');
+    assert(button('name-list-selection-clear-btn').includes('Clear'), 'Clear');
+    assert(!button('name-list-selection-common-btn'), 'no common list action until it is wired');
+    const withCommon = render(h(SelectionBar, { count: 1, onPrompt() {}, onCommon() {}, onClear() {} }));
+    assert(withCommon.includes('1 selected') && /id="name-list-selection-common-btn"[^>]*>[\s\S]*?Add to common list/.test(withCommon), 'Add to common list');
+  });
+
+  const { MoveEntryButtons } = drawerMod;
   test('Name List rows move to the Locked Glossary, Locked rows move to the Name List, Soft rows still move to Locked', () => {
     const moves = (tab) => {
       const html = render(h(MoveEntryButtons, { tab, onMove() {} }));
