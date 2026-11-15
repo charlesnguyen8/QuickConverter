@@ -101,6 +101,9 @@ nodes, so the helper's `render` strips `<!-- -->`).
   wrap it with view-specific `variant`/`ids`/`hooks` and read it back through its imperative ref
   (`getDownloadOptions`/`refreshBalance`). Remaining classic globals (`src/services/`,
   `src/providers/`) still load via `<script>`; register new ones as IIFE + `window.*` export.
+- Name List drawer: Select works on the Name List, Locked and Soft tabs; any new "this term already
+  exists" flow should reuse `ClashDialog` / `walkClashes` from `novel/CommonListDialogs.jsx`. Common lists
+  are reached only through StorageService (`getCommonLists`, `addToCommonList`, `applyCommonList`, …).
 - Keep `DownloadQueueService` runnable both in-thread and via background worker delegation. It holds
   several lanes (one per novel); new download buttons ask through `useQueueChooser()`
   (`shared/ChooseQueueDialog.jsx`) and pass `{ lane }` to `enqueue`/`enqueueBatch`.

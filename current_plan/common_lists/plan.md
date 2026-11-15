@@ -1,5 +1,7 @@
 # Common lists
 
+**Status: done.** Phases 1–5 are committed (storage and sync 8579afd, Select 641fc17, Add to common list c0b1dda, Common tab daa9858, docs).
+
 Reusable, hand-edited lists of names and glossary terms that are shared by every novel.
 You keep several of them ("Wuxia names", "Common titles", …) and apply whichever ones fit
 the novel you are reading. Applying a list copies its entries into that novel's own lists,
@@ -35,8 +37,9 @@ A new `commonLists` record, stored outside any novel:
   added / unchanged / clashes, `updateCommonEntry`, `removeCommonEntry`, and
   `applyCommonList(listId, novelId)`, which returns new / unchanged / clashes and writes
   resolved entries through the existing name-list APIs.
-- Google Drive sync carries common lists like the novels' lists (merged per list by updatedAt,
-  deletions kept as tombstones).
+- Google Drive sync carries common lists as `qc-common-<id>.json` pieces listed in the index.
+  Entries merge one by one like the novels' lists, the newer name wins, and deleted lists and
+  entries leave markers (`deleted.common`).
 
 ## Drawer UI
 

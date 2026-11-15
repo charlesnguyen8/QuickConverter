@@ -97,7 +97,14 @@ Open any saved chapter. In the reader:
   QuickTranslator dictionaries, offline. Tap a phrase to see its Hán Việt reading and Lạc Việt
   dictionary entry.
 - **Name List** keeps the names for a book (and Locked/Soft glossaries for AI translation); names
-  are highlighted in the text.
+  are highlighted in the text. Tick **Select** on entries (any tab, or Select all) to send them to
+  **Add to prompt** (a prompt you paste into any AI to translate the terms) or **Add to common
+  list**.
+- **Common lists** (the Common tab in the Name List) are named lists of names and terms you reuse
+  across books, e.g. "Wuxia titles". Edit them by hand, then **Apply to this novel**: each entry is
+  copied into the book's Name List, Locked or Soft tab by its type, and you choose what to do when
+  the book already has a term with a different translation. Applying is a one-time copy, so later
+  edits to a common list don't change books.
 - The left/right arrow keys (or `[` and `]`) move between chapters; your last-read position is
   remembered per book.
 
@@ -115,10 +122,10 @@ API keys stay on your computer and are never included in backups.
 ### Backup and sync
 
 - **Settings → Storage & Quota → Backup File** saves the whole library (books, chapters, name lists,
-  reading positions, settings) to a `.json` file, or loads one (merged in, or replacing
+  common lists, reading positions, settings) to a `.json` file, or loads one (merged in, or replacing
   everything).
 - **Google Drive Sync** keeps the extension and the Android app in step: it merges both sides,
-  keeping the newer version of each book, chapter, name list and reading position, and syncs by
+  keeping the newer version of each book, chapter, name list, common list and reading position, and syncs by
   itself when the library opens, after changes and every 15 minutes. Data goes to the app's
   private folder in your Drive.
 
