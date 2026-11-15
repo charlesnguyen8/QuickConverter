@@ -851,7 +851,7 @@ async function testAsync(name, fn) {
     assert(pick.includes('Wuxia names') && pick.includes('2 entries') && /min-h-10/.test(pick), 'each list, tappable, with its size');
     assert(buttonOf(html, 'common-list-pick-c2').includes('0 entries'));
     assert(tagOf(html, 'common-list-new-name'), 'a name field for a new list');
-    assert(/disabled/.test(tagOf(html, 'common-list-create-btn')), 'New list waits for a name');
+    assert(/\sdisabled=""/.test(tagOf(html, 'common-list-create-btn')), 'New list waits for a name');
     assert(buttonOf(html, 'common-list-picker-cancel'), 'Cancel');
     const empty = render(h(CommonListPicker, { lists: [], count: 1, onPick() {}, onCreate() {}, onCancel() {} }));
     assert(/no common lists yet/i.test(empty) && tagOf(empty, 'common-list-new-name'), 'with no lists, offers to make the first');
@@ -892,6 +892,89 @@ async function testAsync(name, fn) {
     assert.strictEqual(commonSummary({ added: 12, unchanged: 3, replaced: 2, kept: 1 }), 'Added 12 · 3 already there · 2 replaced · 1 kept');
     assert.strictEqual(commonSummary({ added: 1, unchanged: 0, replaced: 0, kept: 0 }), 'Added 1');
     assert.strictEqual(commonSummary({ added: 0, unchanged: 2, replaced: 0, kept: 0 }), 'Nothing new · 2 already there');
+  });
+
+  const commonPanel = await loadComponent('components/react/novel/CommonListsPanel.jsx');
+  const sampleList = {
+    id: 'c1',
+    name: 'Wuxia names',
+    updatedAt: 1,
+    entries: [
+      { id: 'e1', original: '张郃', translation: 'Trương Cáp', kind: 'namelist' },
+      { id: 'e2', original: '长老', translation: 'trưởng lão', kind: 'locked' },
+      { id: 'e3', original: '师兄', translation: 'sư huynh', kind: 'soft' }
+    ]
+  };
+
+  test('the drawer has a Common tab next to Name List, Locked and Soft', () => {
+    const tab = (novelApp.match(/<button[^>]*id="name-list-tab-common"[^>]*>[\s\S]*?<\/button>/) || [''])[0];
+    assert(tab && tab.includes('Common') && /role="tab"/.test(tab), 'Common tab');
+    assert(/aria-selected="false"/.test(tab), 'not selected by default');
+    for (const [id, short, full] of [['locked', 'Locked', 'Locked Glossary'], ['soft', 'Soft', 'Soft Glossary']]) {
+      const button = (novelApp.match(new RegExp(`<button[^>]*id="name-list-tab-${id}"[^>]*>[\\s\\S]*?</button>`)) || [''])[0];
+      assert(button.includes(`<span class="sm:hidden">${short}</span>`) && button.includes(`<span class="hidden sm:inline">${full}</span>`), `the ${full} tab is "${short}" on phones so four tabs fit 360px`);
+    }
+  });
+
+  test('the Common tab lists your common lists with their sizes and can make a new one', () => {
+    const { CommonListsIndex } = commonPanel;
+    const html = render(h(CommonListsIndex, { lists: [sampleList, { id: 'c2', name: 'Titles', entries: [] }], onOpen() {}, onCreate() {} }));
+    const open = buttonOf(html, 'common-list-open-c1');
+    assert(open.includes('Wuxia names') && open.includes('3 entries') && /min-h-10/.test(open), 'each list, tappable, with its size');
+    assert(buttonOf(html, 'common-list-open-c2').includes('0 entries'));
+    assert(tagOf(html, 'common-lists-new-name') && /\sdisabled=""/.test(tagOf(html, 'common-lists-create-btn')), 'New list waits for a name');
+    const empty = render(h(CommonListsIndex, { lists: [], onOpen() {}, onCreate() {} }));
+    assert(/no common lists yet/i.test(empty), 'empty state');
+  });
+
+  test('a common list filters by type and searches the Chinese and the translation', () => {
+    const { filterCommonEntries } = commonPanel;
+    const ids = (kind, search) => plainArr(filterCommonEntries(sampleList.entries, kind, search).map((e) => e.id));
+    assert.deepStrictEqual(ids('all', ''), ['e1', 'e2', 'e3']);
+    assert.deepStrictEqual(ids('locked', ''), ['e2']);
+    assert.deepStrictEqual(ids('all', 'sư'), ['e3'], 'by translation');
+    assert.deepStrictEqual(ids('all', '张'), ['e1'], 'by Chinese');
+    assert.deepStrictEqual(ids('soft', '张'), [], 'both at once');
+  });
+
+  test('an open common list shows its entries with types, and offers Apply, Rename, Delete and adding entries', () => {
+    const { CommonListView } = commonPanel;
+    const html = render(h(CommonListView, { list: sampleList, onBack() {}, onRename() {}, onDelete() {}, onApply() {}, onAdd() {}, onUpdate() {}, onRemove() {} }));
+    assert(html.includes('Wuxia names'), 'its name');
+    for (const id of ['common-list-back-btn', 'common-list-apply-btn', 'common-list-rename-btn', 'common-list-delete-btn', 'common-list-add-entry-btn']) {
+      assert(/min-h-10/.test(buttonOf(html, id)), `#${id} is a 40px button`);
+    }
+    assert(buttonOf(html, 'common-list-apply-btn').includes('Apply to this novel'));
+    for (const kind of ['all', 'namelist', 'locked', 'soft']) assert(buttonOf(html, `common-kind-filter-${kind}`), `filter ${kind}`);
+    assert(/aria-pressed="true"/.test(buttonOf(html, 'common-kind-filter-all')), 'all shown at first');
+    const row = (html.match(/<div[^>]*id="common-entry-e2"[\s\S]*?(?=<div[^>]*id="common-entry-e3")/) || [''])[0];
+    assert(row.includes('长老') && row.includes('trưởng lão') && row.includes('Locked'), 'a row shows the term and its type');
+    assert(/aria-label="Edit 长老"/.test(row) && /aria-label="Remove 长老"/.test(row), 'edit and remove each entry');
+  });
+
+  test('the entry form takes the Chinese, the translation and the type', () => {
+    const { CommonEntryForm } = commonPanel;
+    const html = render(h(CommonEntryForm, { initial: { original: '长老', translation: 'trưởng lão', kind: 'locked' }, onSave() {}, onCancel() {} }));
+    assert(/id="common-entry-original"[^>]*value="长老"/.test(html) || /value="长老"[^>]*id="common-entry-original"/.test(html), 'Chinese');
+    assert(/id="common-entry-translation"/.test(html), 'translation');
+    assert(/<select[^>]*id="common-entry-kind"/.test(html) && /<option value="locked" selected="">/.test(html), 'type, preset');
+    assert(buttonOf(html, 'common-entry-save-btn'), 'save');
+  });
+
+  test('Apply to this novel first shows what it will do', () => {
+    const { ApplyPreviewDialog } = commonPanel;
+    const html = render(h(ApplyPreviewDialog, { listName: 'Wuxia names', fresh: [{}, {}], same: [{}], clashes: [{}], onContinue() {}, onCancel() {} }));
+    assert(html.includes('Wuxia names') && html.includes('2 new') && html.includes('1 already the same') && html.includes('1 clash'), 'counts');
+    assert(!/\sdisabled=""/.test(tagOf(html, 'common-apply-continue-btn')), 'can continue');
+    const nothing = render(h(ApplyPreviewDialog, { listName: 'x', fresh: [], same: [{}], clashes: [], onContinue() {}, onCancel() {} }));
+    assert(/already has everything/i.test(nothing) && /\sdisabled=""/.test(tagOf(nothing, 'common-apply-continue-btn')), 'nothing to do');
+  });
+
+  test('deleting a common list asks first and says novels keep what was applied', () => {
+    const { DeleteListDialog } = commonPanel;
+    const html = render(h(DeleteListDialog, { list: sampleList, onConfirm() {}, onCancel() {} }));
+    assert(html.includes('Wuxia names') && /novels keep/i.test(html));
+    assert(buttonOf(html, 'common-list-delete-confirm') && buttonOf(html, 'common-list-delete-cancel'));
   });
 
   const { MoveEntryButtons } = drawerMod;

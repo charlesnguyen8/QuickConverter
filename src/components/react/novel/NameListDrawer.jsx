@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { buildSnippets, computeVirtualWindow, findNameConflicts } from './nameListSource.js';
 import { ClashDialog, CommonListPicker, commonSummary, walkClashes } from './CommonListDialogs.jsx';
+import CommonListsPanel from './CommonListsPanel.jsx';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -173,9 +174,12 @@ const VIRTUALIZE_AT = 80;
 
 const LIST_TABS = [
   { id: 'namelist', label: 'Name List', title: 'Name List', subtitle: 'Character & place name glossary' },
-  { id: 'locked', label: 'Locked Glossary', title: 'Locked Glossary', subtitle: 'Terms pinned to an exact translation' },
-  { id: 'soft', label: 'Soft Glossary', title: 'Soft Glossary', subtitle: 'Preferred terms kept as suggestions' }
+  { id: 'locked', label: 'Locked Glossary', short: 'Locked', title: 'Locked Glossary', subtitle: 'Terms pinned to an exact translation' },
+  { id: 'soft', label: 'Soft Glossary', short: 'Soft', title: 'Soft Glossary', subtitle: 'Preferred terms kept as suggestions' }
 ];
+
+const COMMON_TAB = { id: 'common', label: 'Common', title: 'Common lists', subtitle: 'Shared by every novel; apply one to this novel' };
+const DRAWER_TABS = [...LIST_TABS, COMMON_TAB];
 
 const FORMAT_PROMPT = 'For each source term below, output its translation. Return ONLY one block in this exact format, with no extra text or explanation:\n<<<TRANSLATION_START>>>\nname=translation|name=translation|...\n<<<TRANSLATION_END>>>';
 
@@ -331,7 +335,7 @@ export default function NameListDrawer() {
 
   const reload = useCallback(async () => {
     const storage = typeof window !== 'undefined' ? window.StorageService : null;
-    if (!storage || !novelId) return;
+    if (!storage || !novelId || activeTab === COMMON_TAB.id) return;
     try {
       const list = await storage.getNameList(novelId, activeTab);
       setEntries(Array.isArray(list) ? list : []);
@@ -685,6 +689,16 @@ export default function NameListDrawer() {
     return () => clearTimeout(timer);
   }, [commonNotice]);
 
+  const afterCommonApply = useCallback(async () => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novelId) return;
+    try {
+      const names = await storage.getNameList(novelId, 'namelist');
+      window.dispatchEvent(new CustomEvent('novel-name-list-updated', { detail: { novelId, count: Array.isArray(names) ? names.length : 0 } }));
+    } catch (e) {}
+    loadPromptLists();
+  }, [novelId, loadPromptLists]);
+
   const openPromptPanel = useCallback(() => {
     setSourceEntry(null);
     setSourceChapter(null);
@@ -803,7 +817,8 @@ export default function NameListDrawer() {
     }
   }, [duplicatePrompt, entries, novelId, reload, applyTranslationRename, activeTab]);
 
-  const activeMeta = LIST_TABS.find((tab) => tab.id === activeTab) || LIST_TABS[0];
+  const activeMeta = DRAWER_TABS.find((tab) => tab.id === activeTab) || LIST_TABS[0];
+  const onCommonTab = activeTab === COMMON_TAB.id;
   const filtered = useMemo(() => sortAndFilter(entries, search.trim(), sort), [entries, search, sort]);
 
   const selectAllShown = useCallback(() => {
@@ -1259,12 +1274,14 @@ export default function NameListDrawer() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h2 id="name-list-title" className="text-base font-bold text-slate-100">{activeMeta.title}</h2>
-                  <span id="name-list-badge" className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">{entries.length}</span>
+                  {onCommonTab ? null : <span id="name-list-badge" className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">{entries.length}</span>}
                 </div>
                 <p className="text-xs text-slate-400 truncate max-w-xs" id="name-list-novel-title">{activeMeta.subtitle}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              {onCommonTab ? null : (
+                <>
               <button type="button" onClick={toggleBulk} className="inline-flex items-center justify-center gap-1 h-10 sm:h-8 whitespace-nowrap text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 sm:px-2.5 rounded-md transition cursor-pointer" title="Bulk Import / Export lines (Original = Translation)">
                 <span>📥 Bulk</span>
               </button>
@@ -1283,6 +1300,8 @@ export default function NameListDrawer() {
               <button type="button" onClick={checkNameForm} className="inline-flex items-center justify-center gap-1 h-10 sm:h-8 whitespace-nowrap text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 border border-indigo-500 px-3 sm:px-2.5 rounded-md transition cursor-pointer shadow-sm">
                 <span>+ Add Name</span>
               </button>
+                </>
+              )}
               <button type="button" onClick={closeDrawer} className="inline-flex items-center justify-center min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer sm:ml-1" title="Close Name List (Esc)">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -1293,7 +1312,7 @@ export default function NameListDrawer() {
           </div>
 
           <div id="name-list-tabs" role="tablist" aria-label="Glossary tabs" className="flex items-stretch gap-1 px-2 sm:px-4 border-b border-slate-800 bg-slate-900/60 flex-shrink-0 overflow-x-auto">
-            {LIST_TABS.map((tab) => {
+            {DRAWER_TABS.map((tab) => {
               const active = activeTab === tab.id;
               return (
                 <button
@@ -1305,12 +1324,21 @@ export default function NameListDrawer() {
                   onClick={() => selectTab(tab.id)}
                   className={`inline-flex items-center justify-center whitespace-nowrap min-h-10 sm:min-h-0 px-3 py-2.5 sm:py-2 text-xs font-semibold border-b-2 transition cursor-pointer focus:outline-none ${active ? 'border-indigo-500 text-indigo-300' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
                 >
-                  {tab.label}
+                  {tab.short ? (
+                    <>
+                      <span className="sm:hidden">{tab.short}</span>
+                      <span className="hidden sm:inline">{tab.label}</span>
+                    </>
+                  ) : tab.label}
                 </button>
               );
             })}
           </div>
 
+          {onCommonTab ? (
+            <CommonListsPanel novelId={novelId} onApplied={afterCommonApply} />
+          ) : (
+            <>
           {formOpen ? (
             <div id="name-list-form-card" className="border-b border-slate-800 bg-slate-800/60 p-5 flex-shrink-0">
               <div className="flex items-center justify-between mb-3">
@@ -1534,6 +1562,8 @@ export default function NameListDrawer() {
               </>
             )}
           </div>
+            </>
+          )}
           {commonNotice ? (
             <div id="name-list-common-notice" role="status" className="flex items-center justify-between gap-2 px-4 py-2 border-t border-indigo-500/30 bg-indigo-500/10 text-xs font-semibold text-indigo-100 flex-shrink-0">
               <span className="min-w-0 break-words">📚 {commonNotice}</span>
