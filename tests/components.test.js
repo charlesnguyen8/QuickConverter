@@ -720,6 +720,21 @@ async function testAsync(name, fn) {
     assert(novelHeader && novelHeader[0].includes('id="open-name-list-btn"'), 'novel Name List trigger must live in the top bar next to Settings');
   });
 
+  test('the novel page header fits a 360px phone: smaller padding, icon-only back link and no brand text there', () => {
+    const header = (novelApp.match(/<header[\s\S]*?<\/header>/) || [''])[0];
+    const headerTag = (header.match(/<header[^>]*>/) || [''])[0];
+    assert(/\bpx-4\b/.test(headerTag) && /\bsm:px-6\b/.test(headerTag), 'side padding 16px on phones');
+    const back = (header.match(/<a[^>]*href="library.html"[^>]*>[\s\S]*?<\/a>/) || [''])[0];
+    assert(/aria-label="Back to Library"/.test(back), 'the back link keeps its name');
+    assert(/<span class="hidden sm:inline">Back to Library<\/span>/.test(back), 'its text shows from sm up');
+    assert(/min-h-10/.test(back) && /min-w-10/.test(back), 'still a 40px target');
+    assert(/<span class="hidden sm:inline[^"]*">QuickConverter<\/span>/.test(header), 'brand text only from sm up');
+    for (const id of ['open-name-list-btn', 'novel-settings-btn']) {
+      const tag = (header.match(new RegExp(`<(?:a|button)[^>]*id="${id}"[^>]*>`)) || [''])[0];
+      assert(/min-h-10/.test(tag), `#${id} is a 40px target on phones`);
+    }
+  });
+
   const { syncCatalog } = await loadComponent('components/react/novel/NovelApp.jsx');
   await testAsync('Sync Catalog refreshes the book (cover, total) together with its catalog', async () => {
     const calls = [];

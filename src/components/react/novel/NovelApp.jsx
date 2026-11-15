@@ -256,25 +256,26 @@ export default function NovelApp() {
 
   return (
     <>
-      <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30 px-6 py-3.5">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+      <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30 px-4 sm:px-6 py-3.5">
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-2">
           <a
             href="library.html"
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white transition px-3 py-1.5 rounded-md hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+            aria-label="Back to Library"
+            className="inline-flex items-center justify-center gap-2 min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 text-sm font-medium text-slate-400 hover:text-white transition px-2 sm:px-3 py-1.5 rounded-md hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 flex-shrink-0"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="19" y1="12" x2="5" y2="12"></line>
               <polyline points="12 19 5 12 12 5"></polyline>
             </svg>
-            <span>Back to Library</span>
+            <span className="hidden sm:inline">Back to Library</span>
           </a>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               id="open-name-list-btn"
               type="button"
               onClick={() => window.dispatchEvent(new Event('novel-open-name-list'))}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-white transition px-2.5 py-1.5 rounded-md hover:bg-slate-800 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+              className="inline-flex items-center gap-1.5 min-h-10 sm:min-h-0 text-xs font-medium text-slate-300 hover:text-white transition px-2.5 py-1.5 rounded-md hover:bg-slate-800 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer whitespace-nowrap"
               title="Open Novel Name List & Glossary"
             >
               <span aria-hidden="true">📖</span>
@@ -287,7 +288,7 @@ export default function NovelApp() {
             <a
               id="novel-settings-btn"
               href={settingsHref}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-white transition px-2.5 py-1.5 rounded-md hover:bg-slate-800 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+              className="inline-flex items-center gap-1.5 min-h-10 sm:min-h-0 text-xs font-medium text-slate-300 hover:text-white transition px-2.5 py-1.5 rounded-md hover:bg-slate-800 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer whitespace-nowrap"
               title="Open QuickConverter Settings"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -301,7 +302,7 @@ export default function NovelApp() {
               <div className="w-6 h-6 rounded bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-xs shadow-sm">
                 Q
               </div>
-              <span className="text-xs font-semibold text-slate-400">QuickConverter</span>
+              <span className="hidden sm:inline text-xs font-semibold text-slate-400">QuickConverter</span>
             </div>
           </div>
         </div>
