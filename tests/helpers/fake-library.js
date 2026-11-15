@@ -10,7 +10,7 @@ const read = (...p) => fs.readFileSync(path.join(repoRoot, ...p), 'utf8');
 // Like IndexedDB, readwrite transactions run one at a time (a later one starts once the earlier
 // one has finished), even when they come from different contexts sharing the database.
 function makeDatabase() {
-  const stores = { novels: {}, chapters: {}, syncState: {} };
+  const stores = { novels: {}, chapters: {}, syncState: {}, commonLists: {} };
   const reads = { chapterGetAll: 0, chapterGet: 0 };
   const copy = (value) => JSON.parse(JSON.stringify(value));
   const request = (result) => {
@@ -63,6 +63,7 @@ function makeDatabase() {
   });
   let writing = Promise.resolve();
   const database = {
+    objectStoreNames: { contains: (name) => Object.prototype.hasOwnProperty.call(stores, name) },
     transaction(names, mode) {
       let active = false;
       const waiting = [];

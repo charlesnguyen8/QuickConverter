@@ -104,7 +104,7 @@ process.on('beforeExit', () => {
     const exported = await S.exportAll();
     const book = exported.novels.find((b) => b.id === 'n1');
     assert.strictEqual(book.listsUpdatedAt.namelist, stores.novels['namelist::n1'].updatedAt, 'exported with each list\'s time');
-    assert.deepStrictEqual(plain(exported.deleted), { novels: {}, chapters: {}, names: {} }, 'and the deletion markers');
+    assert.deepStrictEqual(plain(exported.deleted), { novels: {}, chapters: {}, names: {}, common: { lists: {}, entries: {} } }, 'and the deletion markers');
   });
 
   await test('deleting a book or a chapter leaves a marker that sync carries to other devices', async () => {
@@ -419,7 +419,7 @@ process.on('beforeExit', () => {
     const local = library({ novels: [novel('n1', 10)], chapters: [chapter('n1', 1, 10)] });
     const { library: merged, apply } = S.mergeLibraries(local, null);
     assert.deepStrictEqual(plain(merged.novels.map((b) => b.id)), ['n1']);
-    assert.deepStrictEqual(plain(apply), { novels: [], chapters: [], deleteNovels: [], deleteChapters: [], preferences: {} });
+    assert.deepStrictEqual(plain(apply), { novels: [], chapters: [], deleteNovels: [], deleteChapters: [], preferences: {}, commonLists: [], deleteCommonLists: [] });
   });
 
   await test('books and chapters from either device end up on both', () => {
@@ -617,7 +617,7 @@ process.on('beforeExit', () => {
     assert.strictEqual(stores.novels.gone, undefined);
     assert.strictEqual(stores.chapters.gone_ch1, undefined);
     assert.strictEqual(ls.quickconverter_reader_theme, 'sepia');
-    assert.deepStrictEqual(plain((await S.exportAll()).deleted), { novels: { gone: 99 }, chapters: {}, names: {} }, 'markers kept for the next sync');
+    assert.deepStrictEqual(plain((await S.exportAll()).deleted), { novels: { gone: 99 }, chapters: {}, names: {}, common: { lists: {}, entries: {} } }, 'markers kept for the next sync');
     assert(stores.novels.n1, 'untouched books stay');
   });
 
@@ -690,6 +690,140 @@ process.on('beforeExit', () => {
     assert.strictEqual(stores.novels.n1, undefined);
     assert.strictEqual(stores.chapters.n1_ch1, undefined);
     assert.deepStrictEqual(await S.getRecycleBin(), []);
+  });
+
+  // --- Common lists ---
+
+  const entriesOf = (list) => plain(list.entries.map((e) => [e.original, e.translation, e.kind]).sort());
+
+  await test('common lists can be created, renamed and deleted, and a deleted one leaves a sync marker', async () => {
+    const { S, stores } = makeEnv();
+    const wuxia = await S.createCommonList('Wuxia names');
+    const titles = await S.createCommonList('Titles');
+    assert(wuxia.id && wuxia.id !== titles.id, 'each list has its own id');
+    assert.deepStrictEqual(plain((await S.getCommonLists()).map((l) => [l.name, l.entries.length])), [['Wuxia names', 0], ['Titles', 0]], 'oldest first');
+    await wait(5);
+    await S.renameCommonList(wuxia.id, 'Martial names');
+    const renamed = (await S.getCommonLists()).find((l) => l.id === wuxia.id);
+    assert.strictEqual(renamed.name, 'Martial names');
+    assert(renamed.updatedAt > wuxia.updatedAt, 'a rename is a change');
+    await S.deleteCommonList(titles.id);
+    assert.deepStrictEqual(plain((await S.getCommonLists()).map((l) => l.name)), ['Martial names']);
+    assert.strictEqual(stores.commonLists[titles.id], undefined);
+    assert(Number.isFinite((await S.exportAll()).deleted.common.lists[titles.id]), 'the deletion syncs');
+  });
+
+  await test('adding to a common list keeps each entry type, skips the same entry and keeps clashes unless told to replace them', async () => {
+    const { S } = makeEnv();
+    const list = await S.createCommonList('Mine');
+    const first = await S.addToCommonList(list.id, [
+      { original: '张郃', translation: 'Trương Cáp', kind: 'namelist' },
+      { original: '长老', translation: 'trưởng lão', kind: 'locked' },
+      { original: '师兄', translation: 'sư huynh', kind: 'soft' }
+    ]);
+    assert.deepStrictEqual([first.added, first.replaced, first.unchanged, first.kept], [3, 0, 0, 0]);
+    const incoming = [
+      { original: '张郃', translation: 'Trương Cáp', kind: 'namelist' },
+      { original: '长老', translation: 'Trưởng Lão', kind: 'locked' },
+      { original: '师兄', translation: 'sư huynh', kind: 'namelist' },
+      { original: '萧炎', translation: 'Tiêu Viêm', kind: 'namelist' }
+    ];
+    const compared = await S.compareWithCommonList(list.id, incoming);
+    assert.deepStrictEqual(plain(compared.fresh.map((e) => e.original)), ['萧炎']);
+    assert.deepStrictEqual(plain(compared.same.map((e) => e.original)), ['张郃']);
+    assert.deepStrictEqual(plain(compared.clashes.map((c) => [c.entry.original, c.existing.translation, c.existing.kind]).sort()), [['师兄', 'sư huynh', 'soft'], ['长老', 'trưởng lão', 'locked']], 'a different translation or type is a clash');
+    const second = await S.addToCommonList(list.id, incoming, { replace: ['长老'] });
+    assert.deepStrictEqual([second.added, second.replaced, second.unchanged, second.kept], [1, 1, 1, 1]);
+    const [saved] = await S.getCommonLists();
+    assert.deepStrictEqual(entriesOf(saved), [['师兄', 'sư huynh', 'soft'], ['张郃', 'Trương Cáp', 'namelist'], ['萧炎', 'Tiêu Viêm', 'namelist'], ['长老', 'Trưởng Lão', 'locked']]);
+    assert(saved.entries.every((e) => e.id && Number.isFinite(e.addedAt) && Number.isFinite(e.updatedAt)), 'entries get ids and times');
+  });
+
+  await test('common list entries can be edited and removed by hand, and a removed entry leaves a sync marker', async () => {
+    const { S } = makeEnv();
+    const list = await S.createCommonList('Mine');
+    await S.addToCommonList(list.id, [{ original: '张郃', translation: 'Truong Cap', kind: 'namelist' }, { original: '长老', translation: 'trưởng lão', kind: 'locked' }]);
+    let [saved] = await S.getCommonLists();
+    const zhang = saved.entries.find((e) => e.original === '张郃');
+    const elder = saved.entries.find((e) => e.original === '长老');
+    await wait(5);
+    await S.updateCommonEntry(list.id, zhang.id, { translation: 'Trương Cáp', kind: 'locked' });
+    await S.removeCommonEntry(list.id, elder.id);
+    await S.addCommonEntry(list.id, { original: '萧炎', translation: 'Tiêu Viêm', kind: 'soft' });
+    [saved] = await S.getCommonLists();
+    assert.deepStrictEqual(entriesOf(saved), [['张郃', 'Trương Cáp', 'locked'], ['萧炎', 'Tiêu Viêm', 'soft']]);
+    assert(saved.entries.find((e) => e.id === zhang.id).updatedAt > zhang.updatedAt, 'the edit is stamped');
+    assert(Number.isFinite((await S.exportAll()).deleted.common.entries[list.id][elder.id]), 'the removal syncs');
+  });
+
+  await test('applying a common list copies each entry into the novel tab of its type; same entries are skipped and clashes kept unless replaced', async () => {
+    const { S } = makeEnv();
+    await S.addNovel({ id: 'n1', title: 'One', slug: 'one' });
+    await S.addNameEntry('n1', { original: '张郃', translation: 'Trương Cáp' }, 'namelist');
+    await S.addNameEntry('n1', { original: '长老', translation: 'trưởng lão' }, 'namelist');
+    await S.addNameEntry('n1', { original: '师兄', translation: 'sư ca' }, 'soft');
+    const list = await S.createCommonList('Mine');
+    await S.addToCommonList(list.id, [
+      { original: '张郃', translation: 'Trương Cáp', kind: 'namelist' },
+      { original: '长老', translation: 'Trưởng Lão', kind: 'locked' },
+      { original: '师兄', translation: 'sư huynh', kind: 'soft' },
+      { original: '萧炎', translation: 'Tiêu Viêm', kind: 'namelist' },
+      { original: '斗气', translation: 'đấu khí', kind: 'soft' }
+    ]);
+    const compared = await S.compareCommonListWithNovel(list.id, 'n1');
+    assert.deepStrictEqual(plain(compared.fresh.map((e) => e.original).sort()), ['斗气', '萧炎']);
+    assert.deepStrictEqual(plain(compared.same.map((e) => e.original)), ['张郃']);
+    assert.deepStrictEqual(plain(compared.clashes.map((c) => [c.entry.original, c.existing.translation, c.existingKind]).sort()), [['师兄', 'sư ca', 'soft'], ['长老', 'trưởng lão', 'namelist']]);
+    const result = await S.applyCommonList(list.id, 'n1', { replace: ['长老'] });
+    assert.deepStrictEqual([result.added, result.replaced, result.unchanged, result.kept], [2, 1, 1, 1]);
+    const tab = async (kind) => plain((await S.getNameList('n1', kind)).map((e) => [e.original, e.translation]).sort());
+    assert.deepStrictEqual(await tab('namelist'), [['张郃', 'Trương Cáp'], ['萧炎', 'Tiêu Viêm']], 'the replaced term left the Name List');
+    assert.deepStrictEqual(await tab('locked'), [['长老', 'Trưởng Lão']], 'and went to Locked, its type in the common list');
+    assert.deepStrictEqual(await tab('soft'), [['师兄', 'sư ca'], ['斗气', 'đấu khí']].sort(), 'the kept clash is untouched');
+    assert.strictEqual((await S.getCommonLists())[0].entries.length, 5, 'the common list itself is unchanged');
+  });
+
+  await test('a sync merges common lists entry by entry, follows the newer name, and drops deleted lists and entries', async () => {
+    const { S } = makeEnv();
+    const common = (id, name, updatedAt, entries) => ({ id, name, createdAt: 1, updatedAt, entries });
+    const entry = (id, original, translation, updatedAt, kind = 'namelist') => ({ id, original, translation, kind, addedAt: 1, updatedAt });
+    const local = library({
+      commonLists: [
+        common('c1', 'Old name', 10, [entry('e1', '张郃', 'Trương Cáp', 10), entry('e2', '长老', 'trưởng lão', 10, 'locked')]),
+        common('c2', 'Doomed', 10, [])
+      ],
+      deleted: { novels: {}, chapters: {}, common: { lists: {}, entries: { c1: { e2: 30 } } } }
+    });
+    const remote = library({
+      commonLists: [
+        common('c1', 'New name', 20, [entry('e1', '张郃', 'Trương Cáp', 10), entry('e2', '长老', 'trưởng lão', 10, 'locked'), entry('e3', '萧炎', 'Tiêu Viêm', 20)]),
+        common('c3', 'From the other device', 5, [entry('e4', '斗气', 'đấu khí', 5, 'soft')])
+      ],
+      deleted: { novels: {}, chapters: {}, common: { lists: { c2: 40 }, entries: {} } }
+    });
+    const { library: merged, apply } = S.mergeLibraries(local, remote);
+    const byId = new Map(merged.commonLists.map((l) => [l.id, l]));
+    assert.deepStrictEqual(plain([...byId.keys()].sort()), ['c1', 'c3'], 'the deleted list is gone');
+    assert.strictEqual(byId.get('c1').name, 'New name', 'the newer name wins');
+    assert.deepStrictEqual(entriesOf(byId.get('c1')), [['张郃', 'Trương Cáp', 'namelist'], ['萧炎', 'Tiêu Viêm', 'namelist']], 'entries from both devices, minus the removed one');
+    assert.deepStrictEqual(plain(apply.deleteCommonLists), ['c2']);
+    assert.deepStrictEqual(plain(apply.commonLists.map((l) => l.id).sort()), ['c1', 'c3']);
+    await S.applySync(apply, merged.deleted);
+    const after = new Map((await S.getCommonLists()).map((l) => [l.id, l]));
+    assert.deepStrictEqual(plain([...after.keys()].sort()), ['c1', 'c3'], 'the device now holds the merged lists');
+    assert.strictEqual(after.get('c3').entries[0].kind, 'soft');
+  });
+
+  await test('a backup carries common lists and restoring it brings them back', async () => {
+    const first = makeEnv();
+    const list = await first.S.createCommonList('Mine');
+    await first.S.addToCommonList(list.id, [{ original: '张郃', translation: 'Trương Cáp', kind: 'namelist' }]);
+    const backup = await first.S.exportAll();
+    assert.deepStrictEqual(plain(backup.commonLists.map((l) => [l.name, l.entries.length])), [['Mine', 1]]);
+    const second = makeEnv();
+    await second.S.createCommonList('Will be replaced');
+    await second.S.importAll(plain(backup), { replace: true });
+    assert.deepStrictEqual(plain((await second.S.getCommonLists()).map((l) => [l.id, l.name, l.entries[0].translation])), [[list.id, 'Mine', 'Trương Cáp']]);
   });
 
   console.log(`--- Library Sync Test Suite: ${passed}/${passed + failed} passed ---`);

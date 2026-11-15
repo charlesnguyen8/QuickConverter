@@ -125,6 +125,7 @@
   // qc-book-<id>.json           the book record without its name lists and reading position
   // qc-names-<id>-<kind>.json   one name list (namelist, locked, soft)
   // qc-chapters-<id>-<n>.json   chapters n*50 .. n*50+49
+  // qc-common-<id>.json         one common list (the index lists them under commonLists)
   //
   // A sync transfers only the pieces whose fingerprint differs; the reading position travels in
   // the index.
@@ -133,7 +134,7 @@
   const LIST_KINDS = ['namelist', 'locked', 'soft'];
 
   function isPieceFile(name) {
-    return /^qc-(book|names|chapters)-/.test(name);
+    return /^qc-(book|names|chapters|common)-/.test(name);
   }
 
   function pieceFileName(bookId, key) {
@@ -141,6 +142,10 @@
     if (key === 'book') return `qc-book-${id}.json`;
     if (key.indexOf('names.') === 0) return `qc-names-${id}-${key.slice('names.'.length)}.json`;
     return `qc-chapters-${id}-${key.slice('chapters.'.length)}.json`;
+  }
+
+  function commonFileName(listId) {
+    return `qc-common-${encodeURIComponent(listId)}.json`;
   }
 
   function hashText(text) {
@@ -167,7 +172,10 @@
       names[novelId] = {};
       Object.entries(kinds || {}).forEach(([kind, ids]) => { names[novelId][kind] = { ...(ids || {}) }; });
     });
-    return { novels: { ...(d.novels || {}) }, chapters: { ...(d.chapters || {}) }, names };
+    const common = d.common && typeof d.common === 'object' ? d.common : {};
+    const commonEntries = {};
+    Object.entries(common.entries || {}).forEach(([listId, ids]) => { commonEntries[listId] = { ...(ids || {}) }; });
+    return { novels: { ...(d.novels || {}) }, chapters: { ...(d.chapters || {}) }, names, common: { lists: { ...(common.lists || {}) }, entries: commonEntries } };
   }
 
   function mergeDeleted(target, source) {
@@ -182,7 +190,17 @@
         Object.entries(ids).forEach(([id, time]) => { markers[id] = later(markers[id], time); });
       });
     });
+    Object.entries(source.common.lists).forEach(([id, time]) => { target.common.lists[id] = later(target.common.lists[id], time); });
+    Object.entries(source.common.entries).forEach(([listId, ids]) => {
+      const markers = target.common.entries[listId] || (target.common.entries[listId] = {});
+      Object.entries(ids).forEach(([id, time]) => { markers[id] = later(markers[id], time); });
+    });
     return target;
+  }
+
+  function commonSig(list) {
+    const entries = [...(list.entries || [])].sort((a, b) => (String(a.id) < String(b.id) ? -1 : 1));
+    return hashText(stableJson({ ...list, entries }));
   }
 
   function groupBooks(library) {
@@ -252,8 +270,8 @@
     return { format: SYNC_FORMAT, version: SYNC_VERSION, ...content };
   }
 
-  function indexPayload(books, deleted, preferences) {
-    return { format: SYNC_FORMAT, version: SYNC_VERSION, updatedAt: new Date().toISOString(), books, deleted, preferences };
+  function indexPayload(books, deleted, preferences, commonLists) {
+    return { format: SYNC_FORMAT, version: SYNC_VERSION, updatedAt: new Date().toISOString(), books, deleted, preferences, commonLists: commonLists || {} };
   }
 
   function fileIdByName(files) {
@@ -279,6 +297,27 @@
       books[id] = await writeBookPieces(id, book, names);
     }
     return books;
+  }
+
+  async function writeAllCommonLists(lists, files) {
+    const names = fileIdByName(files);
+    const out = {};
+    for (const list of lists || []) {
+      if (!list || !list.id) continue;
+      const name = commonFileName(list.id);
+      const fileId = await writeFile(name, piecePayload({ list }), names.get(name));
+      out[list.id] = { file: fileId, sig: commonSig(list) };
+    }
+    return out;
+  }
+
+  async function downloadCommonLists(index) {
+    const lists = [];
+    for (const entry of Object.values((index && index.commonLists) || {})) {
+      const content = await downloadJson(entry.file);
+      if (content && content.list && content.list.id) lists.push(content.list);
+    }
+    return lists;
   }
 
   async function downloadBookPieces(entry) {
@@ -331,13 +370,15 @@
     const indexFile = files.find((f) => f.name === INDEX_FILENAME);
     if (indexFile) checkVersion(await downloadJson(indexFile.id));
     const books = await writeAllBooks(payload, files);
+    const commonLists = await writeAllCommonLists(payload.commonLists, files);
     const keep = new Set();
     Object.entries(books).forEach(([id, entry]) => Object.keys(entry.pieces).forEach((key) => keep.add(pieceFileName(id, key))));
+    Object.keys(commonLists).forEach((id) => keep.add(commonFileName(id)));
     for (const file of files) {
       const stale = (isPieceFile(file.name) && !keep.has(file.name)) || file.name.indexOf(BOOK_PREFIX) === 0;
       if (stale) await deleteFile(file.id);
     }
-    await writeFile(INDEX_FILENAME, indexPayload(books, normalizeDeleted(payload.deleted), payload.preferences || {}), indexFile && indexFile.id);
+    await writeFile(INDEX_FILENAME, indexPayload(books, normalizeDeleted(payload.deleted), payload.preferences || {}, commonLists), indexFile && indexFile.id);
 
     const uploadedAt = new Date().toISOString();
     storage.setPreference(LAST_BACKUP_KEY, uploadedAt);
@@ -377,7 +418,7 @@
         novels.push(book.novel);
         book.chapters.forEach((c) => chapters.push(c));
       }
-      library = { format: 'quickconverter-backup', version: 1, novels, chapters, preferences: index.preferences || {} };
+      library = { format: 'quickconverter-backup', version: 1, novels, chapters, preferences: index.preferences || {}, commonLists: await downloadCommonLists(index) };
     }
     const result = await storage.importAll(library, { replace: true });
     if (typeof storage.applySync === 'function') {
@@ -398,8 +439,9 @@
     const { library, apply } = storage.mergeLibraries(local, remote);
     await storage.applySync(apply, library.deleted, { keepSince: startedAt });
     const books = await writeAllBooks(library, files);
+    const commonLists = await writeAllCommonLists(library.commonLists, files);
     for (const file of staleFiles) await deleteFile(file.id);
-    await writeFile(INDEX_FILENAME, indexPayload(books, normalizeDeleted(library.deleted), library.preferences || {}), indexFile && indexFile.id);
+    await writeFile(INDEX_FILENAME, indexPayload(books, normalizeDeleted(library.deleted), library.preferences || {}, commonLists), indexFile && indexFile.id);
     const received = { novels: 0, chapters: 0, deleted: 0 };
     countReceived(received, apply);
     return { received, novels: Object.keys(books).length, chapters: (library.chapters || []).length };
@@ -510,6 +552,34 @@
     return { entry: { title: merged.title || '', lastRead: record.lastRead, pieces }, chapters: chapterCount };
   }
 
+  // Syncs one common list: nothing moves when both copies are the same; otherwise the Drive copy
+  // is downloaded, merged entry by entry, written here, and uploaded when the merge changed it.
+  // Returns the list's new index entry, or null when it is gone.
+  async function syncCommonList(storage, id, mine, entry, state, names) {
+    if (mine && entry && entry.sig === commonSig(mine)) return entry;
+    let theirs = null;
+    if (entry) {
+      const content = await downloadJson(entry.file);
+      theirs = content && content.list && content.list.id ? content.list : null;
+    }
+    const { library, apply } = storage.mergeLibraries(
+      { novels: [], chapters: [], commonLists: mine ? [mine] : [], preferences: {}, deleted: state.deleted },
+      { novels: [], chapters: [], commonLists: theirs ? [theirs] : [], preferences: {}, deleted: state.deleted }
+    );
+    await storage.applySync(apply, null);
+    state.deleted = normalizeDeleted(library.deleted);
+    const merged = (library.commonLists || [])[0];
+    if (!merged) {
+      if (entry) await deleteFile(entry.file);
+      return null;
+    }
+    const sig = commonSig(merged);
+    if (entry && entry.sig === sig) return entry;
+    const name = commonFileName(id);
+    const fileId = await writeFile(name, piecePayload({ list: merged }), entry ? entry.file : names.get(name));
+    return { file: fileId, sig };
+  }
+
   // This device's books for an incremental sync: from the summaries when the device keeps them,
   // otherwise from a full read.
   async function localSyncBooks(storage) {
@@ -519,7 +589,7 @@
       snapshot.novels.forEach((novel) => {
         books.set(novel.id, { novel, times: snapshot.chapterTimes[novel.id] || {}, load: (ids) => storage.getChaptersByIds(ids) });
       });
-      return { books, preferences: snapshot.preferences || {}, deleted: snapshot.deleted };
+      return { books, preferences: snapshot.preferences || {}, deleted: snapshot.deleted, commonLists: snapshot.commonLists || [] };
     }
     const local = await storage.exportAll();
     const books = new Map();
@@ -529,7 +599,7 @@
       book.chapters.forEach((c) => { times[c.id] = [Number(c.updatedAt) || 0, Number(c.chapterNumber)]; });
       books.set(novelId, { novel: book.novel, times, load: async (ids) => ids.map((cid) => byId.get(cid)).filter(Boolean) });
     });
-    return { books, preferences: local.preferences || {}, deleted: local.deleted };
+    return { books, preferences: local.preferences || {}, deleted: local.deleted, commonLists: local.commonLists || [] };
   }
 
   // Two-way sync with the Drive copy: only pieces that differ are transferred, and on this device
@@ -572,6 +642,14 @@
         if (result.entry) books[id] = result.entry;
       }
 
+      const remoteCommon = index.commonLists || {};
+      const localCommon = new Map((local.commonLists || []).map((list) => [list.id, list]));
+      const commonLists = {};
+      for (const listId of Array.from(new Set([...localCommon.keys(), ...Object.keys(remoteCommon)]))) {
+        const listEntry = await syncCommonList(storage, listId, localCommon.get(listId), remoteCommon[listId], state, names);
+        if (listEntry) commonLists[listId] = listEntry;
+      }
+
       const remotePrefs = index.preferences || {};
       const fill = {};
       Object.keys(remotePrefs).forEach((key) => {
@@ -580,9 +658,9 @@
       await storage.applySync({ novels: [], chapters: [], deleteNovels: [], deleteChapters: [], preferences: fill }, state.deleted, { keepSince: startedAt });
       const preferences = { ...local.preferences, ...remotePrefs };
 
-      const before = stableJson({ books: remoteBooks, deleted: remoteDeleted, preferences: remotePrefs });
-      const after = stableJson({ books, deleted: state.deleted, preferences });
-      if (before !== after) await updateFile(indexFile.id, indexPayload(books, state.deleted, preferences));
+      const before = stableJson({ books: remoteBooks, deleted: remoteDeleted, preferences: remotePrefs, commonLists: remoteCommon });
+      const after = stableJson({ books, deleted: state.deleted, preferences, commonLists });
+      if (before !== after) await updateFile(indexFile.id, indexPayload(books, state.deleted, preferences, commonLists));
       outcome = { received: state.received, novels: Object.keys(books).length, chapters: chapterCount };
     }
 

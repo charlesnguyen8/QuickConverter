@@ -435,6 +435,79 @@ process.on('beforeExit', () => {
     assert.deepStrictEqual(bookIds(a), ['b9'], 'A now mirrors Drive');
   });
 
+  const commonPiece = (id) => `qc-common-${encodeURIComponent(id)}.json`;
+  const commonTerms = async (device) => {
+    const lists = await device.S.getCommonLists();
+    return plain(lists.map((l) => [l.name, l.entries.map((e) => `${e.original}=${e.translation}:${e.kind}`).sort()]));
+  };
+
+  await test('a common list syncs as its own piece and reaches the other device', async () => {
+    const { drive, a, b } = await twoSyncedDevices();
+    const list = await a.S.createCommonList('Wuxia names');
+    await a.S.addToCommonList(list.id, [{ original: '张郃', translation: 'Trương Cáp', kind: 'namelist' }, { original: '长老', translation: 'trưởng lão', kind: 'locked' }]);
+    let from = drive.log.length;
+    await a.cloud.sync();
+    assert.deepStrictEqual(transfers(drive, from), [`download ${INDEX}`, `create ${commonPiece(list.id)}`, `update ${INDEX}`], 'only the list piece and the index');
+    assert(drive.content(INDEX).commonLists[list.id], 'the index lists it');
+    from = drive.log.length;
+    await b.cloud.sync();
+    assert.deepStrictEqual(transfers(drive, from), [`download ${INDEX}`, `download ${commonPiece(list.id)}`]);
+    assert.deepStrictEqual(await commonTerms(b), [['Wuxia names', ['张郃=Trương Cáp:namelist', '长老=trưởng lão:locked']]]);
+    from = drive.log.length;
+    await b.cloud.sync();
+    assert.deepStrictEqual(transfers(drive, from), [`download ${INDEX}`], 'nothing to move once both have it');
+  });
+
+  await test('common list edits made on both devices between syncs are all kept, and a removed entry stays removed', async () => {
+    const { a, b } = await twoSyncedDevices();
+    const list = await a.S.createCommonList('Mine');
+    await a.S.addToCommonList(list.id, [{ original: '张郃', translation: 'Truong Cap', kind: 'namelist' }, { original: '长老', translation: 'trưởng lão', kind: 'locked' }]);
+    await a.cloud.sync();
+    await b.cloud.sync();
+    await wait(5);
+    const [onB] = await b.S.getCommonLists();
+    await a.S.addCommonEntry(list.id, { original: '萧炎', translation: 'Tiêu Viêm', kind: 'namelist' });
+    await b.S.updateCommonEntry(list.id, onB.entries.find((e) => e.original === '张郃').id, { translation: 'Trương Cáp' });
+    await b.S.removeCommonEntry(list.id, onB.entries.find((e) => e.original === '长老').id);
+    await b.S.renameCommonList(list.id, 'Renamed on B');
+    await a.cloud.sync();
+    await b.cloud.sync();
+    await a.cloud.sync();
+    for (const [label, device] of [['A', a], ['B', b]]) {
+      assert.deepStrictEqual(await commonTerms(device), [['Renamed on B', ['张郃=Trương Cáp:namelist', '萧炎=Tiêu Viêm:namelist']]], `${label}: both devices' edits`);
+    }
+  });
+
+  await test('a common list deleted on one device is deleted on the other and its piece removed', async () => {
+    const { drive, a, b } = await twoSyncedDevices();
+    const keep = await a.S.createCommonList('Keep');
+    const gone = await a.S.createCommonList('Gone');
+    await a.cloud.sync();
+    await b.cloud.sync();
+    await b.S.deleteCommonList(gone.id);
+    await b.cloud.sync();
+    assert(!drive.names().includes(commonPiece(gone.id)), 'piece removed');
+    assert.strictEqual(drive.content(INDEX).commonLists[gone.id], undefined);
+    assert(drive.content(INDEX).deleted.common.lists[gone.id], 'deletion marker in the index');
+    await a.cloud.sync();
+    assert.deepStrictEqual(plain((await a.S.getCommonLists()).map((l) => l.id)), [keep.id], 'gone on the other device');
+  });
+
+  await test('Replace Drive copy and Replace this device carry common lists', async () => {
+    const { drive, a, b } = await twoSyncedDevices();
+    await a.S.createCommonList('Only on A');
+    await a.cloud.sync();
+    await b.cloud.sync();
+    await b.S.deleteCommonList((await b.S.getCommonLists())[0].id);
+    const mine = await b.S.createCommonList('From B');
+    await b.S.addCommonEntry(mine.id, { original: '张郃', translation: 'Trương Cáp', kind: 'soft' });
+    await b.cloud.backup();
+    assert.deepStrictEqual(Object.keys(drive.content(INDEX).commonLists), [mine.id], 'Drive now mirrors B');
+    assert.deepStrictEqual(drive.names().filter((n) => n.startsWith('qc-common-')), [commonPiece(mine.id)], 'the other list piece removed');
+    await a.cloud.restore();
+    assert.deepStrictEqual(await commonTerms(a), [['From B', ['张郃=Trương Cáp:soft']]], 'A now mirrors Drive');
+  });
+
   console.log(`--- Drive Sync Test Suite: ${passed}/${passed + failed} passed ---`);
   if (failed > 0) {
     console.error('Drive Sync Test Suite FAILED');

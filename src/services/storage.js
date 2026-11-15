@@ -2,8 +2,9 @@
 // Capable of storing full novel chapter texts and translation data without quota limits
 
 const DB_NAME = 'QuickConverterDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const SYNC_STATE_STORE = 'syncState';
+const COMMON_STORE = 'commonLists';
 
 const BACKUP_FORMAT = 'quickconverter-backup';
 const BACKUP_VERSION = 1;
@@ -90,6 +91,10 @@ function openDatabase() {
       if (!db.objectStoreNames.contains(SYNC_STATE_STORE)) {
         db.createObjectStore(SYNC_STATE_STORE, { keyPath: 'id' });
       }
+
+      if (!db.objectStoreNames.contains(COMMON_STORE)) {
+        db.createObjectStore(COMMON_STORE, { keyPath: 'id' });
+      }
     };
 
     request.onsuccess = () => {
@@ -112,6 +117,10 @@ function chapterNovelId(chapterId) {
   const id = String(chapterId || '');
   const at = id.lastIndexOf('_ch');
   return at > 0 ? id.slice(0, at) : null;
+}
+
+function hasStore(db, name) {
+  return !!(db && db.objectStoreNames && typeof db.objectStoreNames.contains === 'function' && db.objectStoreNames.contains(name));
 }
 
 function getAllFromStore(db, storeName) {
@@ -244,8 +253,65 @@ function syncLibraryParts(data) {
     novels: data && Array.isArray(data.novels) ? data.novels.filter((n) => n && n.id) : [],
     chapters: data && Array.isArray(data.chapters) ? data.chapters.filter((c) => c && c.id) : [],
     preferences: data && data.preferences && typeof data.preferences === 'object' ? data.preferences : {},
-    deleted: { novels: { ...(deleted.novels || {}) }, chapters: { ...(deleted.chapters || {}) }, names: copyNameMarkers(deleted.names) }
+    commonLists: data && Array.isArray(data.commonLists) ? data.commonLists.filter((l) => l && l.id) : [],
+    deleted: { novels: { ...(deleted.novels || {}) }, chapters: { ...(deleted.chapters || {}) }, names: copyNameMarkers(deleted.names), common: copyCommonMarkers(deleted.common) }
   };
+}
+
+function copyCommonMarkers(common) {
+  const source = common && typeof common === 'object' ? common : {};
+  const entries = {};
+  Object.entries(source.entries && typeof source.entries === 'object' ? source.entries : {}).forEach(([listId, ids]) => {
+    entries[listId] = { ...(ids || {}) };
+  });
+  return { lists: { ...(source.lists || {}) }, entries };
+}
+
+function mergeCommonMarkers(target, source) {
+  const from = copyCommonMarkers(source);
+  Object.entries(from.lists).forEach(([id, time]) => {
+    target.lists[id] = Math.max(syncTime(target.lists[id]), syncTime(time));
+  });
+  Object.entries(from.entries).forEach(([listId, ids]) => {
+    const markers = target.entries[listId] || (target.entries[listId] = {});
+    Object.entries(ids).forEach(([id, time]) => {
+      markers[id] = Math.max(syncTime(markers[id]), syncTime(time));
+    });
+  });
+  return target;
+}
+
+function commonKind(kind) {
+  return LIST_KINDS.indexOf(kind) !== -1 ? kind : 'namelist';
+}
+
+function sameTerm(a, b) {
+  return commonKind(a.kind) === commonKind(b.kind) && String(a.translation || '').trim() === String(b.translation || '').trim();
+}
+
+function newEntryId(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function cleanCommonEntry(entry, now) {
+  return {
+    id: newEntryId('common'),
+    original: String(entry.original || '').trim(),
+    translation: String(entry.translation || '').trim(),
+    kind: commonKind(entry.kind),
+    addedAt: now
+  };
+}
+
+function mergeCommonList(mine, theirs, markers) {
+  const meta = (list) => {
+    const { entries, ...rest } = list;
+    return rest;
+  };
+  const base = mine && theirs ? newerCopy(meta(mine), meta(theirs), (l) => syncTime(l.updatedAt)) : meta(mine || theirs);
+  const result = mergeNameEntries(mine ? mine.entries : [], theirs ? theirs.entries : [], markers);
+  const updatedAt = Math.max(syncTime(mine && mine.updatedAt), syncTime(theirs && theirs.updatedAt));
+  return { list: { ...base, updatedAt, entries: result.list }, markers: result.markers };
 }
 
 function copyNameMarkers(names) {
@@ -956,6 +1022,301 @@ const StorageService = {
       };
       currentList.unshift(newEntry);
       return { lists: { [kind]: currentList }, result: newEntry };
+    });
+    return result;
+  },
+
+  async _readCommonLists() {
+    const db = await openDatabase();
+    if (!hasStore(db, COMMON_STORE)) return [];
+    const lists = await getAllFromStore(db, COMMON_STORE);
+    return lists.filter((l) => l && l.id).sort((a, b) => (syncTime(a.createdAt) - syncTime(b.createdAt)) || (a.id < b.id ? -1 : 1));
+  },
+
+  async getCommonLists() {
+    return this._readCommonLists();
+  },
+
+  async _getCommonList(listId) {
+    if (!listId) return null;
+    const db = await openDatabase();
+    if (!hasStore(db, COMMON_STORE)) return null;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(COMMON_STORE, 'readonly');
+      const request = tx.objectStore(COMMON_STORE).get(listId);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  // Reads, changes and writes one common list in a single transaction. `change` gets a copy of
+  // the list and returns { list, result }; the list is written only when returned. Changed
+  // entries are stamped, and removed ones leave a marker so a sync does not bring them back.
+  async _changeCommonList(listId, change) {
+    const db = await openDatabase();
+    if (!listId || !hasStore(db, COMMON_STORE)) return { result: null, written: null };
+    const outcome = await new Promise((resolve, reject) => {
+      const tx = db.transaction(COMMON_STORE, 'readwrite');
+      const store = tx.objectStore(COMMON_STORE);
+      let done = { result: null, written: null, removed: [], now: 0 };
+      let failure = null;
+      const request = store.get(listId);
+      request.onsuccess = () => {
+        const stored = request.result;
+        if (!stored) return;
+        try {
+          const previous = Array.isArray(stored.entries) ? stored.entries : [];
+          const { list, result } = change({ ...stored, entries: [...previous] }) || {};
+          done = { result, written: null, removed: [], now: 0 };
+          if (!list) return;
+          const now = Date.now();
+          const entries = stampNameList(previous, list.entries, now);
+          const kept = new Set(entries.filter((e) => e && e.id).map((e) => e.id));
+          const written = { ...list, entries, updatedAt: now };
+          store.put(written);
+          done = { result, written, removed: previous.filter((e) => e && e.id && !kept.has(e.id)).map((e) => e.id), now };
+        } catch (e) {
+          failure = e;
+          if (typeof tx.abort === 'function') tx.abort();
+        }
+      };
+      tx.oncomplete = () => (failure ? reject(failure) : resolve(done));
+      tx.onerror = () => reject(failure || tx.error);
+      tx.onabort = () => reject(failure || tx.error);
+    });
+    if (outcome.removed.length > 0) {
+      const deleted = this._readSyncDeleted();
+      const markers = deleted.common.entries[listId] || (deleted.common.entries[listId] = {});
+      outcome.removed.forEach((id) => { markers[id] = outcome.now; });
+      this._writeSyncDeleted(deleted);
+    }
+    if (outcome.written) this._libraryChanged('common');
+    return outcome;
+  },
+
+  async createCommonList(name) {
+    const db = await openDatabase();
+    if (!hasStore(db, COMMON_STORE)) return null;
+    const lists = await this._readCommonLists();
+    const latest = lists.reduce((max, l) => Math.max(max, syncTime(l.createdAt)), 0);
+    const now = Math.max(Date.now(), latest + 1);
+    const list = { id: newEntryId('clist'), name: String(name || '').trim() || 'Untitled list', createdAt: now, updatedAt: now, entries: [] };
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(COMMON_STORE, 'readwrite');
+      tx.objectStore(COMMON_STORE).put(list);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    this._libraryChanged('common');
+    return list;
+  },
+
+  async renameCommonList(listId, name) {
+    const clean = String(name || '').trim();
+    if (!clean) return null;
+    const { written } = await this._changeCommonList(listId, (list) => (list.name === clean ? { result: list } : { list: { ...list, name: clean } }));
+    return written;
+  },
+
+  async deleteCommonList(listId) {
+    const db = await openDatabase();
+    if (!listId || !hasStore(db, COMMON_STORE)) return false;
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(COMMON_STORE, 'readwrite');
+      tx.objectStore(COMMON_STORE).delete(listId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    const deleted = this._readSyncDeleted();
+    deleted.common.lists[listId] = Date.now();
+    delete deleted.common.entries[listId];
+    this._writeSyncDeleted(deleted);
+    this._libraryChanged('common');
+    return true;
+  },
+
+  // Sorts incoming terms against what a list already holds: fresh (not there), same (same
+  // translation and type) and clashes (a different translation or type).
+  _sortAgainst(existingByKey, entries) {
+    const fresh = [];
+    const same = [];
+    const clashes = [];
+    const seen = new Set();
+    (entries || []).forEach((entry) => {
+      const key = nameKey(entry);
+      if (!key || !String((entry && entry.translation) || '').trim() || seen.has(key)) return;
+      seen.add(key);
+      const existing = existingByKey.get(key);
+      if (!existing) fresh.push(entry);
+      else if (sameTerm(existing.entry, entry)) same.push(entry);
+      else clashes.push({ entry, existing: existing.entry, existingKind: existing.kind });
+    });
+    return { fresh, same, clashes };
+  },
+
+  async compareWithCommonList(listId, entries) {
+    const list = await this._getCommonList(listId);
+    const byKey = new Map(((list && list.entries) || []).map((e) => [nameKey(e), { entry: e, kind: commonKind(e.kind) }]));
+    const { fresh, same, clashes } = this._sortAgainst(byKey, entries);
+    return { fresh, same, clashes: clashes.map(({ entry, existing }) => ({ entry, existing })) };
+  },
+
+  async addToCommonList(listId, entries, { replace = [] } = {}) {
+    const replaceKeys = new Set((replace || []).map((original) => nameKey({ original })));
+    const { result } = await this._changeCommonList(listId, (list) => {
+      const byKey = new Map(list.entries.map((e) => [nameKey(e), { entry: e, kind: commonKind(e.kind) }]));
+      const sorted = this._sortAgainst(byKey, entries);
+      const now = Date.now();
+      const counts = { added: sorted.fresh.length, replaced: 0, unchanged: sorted.same.length, kept: 0 };
+      let next = [...sorted.fresh.map((entry) => cleanCommonEntry(entry, now)), ...list.entries];
+      sorted.clashes.forEach(({ entry, existing }) => {
+        if (!replaceKeys.has(nameKey(entry))) {
+          counts.kept += 1;
+          return;
+        }
+        counts.replaced += 1;
+        next = next.map((e) => (e === existing ? { ...e, translation: String(entry.translation || '').trim(), kind: commonKind(entry.kind) } : e));
+      });
+      if (counts.added === 0 && counts.replaced === 0) return { result: counts };
+      return { list: { ...list, entries: next }, result: counts };
+    });
+    return result || { added: 0, replaced: 0, unchanged: 0, kept: 0 };
+  },
+
+  async addCommonEntry(listId, entry) {
+    if (!entry || !nameKey(entry) || !String(entry.translation || '').trim()) return null;
+    const { result } = await this._changeCommonList(listId, (list) => {
+      const key = nameKey(entry);
+      const index = list.entries.findIndex((e) => nameKey(e) === key);
+      if (index === -1) {
+        const added = cleanCommonEntry(entry, Date.now());
+        return { list: { ...list, entries: [added, ...list.entries] }, result: added };
+      }
+      const updated = { ...list.entries[index], translation: String(entry.translation).trim(), kind: commonKind(entry.kind) };
+      const next = [...list.entries];
+      next[index] = updated;
+      return { list: { ...list, entries: next }, result: updated };
+    });
+    return result;
+  },
+
+  async updateCommonEntry(listId, entryId, updates) {
+    if (!entryId || !updates) return null;
+    const { result } = await this._changeCommonList(listId, (list) => {
+      const index = list.entries.findIndex((e) => e.id === entryId);
+      if (index === -1) return { result: null };
+      const current = list.entries[index];
+      const updated = {
+        ...current,
+        original: updates.original !== undefined ? String(updates.original).trim() : current.original,
+        translation: updates.translation !== undefined ? String(updates.translation).trim() : current.translation,
+        kind: updates.kind !== undefined ? commonKind(updates.kind) : current.kind
+      };
+      const next = [...list.entries];
+      next[index] = updated;
+      return { list: { ...list, entries: next }, result: updated };
+    });
+    return result;
+  },
+
+  async removeCommonEntry(listId, entryId) {
+    if (!entryId) return false;
+    const { result } = await this._changeCommonList(listId, (list) => {
+      const next = list.entries.filter((e) => e.id !== entryId);
+      if (next.length === list.entries.length) return { result: false };
+      return { list: { ...list, entries: next }, result: true };
+    });
+    return !!result;
+  },
+
+  _novelTermsByKey(lists) {
+    const byKey = new Map();
+    LIST_KINDS.forEach((kind) => {
+      (lists[kind] || []).forEach((entry) => {
+        const key = nameKey(entry);
+        if (key && !byKey.has(key)) byKey.set(key, { entry, kind });
+      });
+    });
+    return byKey;
+  },
+
+  async compareCommonListWithNovel(listId, novelId) {
+    const list = await this._getCommonList(listId);
+    const lists = {};
+    for (const kind of LIST_KINDS) lists[kind] = await this.getNameList(novelId, kind);
+    const novelEntries = ((list && list.entries) || []).map((e) => ({ ...e, kind: commonKind(e.kind) }));
+    const byKey = this._novelTermsByKey(lists);
+    const withKinds = new Map([...byKey].map(([key, value]) => [key, { entry: { ...value.entry, kind: value.kind }, kind: value.kind }]));
+    const sorted = this._sortAgainst(withKinds, novelEntries);
+    return {
+      fresh: sorted.fresh,
+      same: sorted.same,
+      clashes: sorted.clashes.map(({ entry, existing, existingKind }) => {
+        const { kind, ...plainEntry } = existing;
+        return { entry, existing: plainEntry, existingKind };
+      })
+    };
+  },
+
+  // Copies a common list into a novel once: each entry goes to the novel tab of its type. Terms
+  // the novel already has the same are skipped; clashes stay as the novel has them unless their
+  // original is in `replace`, in which case the common entry takes their place (moving tabs if
+  // its type differs).
+  async applyCommonList(listId, novelId, { replace = [] } = {}) {
+    const list = await this._getCommonList(listId);
+    if (!list || !novelId) return null;
+    const replaceKeys = new Set((replace || []).map((original) => nameKey({ original })));
+    const { result } = await this._changeNameLists(novelId, LIST_KINDS, (lists) => {
+      const byKey = this._novelTermsByKey(lists);
+      const counts = { added: 0, replaced: 0, unchanged: 0, kept: 0 };
+      const changed = new Set();
+      const now = Date.now();
+      const novelEntry = (entry) => ({
+        id: newEntryId('name'),
+        original: String(entry.original || '').trim(),
+        translation: String(entry.translation || '').trim(),
+        chapterFirstSeen: null,
+        addedAt: now
+      });
+      (list.entries || []).forEach((entry) => {
+        const key = nameKey(entry);
+        if (!key || !String(entry.translation || '').trim()) return;
+        const kind = commonKind(entry.kind);
+        const found = byKey.get(key);
+        if (!found) {
+          const added = novelEntry(entry);
+          lists[kind] = [added, ...lists[kind]];
+          byKey.set(key, { entry: added, kind });
+          changed.add(kind);
+          counts.added += 1;
+          return;
+        }
+        if (sameTerm({ ...found.entry, kind: found.kind }, entry)) {
+          counts.unchanged += 1;
+          return;
+        }
+        if (!replaceKeys.has(key)) {
+          counts.kept += 1;
+          return;
+        }
+        counts.replaced += 1;
+        if (found.kind === kind) {
+          const updated = { ...found.entry, translation: String(entry.translation).trim() };
+          lists[kind] = lists[kind].map((e) => (e === found.entry ? updated : e));
+          byKey.set(key, { entry: updated, kind });
+          changed.add(kind);
+          return;
+        }
+        lists[found.kind] = lists[found.kind].filter((e) => e !== found.entry);
+        const moved = novelEntry(entry);
+        lists[kind] = [moved, ...lists[kind]];
+        byKey.set(key, { entry: moved, kind });
+        changed.add(found.kind);
+        changed.add(kind);
+      });
+      const written = {};
+      changed.forEach((kind) => { written[kind] = lists[kind]; });
+      return { lists: written, result: counts };
     });
     return result;
   },
@@ -2007,18 +2368,27 @@ const StorageService = {
       return {
         novels: parsed && parsed.novels && typeof parsed.novels === 'object' ? parsed.novels : {},
         chapters: parsed && parsed.chapters && typeof parsed.chapters === 'object' ? parsed.chapters : {},
-        names: parsed && parsed.names && typeof parsed.names === 'object' ? parsed.names : {}
+        names: parsed && parsed.names && typeof parsed.names === 'object' ? parsed.names : {},
+        common: copyCommonMarkers(parsed && parsed.common)
       };
     } catch (e) {
-      return { novels: {}, chapters: {}, names: {} };
+      return { novels: {}, chapters: {}, names: {}, common: copyCommonMarkers(null) };
     }
   },
 
   // The synced markers plus the ones this device made since the sync started.
   _keepNewerMarkers(deleted, since) {
     const current = this._readSyncDeleted();
-    const out = { novels: { ...((deleted && deleted.novels) || {}) }, chapters: { ...((deleted && deleted.chapters) || {}) }, names: copyNameMarkers(deleted && deleted.names) };
+    const out = { novels: { ...((deleted && deleted.novels) || {}) }, chapters: { ...((deleted && deleted.chapters) || {}) }, names: copyNameMarkers(deleted && deleted.names), common: copyCommonMarkers(deleted && deleted.common) };
     const newer = (time) => syncTime(time) >= since;
+    const recentCommon = copyCommonMarkers(null);
+    Object.entries(current.common.lists).forEach(([id, time]) => { if (newer(time)) recentCommon.lists[id] = time; });
+    Object.entries(current.common.entries).forEach(([listId, ids]) => {
+      Object.entries(ids || {}).forEach(([id, time]) => {
+        if (newer(time)) (recentCommon.entries[listId] || (recentCommon.entries[listId] = {}))[id] = time;
+      });
+    });
+    mergeCommonMarkers(out.common, recentCommon);
     ['novels', 'chapters'].forEach((kind) => {
       Object.entries(current[kind] || {}).forEach(([id, time]) => {
         if (newer(time)) out[kind][id] = Math.max(syncTime(out[kind][id]), syncTime(time));
@@ -2041,7 +2411,8 @@ const StorageService = {
     this.setPreference(SYNC_DELETED_KEY, JSON.stringify({
       novels: (deleted && deleted.novels) || {},
       chapters: (deleted && deleted.chapters) || {},
-      names: (deleted && deleted.names) || {}
+      names: (deleted && deleted.names) || {},
+      common: copyCommonMarkers(deleted && deleted.common)
     }));
   },
 
@@ -2252,6 +2623,7 @@ const StorageService = {
       version: BACKUP_VERSION,
       exportedAt: new Date().toISOString(),
       novels,
+      commonLists: await this._readCommonLists(),
       preferences,
       deleted: this._readSyncDeleted()
     };
@@ -2296,6 +2668,16 @@ const StorageService = {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+    if (Array.isArray(data.commonLists) && hasStore(db, COMMON_STORE)) {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(COMMON_STORE, 'readwrite');
+        const store = tx.objectStore(COMMON_STORE);
+        if (replace) store.clear();
+        data.commonLists.filter((l) => l && l.id).forEach((list) => store.put(list));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
 
     const preferences = data.preferences || {};
     Object.keys(preferences).forEach((key) => {
@@ -2320,26 +2702,28 @@ const StorageService = {
   // ones are filled in). Returns the merged library and the changes to write on this device.
   mergeLibraries(localData, remoteData) {
     const local = syncLibraryParts(localData);
-    const apply = { novels: [], chapters: [], deleteNovels: [], deleteChapters: [], preferences: {} };
+    const apply = { novels: [], chapters: [], deleteNovels: [], deleteChapters: [], preferences: {}, commonLists: [], deleteCommonLists: [] };
     const libraryOf = (parts) => ({
       format: BACKUP_FORMAT,
       version: BACKUP_VERSION,
       exportedAt: new Date().toISOString(),
       novels: parts.novels,
       chapters: parts.chapters,
+      commonLists: parts.commonLists,
       preferences: parts.preferences,
       deleted: parts.deleted
     });
     if (!remoteData) return { library: libraryOf(local), apply };
     const remote = syncLibraryParts(remoteData);
 
-    const deleted = { novels: { ...local.deleted.novels }, chapters: { ...local.deleted.chapters }, names: copyNameMarkers(local.deleted.names) };
+    const deleted = { novels: { ...local.deleted.novels }, chapters: { ...local.deleted.chapters }, names: copyNameMarkers(local.deleted.names), common: copyCommonMarkers(local.deleted.common) };
     ['novels', 'chapters'].forEach((kind) => {
       Object.keys(remote.deleted[kind]).forEach((id) => {
         deleted[kind][id] = Math.max(syncTime(deleted[kind][id]), syncTime(remote.deleted[kind][id]));
       });
     });
     mergeNameMarkers(deleted.names, remote.deleted.names);
+    mergeCommonMarkers(deleted.common, remote.deleted.common);
 
     const byId = (list) => new Map(list.map((item) => [item.id, item]));
     const idsOf = (a, b) => Array.from(new Set([...a.map((x) => x.id), ...b.map((x) => x.id)]));
@@ -2390,8 +2774,29 @@ const StorageService = {
       if (BACKUP_EXCLUDED_KEYS.indexOf(key) === -1) preferences[key] = local.preferences[key];
     });
 
+    const localCommon = byId(local.commonLists);
+    const remoteCommon = byId(remote.commonLists);
+    const commonLists = [];
+    idsOf(local.commonLists, remote.commonLists).forEach((id) => {
+      const mine = localCommon.get(id);
+      const theirs = remoteCommon.get(id);
+      const entryMarkers = deleted.common.entries[id];
+      const result = mergeCommonList(mine, theirs, entryMarkers);
+      if (entryMarkers) deleted.common.entries[id] = result.markers;
+      const merged = result.list;
+      const marker = deleted.common.lists[id];
+      if (marker !== undefined && syncTime(marker) >= syncTime(merged.updatedAt)) {
+        if (mine) apply.deleteCommonLists.push(id);
+        return;
+      }
+      if (marker !== undefined) delete deleted.common.lists[id];
+      commonLists.push(merged);
+      if (!mine || stableJson(mine) !== stableJson(merged)) apply.commonLists.push(merged);
+    });
+
     apply.nameMarkers = copyNameMarkers(deleted.names);
-    return { library: libraryOf({ novels, chapters, preferences, deleted }), apply };
+    apply.commonMarkers = copyCommonMarkers(deleted.common);
+    return { library: libraryOf({ novels, chapters, commonLists, preferences, deleted }), apply };
   },
 
   // Writes a merge's changes on this device, keeping each record's time so it does not look
@@ -2434,6 +2839,26 @@ const StorageService = {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+    const putCommon = changes.commonLists || [];
+    const dropCommon = changes.deleteCommonLists || [];
+    if ((putCommon.length > 0 || dropCommon.length > 0) && hasStore(db, COMMON_STORE)) {
+      const commonMarkers = mergeCommonMarkers(copyCommonMarkers(this._readSyncDeleted().common), changes.commonMarkers);
+      if (deleted) mergeCommonMarkers(commonMarkers, deleted.common);
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(COMMON_STORE, 'readwrite');
+        const store = tx.objectStore(COMMON_STORE);
+        putCommon.forEach((list) => {
+          const request = store.get(list.id);
+          request.onsuccess = () => {
+            const current = request.result;
+            store.put(current ? mergeCommonList(current, list, commonMarkers.entries[list.id]).list : list);
+          };
+        });
+        dropCommon.forEach((id) => store.delete(id));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
     const preferences = changes.preferences || {};
     Object.keys(preferences).forEach((key) => {
       if (BACKUP_EXCLUDED_KEYS.indexOf(key) !== -1) return;
