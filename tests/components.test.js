@@ -838,6 +838,62 @@ async function testAsync(name, fn) {
     assert(withCommon.includes('1 selected') && /id="name-list-selection-common-btn"[^>]*>[\s\S]*?Add to common list/.test(withCommon), 'Add to common list');
   });
 
+  const commonDialogs = await loadComponent('components/react/novel/CommonListDialogs.jsx');
+  const tagOf = (html, id) => (html.match(new RegExp(`<(?:button|input|label)[^>]*id="${id}"[^>]*>`)) || [''])[0];
+  const buttonOf = (html, id) => (html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>[\\s\\S]*?</button>`)) || [''])[0];
+
+  test('Add to common list asks which list, showing each list with its size, and can make a new one', () => {
+    const { CommonListPicker } = commonDialogs;
+    const lists = [{ id: 'c1', name: 'Wuxia names', entries: [{}, {}] }, { id: 'c2', name: 'Titles', entries: [] }];
+    const html = render(h(CommonListPicker, { lists, count: 3, onPick() {}, onCreate() {}, onCancel() {} }));
+    assert(/id="common-list-picker"/.test(html) && html.includes('3'), 'says how many entries are being added');
+    const pick = buttonOf(html, 'common-list-pick-c1');
+    assert(pick.includes('Wuxia names') && pick.includes('2 entries') && /min-h-10/.test(pick), 'each list, tappable, with its size');
+    assert(buttonOf(html, 'common-list-pick-c2').includes('0 entries'));
+    assert(tagOf(html, 'common-list-new-name'), 'a name field for a new list');
+    assert(/disabled/.test(tagOf(html, 'common-list-create-btn')), 'New list waits for a name');
+    assert(buttonOf(html, 'common-list-picker-cancel'), 'Cancel');
+    const empty = render(h(CommonListPicker, { lists: [], count: 1, onPick() {}, onCreate() {}, onCancel() {} }));
+    assert(/no common lists yet/i.test(empty) && tagOf(empty, 'common-list-new-name'), 'with no lists, offers to make the first');
+  });
+
+  test('a clash shows both versions with their types and asks Keep or Replace, with Same for the rest', () => {
+    const { ClashDialog } = commonDialogs;
+    const clash = { entry: { original: '长老', translation: 'Trưởng Lão', kind: 'locked' }, existing: { original: '长老', translation: 'trưởng lão' }, existingKind: 'namelist' };
+    const html = render(h(ClashDialog, { clash, remaining: 2, existingLabel: 'In the common list', incomingLabel: 'Selected', sameForRest: false, onSameForRest() {}, onKeep() {}, onReplace() {} }));
+    assert(html.includes('长老') && html.includes('trưởng lão') && html.includes('Trưởng Lão'), 'both translations');
+    assert(html.includes('In the common list') && html.includes('Selected'), 'which is which');
+    assert(html.includes('Name List') && html.includes('Locked'), 'their types');
+    assert(buttonOf(html, 'clash-keep-btn').includes('Keep') && /min-h-10/.test(buttonOf(html, 'clash-keep-btn')), 'Keep');
+    assert(buttonOf(html, 'clash-replace-btn').includes('Replace'), 'Replace');
+    assert(/id="clash-same-for-rest"/.test(html) && html.includes('2 more'), 'Same for the 2 more');
+    const last = render(h(ClashDialog, { clash, remaining: 0, existingLabel: 'x', incomingLabel: 'y', sameForRest: false, onSameForRest() {}, onKeep() {}, onReplace() {} }));
+    assert(!/id="clash-same-for-rest"/.test(last), 'no Same for the rest on the last clash');
+  });
+
+  test('walking the clashes collects what to replace, and Same for the rest settles the remaining ones', () => {
+    const { walkClashes } = commonDialogs;
+    const clashes = ['a', 'b', 'c', 'd'].map((original) => ({ entry: { original } }));
+    let step = { clashes, index: 0, replace: [] };
+    step = walkClashes(step, 'replace', false);
+    assert.deepStrictEqual([step.index, plainArr(step.replace), step.done], [1, ['a'], false]);
+    step = walkClashes(step, 'keep', false);
+    assert.deepStrictEqual([step.index, plainArr(step.replace), step.done], [2, ['a'], false]);
+    const all = walkClashes(step, 'replace', true);
+    assert.deepStrictEqual([plainArr(all.replace), all.done], [['a', 'c', 'd'], true], 'replace the rest too');
+    const none = walkClashes(step, 'keep', true);
+    assert.deepStrictEqual([plainArr(none.replace), none.done], [['a'], true], 'keep the rest');
+    const end = walkClashes({ clashes: [{ entry: { original: 'x' } }], index: 0, replace: [] }, 'keep', false);
+    assert.strictEqual(end.done, true, 'done after the last one');
+  });
+
+  test('the result of adding says what was added, already there, replaced and kept', () => {
+    const { commonSummary } = commonDialogs;
+    assert.strictEqual(commonSummary({ added: 12, unchanged: 3, replaced: 2, kept: 1 }), 'Added 12 · 3 already there · 2 replaced · 1 kept');
+    assert.strictEqual(commonSummary({ added: 1, unchanged: 0, replaced: 0, kept: 0 }), 'Added 1');
+    assert.strictEqual(commonSummary({ added: 0, unchanged: 2, replaced: 0, kept: 0 }), 'Nothing new · 2 already there');
+  });
+
   const { MoveEntryButtons } = drawerMod;
   test('Name List rows move to the Locked Glossary, Locked rows move to the Name List, Soft rows still move to Locked', () => {
     const moves = (tab) => {

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { buildSnippets, computeVirtualWindow, findNameConflicts } from './nameListSource.js';
+import { ClashDialog, CommonListPicker, commonSummary, walkClashes } from './CommonListDialogs.jsx';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -303,6 +304,8 @@ export default function NameListDrawer() {
   const [promptStatus, setPromptStatus] = useState(null);
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [promptLists, setPromptLists] = useState({ namelist: [], locked: [], soft: [] });
+  const [commonFlow, setCommonFlow] = useState(null);
+  const [commonNotice, setCommonNotice] = useState(null);
   const promptPanelRef = useRef(false);
   promptPanelRef.current = promptPanelOpen;
   const [strictConflicts, setStrictConflicts] = useState(() => {
@@ -615,6 +618,72 @@ export default function NameListDrawer() {
     if (selectedTerms.length > 0) parts.push(`Source terms:\n${selectedTerms.join('\n')}`);
     return parts.join('\n\n');
   }, [customPrompt, selectedTerms]);
+
+  const openCommonFlow = useCallback(async () => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || typeof storage.getCommonLists !== 'function') return;
+    const entries = selectedEntries.map(({ original, translation, kind }) => ({ original, translation, kind }));
+    if (entries.length === 0) return;
+    try {
+      setCommonFlow({ step: 'pick', lists: await storage.getCommonLists(), entries });
+    } catch (e) {
+      console.error('Error loading common lists:', e);
+    }
+  }, [selectedEntries]);
+
+  const finishCommon = useCallback(async (flow, listId, listName, replace) => {
+    const storage = window.StorageService;
+    try {
+      const result = await storage.addToCommonList(listId, flow.entries, { replace });
+      setCommonNotice(`${listName}: ${commonSummary(result)}`);
+      setSelectedKeys(new Set());
+    } catch (e) {
+      console.error('Error adding to the common list:', e);
+      setCommonNotice(`Could not add to ${listName}: ${e.message}`);
+    }
+    setCommonFlow(null);
+  }, []);
+
+  const pickCommonList = useCallback(async (flow, listId, listName) => {
+    const storage = window.StorageService;
+    try {
+      const compared = await storage.compareWithCommonList(listId, flow.entries);
+      if (compared.clashes.length === 0) {
+        await finishCommon(flow, listId, listName, []);
+        return;
+      }
+      setCommonFlow({ step: 'clash', entries: flow.entries, listId, listName, walk: { clashes: compared.clashes, index: 0, replace: [] }, sameForRest: false });
+    } catch (e) {
+      console.error('Error comparing with the common list:', e);
+      setCommonFlow(null);
+    }
+  }, [finishCommon]);
+
+  const createCommonListAndPick = useCallback(async (flow, name) => {
+    try {
+      const list = await window.StorageService.createCommonList(name);
+      if (list) await pickCommonList(flow, list.id, list.name);
+    } catch (e) {
+      console.error('Error creating the common list:', e);
+    }
+  }, [pickCommonList]);
+
+  const decideClash = useCallback(async (decision) => {
+    const flow = commonFlow;
+    if (!flow || flow.step !== 'clash') return;
+    const next = walkClashes(flow.walk, decision, flow.sameForRest);
+    if (next.done) {
+      await finishCommon(flow, flow.listId, flow.listName, next.replace);
+      return;
+    }
+    setCommonFlow({ ...flow, walk: next, sameForRest: false });
+  }, [commonFlow, finishCommon]);
+
+  useEffect(() => {
+    if (!commonNotice) return undefined;
+    const timer = setTimeout(() => setCommonNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [commonNotice]);
 
   const openPromptPanel = useCallback(() => {
     setSourceEntry(null);
@@ -1465,10 +1534,40 @@ export default function NameListDrawer() {
               </>
             )}
           </div>
-          <SelectionBar count={selectedEntries.length} onPrompt={openPromptPanel} onClear={clearSelected} />
+          {commonNotice ? (
+            <div id="name-list-common-notice" role="status" className="flex items-center justify-between gap-2 px-4 py-2 border-t border-indigo-500/30 bg-indigo-500/10 text-xs font-semibold text-indigo-100 flex-shrink-0">
+              <span className="min-w-0 break-words">📚 {commonNotice}</span>
+              <button type="button" onClick={() => setCommonNotice(null)} className="min-h-10 min-w-10 text-indigo-300 hover:text-white cursor-pointer" aria-label="Dismiss">✕</button>
+            </div>
+          ) : null}
+          <SelectionBar count={selectedEntries.length} onPrompt={openPromptPanel} onCommon={openCommonFlow} onClear={clearSelected} />
         </div>
       </div>
     </div>
+      {commonFlow && commonFlow.step === 'pick' ? createPortal(
+        <CommonListPicker
+          lists={commonFlow.lists}
+          count={commonFlow.entries.length}
+          onPick={(listId) => pickCommonList(commonFlow, listId, (commonFlow.lists.find((l) => l.id === listId) || {}).name || 'Common list')}
+          onCreate={(name) => createCommonListAndPick(commonFlow, name)}
+          onCancel={() => setCommonFlow(null)}
+        />,
+        document.body
+      ) : null}
+      {commonFlow && commonFlow.step === 'clash' ? createPortal(
+        <ClashDialog
+          clash={commonFlow.walk.clashes[commonFlow.walk.index]}
+          remaining={commonFlow.walk.clashes.length - commonFlow.walk.index - 1}
+          existingLabel={`In ${commonFlow.listName}`}
+          incomingLabel="Selected"
+          sameForRest={commonFlow.sameForRest}
+          onSameForRest={(checked) => setCommonFlow({ ...commonFlow, sameForRest: checked })}
+          onKeep={() => decideClash('keep')}
+          onReplace={() => decideClash('replace')}
+          onCancel={() => setCommonFlow(null)}
+        />,
+        document.body
+      ) : null}
       {conflictPrompt ? createPortal(
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm"
