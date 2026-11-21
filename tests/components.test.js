@@ -1151,6 +1151,12 @@ async function testAsync(name, fn) {
     assert(buttonTag(html, 'confirm-forever-btn').includes('Delete forever'));
   });
 
+  test('adding a book from the popup takes the title from the site, not from the tab', () => {
+    const popup = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'components', 'react', 'popup', 'PopupApp.jsx'), 'utf8');
+    const handler = popup.slice(popup.indexOf('const handleAddNovel'), popup.indexOf('// Children read window.__popupActions'));
+    assert(/syncNovelMetadata\(info\.slug, \{ preferSiteTitle: true \}\)/.test(handler), 'the refresh after adding prefers the site title');
+  });
+
   test('deleting from the popup asks first and moves the book to the Recycle Bin', () => {
     const popup = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'components', 'react', 'popup', 'PopupApp.jsx'), 'utf8');
     const handler = popup.slice(popup.indexOf('const handleDeleteNovel'), popup.indexOf('const handleAddNovel'));

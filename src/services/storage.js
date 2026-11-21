@@ -471,6 +471,14 @@ function stampNameList(previous, nameList, now) {
   });
 }
 
+function isPlaceholderTitle(novel, provider) {
+  const title = String((novel && novel.title) || '').trim();
+  if (!title || title.toLowerCase().includes('unknown')) return true;
+  if (!provider) return false;
+  if (title === provider.shortName || title === provider.name) return true;
+  return typeof provider.formatTitle === 'function' && title === provider.formatTitle(novel.slug, '');
+}
+
 function providerForNovel(novel) {
   if (!novel || typeof ProviderRegistry === 'undefined') return null;
   let provider = null;
@@ -1511,7 +1519,7 @@ const StorageService = {
     return match ? Number(match.chapterNumber) : null;
   },
 
-  async syncNovelMetadata(slugOrId) {
+  async syncNovelMetadata(slugOrId, { preferSiteTitle = false } = {}) {
     let novel = await this.getNovelById(slugOrId);
     if (!novel) {
       novel = await this.getNovelBySlug(slugOrId);
@@ -1554,7 +1562,7 @@ const StorageService = {
         if (metadata.thumbnail) {
           updates.thumbnail = metadata.thumbnail;
         }
-        if (metadata.title && (!novel.title || novel.title.toLowerCase().includes('unknown'))) {
+        if (metadata.title && metadata.title !== novel.title && (preferSiteTitle || isPlaceholderTitle(novel, provider))) {
           updates.title = metadata.title;
         }
 

@@ -133,6 +133,12 @@ const EXPECTED_CHINESE = [
     assert.strictEqual(P.parseUrl('https://example.com/truyen/a/1/2/'), null);
   });
 
+  await test('formatTitle never names a book after the site, which is what a chapter page tab title says', () => {
+    assert.strictEqual(P.formatTitle('69shu-19254', 'Sáng Tác Việt - Nền tảng văn học mạng mở mới'), 'Book 69shu-19254');
+    assert.strictEqual(P.formatTitle('69shu-19254', 'Sáng Tác Việt'), 'Book 69shu-19254', 'the part before the first dash, as the popup passes it');
+    assert.strictEqual(P.formatTitle('69shu-19254', 'Tu chân 4 vạn năm - 3339 chương'), 'Tu chân 4 vạn năm', 'a book page title still works');
+  });
+
   await test('parseSeriesHtml reads the Vietnamese title, author, cover, chapter count and status', () => {
     assert.deepStrictEqual(plain(P.parseSeriesHtml(BOOK_HTML)), {
       title: 'Ta mới không cần yêu nhau trò chơi',

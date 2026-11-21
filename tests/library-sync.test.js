@@ -23,7 +23,7 @@ async function test(name, fn) {
   }
 }
 
-function makeEnv() {
+function makeEnv(extra = {}) {
   const db = makeDatabase();
   const { stores, reads } = db;
   const ls = { quickconverter_db_initialized: 'true' };
@@ -41,7 +41,8 @@ function makeEnv() {
     clearTimeout,
     localStorage,
     IDBKeyRange: { only: (value) => ({ only: value }) },
-    indexedDB: { open: db.open }
+    indexedDB: { open: db.open },
+    ...extra
   };
   env.window = env;
   env.self = env;
@@ -690,6 +691,26 @@ process.on('beforeExit', () => {
     assert.strictEqual(stores.novels.n1, undefined);
     assert.strictEqual(stores.chapters.n1_ch1, undefined);
     assert.deepStrictEqual(await S.getRecycleBin(), []);
+  });
+
+  await test('refreshing a book replaces a placeholder title (the site name, Book <slug>) with the site title, and keeps a real one unless asked', async () => {
+    const provider = {
+      shortName: 'Sáng Tác Việt',
+      name: 'Sáng Tác Việt (sangtacviet.com)',
+      formatTitle: (slug, raw) => raw || `Book ${slug}`,
+      fetchSeriesMetadata: async () => ({ title: 'Tu chân 4 vạn năm', totalChapters: 3339 })
+    };
+    const { S } = makeEnv({ ProviderRegistry: { getProviderForUrl: () => provider, getProviderForDomain: () => provider } });
+    const url = (id) => `https://sangtacviet.com/truyen/69shu/1/${id}/`;
+    await S.addNovel({ id: 'site', title: 'Sáng Tác Việt', slug: '69shu-19254', url: url(19254) });
+    await S.addNovel({ id: 'fallback', title: 'Book 69shu-1', slug: '69shu-1', url: url(1) });
+    await S.addNovel({ id: 'mine', title: 'My own name', slug: '69shu-2', url: url(2) });
+    for (const id of ['site', 'fallback', 'mine']) await S.syncNovelMetadata(id);
+    assert.strictEqual((await S.getNovelById('site')).title, 'Tu chân 4 vạn năm', 'the site name is replaced');
+    assert.strictEqual((await S.getNovelById('fallback')).title, 'Tu chân 4 vạn năm', 'a Book <slug> fallback is replaced');
+    assert.strictEqual((await S.getNovelById('mine')).title, 'My own name', 'a real title stays');
+    await S.syncNovelMetadata('mine', { preferSiteTitle: true });
+    assert.strictEqual((await S.getNovelById('mine')).title, 'Tu chân 4 vạn năm', 'unless the site title is preferred, as when a book is just added');
   });
 
   // --- Common lists ---

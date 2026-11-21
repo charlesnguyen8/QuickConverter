@@ -315,7 +315,7 @@ export default function PopupApp() {
     try {
       await S.addNovel(info);
       if (info.slug) {
-        await Promise.all([S.syncNovelMetadata(info.slug), S.syncNovelChapters(info.slug)]);
+        await Promise.all([S.syncNovelMetadata(info.slug, { preferSiteTitle: true }), S.syncNovelChapters(info.slug)]);
       }
       const latest = await S.getManagedNovels();
       setNovels(Array.isArray(latest) ? latest : []);

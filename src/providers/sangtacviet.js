@@ -350,7 +350,8 @@ const SangtacvietProvider = (() => {
 
     formatTitle(slug, rawTitle) {
       const cleaned = String(rawTitle || '').replace(/\s*-\s*\d+\s*chương\s*$/i, '').trim();
-      return cleaned || (slug ? `Book ${slug}` : '');
+      const siteName = /^sáng\s*tác\s*việt/i.test(cleaned);
+      return (siteName ? '' : cleaned) || (slug ? `Book ${slug}` : '');
     }
   };
 })();
