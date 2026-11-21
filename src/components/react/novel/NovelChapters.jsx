@@ -3,6 +3,7 @@ import { ProgressRing } from '../shared/QueueDock.jsx';
 import { ChapterAccessBadge } from '../shared/ChapterAccessBadge.jsx';
 import { LastReadBadge } from '../shared/lastRead.jsx';
 import { activeTaskIds, chapterFinished } from '../shared/queueActive.js';
+import { SourceBadge, savedFromOldSource } from './SourceSwitch.jsx';
 
 function getNovelId() {
   if (typeof window === 'undefined') return null;
@@ -70,6 +71,17 @@ export function ChapterRow({ novel, chapter, chNum, downloadedChapter, queueStat
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
           Saved
         </span>
+        {savedFromOldSource(downloadedChapter, chapter) ? (
+          <button
+            type="button"
+            id={`chapter-redownload-${chNum}`}
+            onClick={requestDownload}
+            className="inline-flex items-center gap-1 min-h-10 px-2.5 rounded-md text-[11px] font-semibold text-sky-200 bg-sky-500/15 border border-sky-500/30 hover:bg-sky-500/25 transition cursor-pointer"
+            title={`Download chapter ${chNum} again from the source it now comes from`}
+          >
+            ↻ Re-download
+          </button>
+        ) : null}
         {downloadedChapter.translationCost && downloadedChapter.translationCost.formattedCost ? (
           <span
             className="text-[11px] font-mono font-medium px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20"
@@ -165,6 +177,7 @@ export function ChapterRow({ novel, chapter, chNum, downloadedChapter, queueStat
           {chapter.title || `Chapter ${chNum}`}
         </span>
         <ChapterAccessBadge chapter={chapter} />
+        <SourceBadge chapter={chapter} saved={downloadedChapter} />
         <LastReadBadge novel={novel} chapterNumber={chNum} />
       </div>
 

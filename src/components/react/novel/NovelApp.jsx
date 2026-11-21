@@ -8,6 +8,7 @@ import ProviderLoginBanner from '../shared/ProviderLogin.jsx';
 import { ConversionModeToggle } from './ConversionModeToggle.jsx';
 import { useQueueChooser } from '../shared/ChooseQueueDialog.jsx';
 import { activeTaskIds, chapterFinished } from '../shared/queueActive.js';
+import SourceSwitchDialog, { SourceSwitchList } from './SourceSwitch.jsx';
 
 const COOLDOWN_IDS = {
   toggle: 'novel-cooldown-toggle',
@@ -50,6 +51,7 @@ export default function NovelApp() {
   const [queuing, setQueuing] = useState(false);
   const [stats, setStats] = useState(null);
   const [nameListCount, setNameListCount] = useState(0);
+  const [switchOpen, setSwitchOpen] = useState(false);
   const panelRef = useRef(null);
 
   useEffect(() => {
@@ -144,6 +146,23 @@ export default function NovelApp() {
     });
     return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
   }, []);
+
+  const reloadAfterSwitch = useCallback(async () => {
+    const storage = typeof window !== 'undefined' ? window.StorageService : null;
+    if (!storage || !novelId) return;
+    const record = await storage.getNovelById(novelId);
+    if (record) setNovel(record);
+    refreshChapterList();
+  }, [novelId, refreshChapterList]);
+
+  const removeSwitch = useCallback(async (sw) => {
+    try {
+      await window.StorageService.removeSourceSwitch(novelId, sw.id);
+    } catch (e) {
+      console.error('Error removing the source switch:', e);
+    }
+    reloadAfterSwitch();
+  }, [novelId, reloadAfterSwitch]);
 
   const handleSync = useCallback(async () => {
     if (!novel || syncing) return;
@@ -375,8 +394,21 @@ export default function NovelApp() {
                   </>
                 )}
               </button>
+              <button
+                id="switch-source-btn"
+                type="button"
+                onClick={() => setSwitchOpen(true)}
+                disabled={!novel}
+                className="inline-flex items-center gap-1.5 min-h-10 sm:min-h-0 px-3 py-1.5 rounded-md text-xs font-medium text-sky-200 bg-slate-800 hover:bg-slate-700 border border-sky-500/30 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                title="Take chapters from a chapter onward from another copy of this book"
+              >
+                <span aria-hidden="true">⇄</span>
+                <span>Switch source</span>
+              </button>
             </div>
           </div>
+
+          {novel ? <SourceSwitchList switches={novel.sourceSwitches || []} onRemove={removeSwitch} /> : null}
 
           <CooldownPanel ids={COOLDOWN_IDS} />
 
@@ -388,6 +420,13 @@ export default function NovelApp() {
 
       <NameListDrawer />
       {queueDialog}
+      {switchOpen && novel ? (
+        <SourceSwitchDialog
+          novel={novel}
+          onCancel={() => setSwitchOpen(false)}
+          onDone={() => { setSwitchOpen(false); reloadAfterSwitch(); }}
+        />
+      ) : null}
     </>
   );
 }

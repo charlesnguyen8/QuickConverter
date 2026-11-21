@@ -989,6 +989,82 @@ async function testAsync(name, fn) {
     assert.deepStrictEqual(moves('rejected'), [], 'other lists have no move');
   });
 
+  // --- Switching source from a chapter onward ---
+  const switchMod = await loadComponent('components/react/novel/SourceSwitch.jsx');
+  const { ChapterRow: SwitchChapterRow } = await loadComponent('components/react/novel/NovelChapters.jsx');
+
+  test('the novel page offers Switch source next to Sync Catalog', () => {
+    const btn = buttonOf(novelApp, 'switch-source-btn');
+    assert(btn && btn.includes('Switch source') && /min-h-10/.test(btn), 'a 40px Switch source button');
+  });
+
+  test('a saved chapter counts as from the old source when its source differs from its chapter list entry', () => {
+    const { savedFromOldSource } = switchMod;
+    assert.strictEqual(savedFromOldSource({ source: 's1' }, { chapterNumber: 5 }), true, 'saved before the switch');
+    assert.strictEqual(savedFromOldSource({ source: 's1' }, { chapterNumber: 5, source: 's1' }), false, 'saved from the new source');
+    assert.strictEqual(savedFromOldSource({}, { chapterNumber: 5, source: 's1' }), true, 'switch removed since');
+    assert.strictEqual(savedFromOldSource({}, { chapterNumber: 5 }), false, 'never switched');
+    assert.strictEqual(savedFromOldSource({ source: 's1' }, null), false, 'not saved');
+  });
+
+  test('the switch form asks for the chapter and the other source link', () => {
+    const { SwitchSourceForm } = switchMod;
+    const empty = render(h(SwitchSourceForm, { fromChapter: '', url: '', maxChapter: 2553, loading: false, error: null, onChange() {}, onLoad() {}, onCancel() {} }));
+    assert(tagOf(empty, 'switch-from-chapter') && tagOf(empty, 'switch-source-url'), 'both fields');
+    assert(empty.includes('1–2553'), 'which chapters can be picked');
+    assert(/\sdisabled=""/.test(tagOf(empty, 'switch-load-btn')), 'waits for both');
+    const ready = render(h(SwitchSourceForm, { fromChapter: '2553', url: 'https://sangtacviet.com/truyen/uukanshu/1/46924/', maxChapter: 2553, loading: false, error: 'The new source must be on the same site', onChange() {}, onLoad() {}, onCancel() {} }));
+    assert(!/\sdisabled=""/.test(tagOf(ready, 'switch-load-btn')), 'ready');
+    assert(ready.includes('The new source must be on the same site'), 'shows why it failed');
+  });
+
+  test('picking the start shows the book chapter it follows and which new chapter becomes it', () => {
+    const { PickStartChapter } = switchMod;
+    const chapters = [{ slug: 'n', title: 'Xin phép nghỉ' }, { slug: 'b1', title: 'Thứ 2552 chương Cũ' }, { slug: 'b2', title: 'Thứ 2553 chương Mới' }];
+    const html = render(h(PickStartChapter, { fromChapter: 2553, chapters, selected: 2, previousTitle: 'Chương 2552: Cũ', onSelect() {}, onConfirm() {}, onBack() {} }));
+    assert(html.includes('Chương 2552: Cũ'), 'the book chapter before');
+    const picked = buttonOf(html, 'switch-pick-2');
+    assert(/aria-pressed="true"/.test(picked) && picked.includes('becomes chapter 2553'), 'the pick');
+    assert(/aria-pressed="false"/.test(buttonOf(html, 'switch-pick-1')) && /min-h-10/.test(picked), 'others tappable, not picked');
+    assert(buttonOf(html, 'switch-confirm-btn').includes('Use from chapter 2553'));
+    const none = render(h(PickStartChapter, { fromChapter: 2553, chapters, selected: -1, previousTitle: '', onSelect() {}, onConfirm() {}, onBack() {} }));
+    assert(/\sdisabled=""/.test(tagOf(none, 'switch-confirm-btn')), 'needs a pick');
+  });
+
+  test('the start-chapter list is paged, opens on the page with the guess, and can go to any page', () => {
+    const { PickStartChapter } = switchMod;
+    const chapters = Array.from({ length: 300 }, (_, i) => ({ slug: `c${i}`, title: `Thứ ${i + 1} chương T${i + 1}` }));
+    const html = render(h(PickStartChapter, { fromChapter: 176, chapters, selected: 175, previousTitle: '', onSelect() {}, onConfirm() {}, onBack() {} }));
+    assert(buttonOf(html, 'switch-pick-150') && buttonOf(html, 'switch-pick-175') && buttonOf(html, 'switch-pick-199'), 'the whole page holding the guess');
+    assert(!buttonOf(html, 'switch-pick-149') && !buttonOf(html, 'switch-pick-200'), 'only that page');
+    assert(/id="switch-page-label"[^>]*>Page 4 of 6</.test(html), 'which page');
+    for (const id of ['switch-page-first', 'switch-page-prev', 'switch-page-next', 'switch-page-last']) {
+      assert(/min-h-10/.test(buttonOf(html, id)), `#${id} is a 40px button`);
+    }
+    const first = render(h(PickStartChapter, { fromChapter: 1, chapters, selected: 0, previousTitle: '', onSelect() {}, onConfirm() {}, onBack() {} }));
+    assert(/\sdisabled=""/.test(tagOf(first, 'switch-page-prev')) && !/\sdisabled=""/.test(tagOf(first, 'switch-page-next')), 'no page before the first');
+    const few = render(h(PickStartChapter, { fromChapter: 2, chapters: chapters.slice(0, 10), selected: 1, previousTitle: '', onSelect() {}, onConfirm() {}, onBack() {} }));
+    assert(!/id="switch-page-label"/.test(few), 'no paging for one page');
+  });
+
+  test('the book lists its source switches, each removable', () => {
+    const { SourceSwitchList } = switchMod;
+    const html = render(h(SourceSwitchList, { switches: [{ id: 's1', fromChapter: 2553, slug: 'uukanshu-46924', startTitle: 'Thứ 2553 chương Mới' }], onRemove() {} }));
+    assert(html.includes('2553') && html.includes('uukanshu-46924') && html.includes('Thứ 2553 chương Mới'));
+    assert(/min-h-10/.test(buttonOf(html, 'source-switch-remove-s1')), 'Remove');
+    assert.strictEqual(render(h(SourceSwitchList, { switches: [], onRemove() {} })), '', 'nothing without switches');
+  });
+
+  test('chapter rows mark chapters from the new source, and offer re-downloading one saved from the old source', () => {
+    const novel = { id: 'n1', title: 'N' };
+    const fresh = render(h(SwitchChapterRow, { novel, chapter: { chapterNumber: 2553, title: 'Mới', source: 's1' }, chNum: 2553, onDelete() {} }));
+    assert(fresh.includes('New source'), 'badge');
+    const old = render(h(SwitchChapterRow, { novel, chapter: { chapterNumber: 2553, title: 'Mới', source: 's1' }, chNum: 2553, downloadedChapter: { chapterNumber: 2553 }, onDelete() {} }));
+    assert(old.includes('Old source') && /min-h-10/.test(buttonOf(old, 'chapter-redownload-2553')), 'old source with Re-download');
+    const plainRow = render(h(SwitchChapterRow, { novel, chapter: { chapterNumber: 3, title: 'A' }, chNum: 3, downloadedChapter: { chapterNumber: 3 }, onDelete() {} }));
+    assert(!plainRow.includes('New source') && !plainRow.includes('Old source') && !plainRow.includes('chapter-redownload-'), 'nothing for a normal chapter');
+  });
+
   // --- ReaderChapterRow (reader sidebar owns its own row) ---
   const { ReaderChapterRow } = await loadComponent('components/react/reader/ReaderChapterList.jsx');
   test('ReaderChapterRow shows the full title, no cost and no delete', () => {
