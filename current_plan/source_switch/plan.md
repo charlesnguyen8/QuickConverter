@@ -1,5 +1,7 @@
 # Switch source from a chapter onward
 
+**Status: done.** Phases committed: helpers ed8918b, storage a820cfc, UI ec5e848 (with a paged pick list, 50 per page), docs.
+
 When a book's source breaks from some chapter on (e.g. a sangtacviet host stops at 2552),
 the owner picks another source for that chapter onward and says which chapter of the new
 source counts as that chapter. The chapter list then continues from the new source.

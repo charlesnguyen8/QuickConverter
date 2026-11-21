@@ -86,6 +86,13 @@ library lists your books with their download progress.
     you have unlocked. Paid chapters are images: downloads read them with OCR (offline, a few
     seconds) and save the text, translated like any other chapter.
   - sangtacviet: chapters are saved in their original Chinese, ready for dictionary conversion.
+- **Switch source** (on the book page): when a book's source breaks from some chapter on, take
+  the rest from another copy of the same book on the same site (e.g. another sangtacviet host).
+  Enter the chapter to switch from, paste the other copy's link, and tap which of its chapters
+  becomes that chapter (a best guess is pre-selected; the list is searchable and paged). Earlier
+  chapters stay as they are; later ones are numbered on from there, and **Sync Catalog** keeps
+  adding the new source's chapters. Chapters from it show **New source**; one saved before the
+  switch shows **Old source** with **Re-download**. Remove a switch to go back.
 
 ### Read
 
