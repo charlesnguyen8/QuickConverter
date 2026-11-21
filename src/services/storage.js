@@ -1624,7 +1624,7 @@ const StorageService = {
     return this.syncNovelChapters(novel.id);
   },
 
-  async syncNovelChapters(slugOrId) {
+  async syncNovelChapters(slugOrId, { exactTotal = false } = {}) {
     let novel = await this.getNovelById(slugOrId);
     if (!novel) {
       novel = await this.getNovelBySlug(slugOrId);
@@ -1643,14 +1643,36 @@ const StorageService = {
       }
 
       if (provider && typeof provider.fetchChapterList === 'function') {
-        const fetched = await provider.fetchChapterList(novel.slug, novel.url);
-        if (Array.isArray(fetched) && fetched.length > 0) {
-          const paidSlugs = new Set((novel.chapterList || []).filter((c) => c && c.locked === true && c.slug).map((c) => String(c.slug)));
-          const chapters = fetched.map((c) => (c && c.slug && paidSlugs.has(String(c.slug)) && c.locked !== true ? { ...c, locked: true } : c));
+        const switches = Array.isArray(novel.sourceSwitches) ? novel.sourceSwitches : [];
+        const previous = Array.isArray(novel.chapterList) ? novel.chapterList : [];
+        let fetched = null;
+        try {
+          fetched = await provider.fetchChapterList(novel.slug, novel.url);
+        } catch (e) {
+          if (switches.length === 0 && !exactTotal) throw e;
+        }
+        let main = Array.isArray(fetched) && fetched.length > 0 ? fetched : null;
+        if (!main && (switches.length > 0 || exactTotal)) main = previous.filter((c) => c && !c.source);
+        if (main && main.length > 0) {
+          let merged = main;
+          if (switches.length > 0) {
+            const listsBySwitch = {};
+            for (const sw of switches) {
+              try {
+                const list = await provider.fetchChapterList(sw.slug, sw.url);
+                if (Array.isArray(list) && list.length > 0) listsBySwitch[sw.id] = list;
+              } catch (e) {
+                console.warn(`[QuickConverter] Could not load the chapter list of ${sw.slug}:`, e);
+              }
+            }
+            merged = mergeSourceSwitches(main, switches, listsBySwitch, previous);
+          }
+          const paidSlugs = new Set(previous.filter((c) => c && c.locked === true && c.slug).map((c) => String(c.slug)));
+          const chapters = merged.map((c) => (c && c.slug && paidSlugs.has(String(c.slug)) && c.locked !== true ? { ...c, locked: true } : c));
           const updates = {
             chapterList: await this._convertCatalogTitles(novel, chapters)
           };
-          if (!novel.totalChapters || chapters.length > novel.totalChapters) {
+          if (exactTotal || switches.length > 0 || !novel.totalChapters || chapters.length > novel.totalChapters) {
             updates.totalChapters = chapters.length;
           }
           const updated = await this.updateNovel(novel.id, updates);
@@ -1663,6 +1685,52 @@ const StorageService = {
     return novel;
   },
 
+
+  async previewSourceSwitch(novelId, url, fromChapter) {
+    const novel = await this.getNovelById(novelId);
+    if (!novel) throw new Error('Book not found.');
+    const provider = providerForNovel(novel);
+    const target = typeof ProviderRegistry !== 'undefined' && url ? ProviderRegistry.getProviderForUrl(url) : null;
+    if (!provider || !target || target.id !== provider.id) {
+      throw new Error(`The new source must be on the same site as the book (${provider ? provider.shortName || provider.name || provider.id : 'unknown site'}).`);
+    }
+    const parsed = typeof target.parseUrl === 'function' ? target.parseUrl(url) : null;
+    if (!parsed || !parsed.slug) throw new Error('This link is not a book page.');
+    if (parsed.slug === novel.slug) throw new Error("That link is already the book's own source.");
+    const from = Number(fromChapter);
+    const last = (novel.chapterList || []).reduce((max, c) => Math.max(max, Number(c && c.chapterNumber) || 0), 0);
+    if (!Number.isInteger(from) || from < 1 || from > last + 1) {
+      throw new Error(`The book has no chapter ${fromChapter}. Pick a chapter from 1 to ${last + 1}.`);
+    }
+    const seriesUrl = parsed.seriesUrl || url;
+    const chapters = await target.fetchChapterList(parsed.slug, seriesUrl);
+    if (!Array.isArray(chapters) || chapters.length === 0) {
+      throw new Error('Could not load the chapter list of that source. Open it on the site once, then try again.');
+    }
+    return { slug: parsed.slug, url: seriesUrl, chapters, guess: guessSwitchStart(chapters, from) };
+  },
+
+  async addSourceSwitch(novelId, { fromChapter, url, slug, startSlug, startTitle } = {}) {
+    const novel = await this.getNovelById(novelId);
+    const from = Number(fromChapter);
+    if (!novel || !Number.isInteger(from) || from < 1 || !slug || !startSlug) return null;
+    const sw = { id: newEntryId('switch'), fromChapter: from, url: url || '', slug, startSlug: String(startSlug), startTitle: startTitle || '', createdAt: Date.now() };
+    const switches = (novel.sourceSwitches || [])
+      .filter((s) => Number(s.fromChapter) !== from)
+      .concat(sw)
+      .sort((a, b) => Number(a.fromChapter) - Number(b.fromChapter));
+    await this.updateNovel(novel.id, { sourceSwitches: switches });
+    await this.syncNovelChapters(novel.id, { exactTotal: true });
+    return sw;
+  },
+
+  async removeSourceSwitch(novelId, switchId) {
+    const novel = await this.getNovelById(novelId);
+    if (!novel || !switchId) return null;
+    const switches = (novel.sourceSwitches || []).filter((s) => s.id !== switchId);
+    await this.updateNovel(novel.id, { sourceSwitches: switches });
+    return this.syncNovelChapters(novel.id, { exactTotal: true });
+  },
 
   async _binnedNovelMatching(slugOrTitle) {
     if (!slugOrTitle) return null;
@@ -2173,7 +2241,7 @@ const StorageService = {
         throw new Error(`Chapter ${chapterNumber} is not in the book's chapter list. Sync Catalog, then try again.`);
       }
       return pages.fetch(pageItem.url, {
-        expect: { slug: novel.slug, chapterSlug: pageItem.slug },
+        expect: { slug: pageItem.sourceSlug || novel.slug, chapterSlug: pageItem.slug },
         onNeedsUser: options.onNeedsUser,
         signal: options.signal
       });
@@ -2183,7 +2251,7 @@ const StorageService = {
     }
     const catalogItem = catalogItemOf(novel, chapterNumber);
     const chapterSlugOrNumber = catalogItem && catalogItem.slug ? catalogItem.slug : chapterNumber;
-    const content = await provider.fetchChapterContent(novel.slug, chapterSlugOrNumber, { signal: options.signal });
+    const content = await provider.fetchChapterContent((catalogItem && catalogItem.sourceSlug) || novel.slug, chapterSlugOrNumber, { signal: options.signal });
     if (!content || !content.rawText) {
       throw new Error(`Failed to extract chapter content for Chapter ${chapterNumber}`);
     }
@@ -2272,9 +2340,10 @@ const StorageService = {
 
     if (origin !== 'page') report({ phase: 'saving', percent: 99, text: 'Saving chapter...' });
 
+    const sourceMark = catalogItem && catalogItem.source ? { source: catalogItem.source } : {};
     let record;
     if (origin === 'page' && !translated) {
-      record = { novelId: novel.id, chapterNumber, title, url, rawText: rawText || '' };
+      record = { novelId: novel.id, chapterNumber, title, url, rawText: rawText || '', ...sourceMark };
     } else {
       record = {
         novelId: novel.id,
@@ -2289,7 +2358,8 @@ const StorageService = {
         modelUsed: translated ? translated.modelUsed : null,
         translatedAt: translated ? Date.now() : null,
         translationCost: translated ? translated.costInfo : null,
-        translationUsage: translated ? translated.usage : null
+        translationUsage: translated ? translated.usage : null,
+        ...sourceMark
       };
     }
     const saved = await this.saveChapter(record);

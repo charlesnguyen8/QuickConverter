@@ -269,6 +269,19 @@ process.on('beforeExit', () => {
     } };
   }
 
+  await test('a chapter from a switched source opens that source page, expects that book, and is saved with its source', async () => {
+    const env = makeEnv({ provider: pageProvider() });
+    await seedPageBook(env);
+    env.stores.novels.n1.chapterList.push({ chapterNumber: 2, slug: '900002', title: '第二章', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/900002', source: 's1', sourceSlug: '900000' });
+    const page = withPageSource(env, { kind: 'text', title: 'Page title', rawText: '原文二。', url: 'https://www.nkwwlkj.cn/chapter/book_chapter_detail/900002' });
+    page.install(env.global);
+    await env.S.downloadChapter('n1', 2, {});
+    assert.deepStrictEqual(page.calls[0].slice(0, 2), ['https://www.nkwwlkj.cn/chapter/book_chapter_detail/900002', { expect: { slug: '900000', chapterSlug: '900002' } }], 'the new source page and book');
+    assert.strictEqual(env.stores.chapters.n1_ch2.source, 's1', 'remembers which source it came from');
+    await env.S.downloadChapter('n1', 1, {});
+    assert.strictEqual(env.stores.chapters.n1_ch1.source, undefined, 'a chapter from the book\'s own source has no source mark');
+  });
+
   await test('a page site downloads through the page source and saves like any download', async () => {
     const env = makeEnv({ provider: pageProvider() });
     await seedPageBook(env);

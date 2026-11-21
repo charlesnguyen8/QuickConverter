@@ -778,6 +778,90 @@ process.on('beforeExit', () => {
     assert.deepStrictEqual(renamed.map((c) => `${c.chapterNumber}:${c.slug}`), ['1:a1', '2:a2', '3:b3', '4:b4'], 'start gone');
   });
 
+  function switchEnv() {
+    const lists = {
+      'qidian-1': sourceList(['a1', 'a2', 'a3', 'a4']).map((c) => ({ ...c, url: `https://sangtacviet.com/truyen/qidian/1/1/${c.slug}/` })),
+      'uukanshu-2': [{ chapterNumber: 1, slug: 'note', title: 'Xin phép nghỉ', url: 'https://sangtacviet.com/truyen/uukanshu/1/2/note/' }]
+        .concat(sourceList(['b1', 'b2', 'b3', 'b4', 'b5']).map((c, i) => ({ ...c, chapterNumber: i + 2, url: `https://sangtacviet.com/truyen/uukanshu/1/2/${c.slug}/` })))
+    };
+    const fails = new Set();
+    const provider = {
+      id: 'sangtacviet',
+      fetchMode: 'page',
+      parseUrl: (url) => {
+        const m = String(url).match(/truyen\/([a-z0-9]+)\/\d+\/(\d+)/);
+        return m ? { type: 'series', slug: `${m[1]}-${m[2]}`, seriesUrl: `https://sangtacviet.com/truyen/${m[1]}/1/${m[2]}/` } : null;
+      },
+      fetchChapterList: async (slug) => {
+        if (fails.has(slug)) throw new Error('offline');
+        return (lists[slug] || []).map((c) => ({ ...c }));
+      }
+    };
+    const other = { id: 'wetriedtls', parseUrl: () => ({ type: 'series', slug: 'x', seriesUrl: 'https://wetriedtls.com/series/x' }), fetchChapterList: async () => [] };
+    const registry = {
+      getProviderForUrl: (url) => (/sangtacviet/.test(url) ? provider : (/wetriedtls/.test(url) ? other : null)),
+      getProviderForDomain: () => provider
+    };
+    return { ...makeEnv({ ProviderRegistry: registry }), lists, fails };
+  }
+
+  async function switchBook(S) {
+    await S.addNovel({ id: 'n1', title: 'Hokage', slug: 'qidian-1', url: 'https://sangtacviet.com/truyen/qidian/1/1/', domain: 'sangtacviet.com' });
+    await S.syncNovelChapters('n1');
+  }
+
+  await test('previewing a switch loads the new source list and guesses which chapter continues the book', async () => {
+    const { S } = switchEnv();
+    await switchBook(S);
+    const preview = await S.previewSourceSwitch('n1', 'https://sangtacviet.com/truyen/uukanshu/1/2/', 3);
+    assert.strictEqual(preview.slug, 'uukanshu-2');
+    assert.strictEqual(preview.url, 'https://sangtacviet.com/truyen/uukanshu/1/2/');
+    assert.strictEqual(preview.chapters.length, 6, 'the whole list, notices included');
+    assert.strictEqual(preview.chapters[preview.guess].slug, 'b3', 'the chapter whose title says 3');
+    await assert.rejects(() => S.previewSourceSwitch('n1', 'https://wetriedtls.com/series/x', 3), /same site/i);
+    await assert.rejects(() => S.previewSourceSwitch('n1', 'https://sangtacviet.com/truyen/qidian/1/1/', 3), /already the book/i);
+    await assert.rejects(() => S.previewSourceSwitch('n1', 'https://sangtacviet.com/truyen/uukanshu/1/2/', 9), /chapter 9/i, 'only a chapter the book has, or the one after its last');
+  });
+
+  await test('switching from a chapter continues the list from the picked chapter, Sync Catalog keeps it going, and removing the switch goes back', async () => {
+    const { S, lists, fails } = switchEnv();
+    await switchBook(S);
+    const sw = await S.addSourceSwitch('n1', { fromChapter: 3, url: 'https://sangtacviet.com/truyen/uukanshu/1/2/', slug: 'uukanshu-2', startSlug: 'b3', startTitle: 'Chương 3: b3' });
+    assert(sw && sw.id, 'the switch is saved');
+    let book = await S.getNovelById('n1');
+    const shape = (list) => plain(list.map((c) => `${c.chapterNumber}:${c.slug}${c.source ? '@' + c.sourceSlug : ''}`));
+    assert.deepStrictEqual(shape(book.chapterList), ['1:a1', '2:a2', '3:b3@uukanshu-2', '4:b4@uukanshu-2', '5:b5@uukanshu-2']);
+    assert.strictEqual(book.totalChapters, 5);
+    assert.deepStrictEqual(plain(book.sourceSwitches.map((s) => [s.fromChapter, s.slug, s.startSlug])), [[3, 'uukanshu-2', 'b3']]);
+
+    lists['uukanshu-2'].push({ chapterNumber: 7, slug: 'b6', title: 'Chương 6: b6', url: 'https://sangtacviet.com/truyen/uukanshu/1/2/b6/' });
+    await S.syncNovelChapters('n1');
+    book = await S.getNovelById('n1');
+    assert.deepStrictEqual(shape(book.chapterList).slice(-2), ['5:b5@uukanshu-2', '6:b6@uukanshu-2'], 'new chapters on the new source appear');
+
+    fails.add('uukanshu-2');
+    await S.syncNovelChapters('n1');
+    assert.strictEqual((await S.getNovelById('n1')).chapterList.length, 6, 'a failed fetch of the new source keeps its chapters');
+    fails.delete('uukanshu-2');
+
+    await S.removeSourceSwitch('n1', sw.id);
+    book = await S.getNovelById('n1');
+    assert.deepStrictEqual(shape(book.chapterList), ['1:a1', '2:a2', '3:a3', '4:a4'], 'back to the book\'s own source');
+    assert.deepStrictEqual(plain(book.sourceSwitches), []);
+  });
+
+  await test('a switch at the same chapter replaces the earlier one, and switches travel with the book in sync and backups', async () => {
+    const { S } = switchEnv();
+    await switchBook(S);
+    await S.addSourceSwitch('n1', { fromChapter: 3, url: 'https://sangtacviet.com/truyen/uukanshu/1/2/', slug: 'uukanshu-2', startSlug: 'b3' });
+    await S.addSourceSwitch('n1', { fromChapter: 3, url: 'https://sangtacviet.com/truyen/uukanshu/1/2/', slug: 'uukanshu-2', startSlug: 'b4' });
+    const book = await S.getNovelById('n1');
+    assert.strictEqual(book.sourceSwitches.length, 1, 'one switch per chapter');
+    assert.strictEqual(book.chapterList[2].slug, 'b4', 'the newer pick');
+    const exported = (await S.exportAll()).novels.find((n) => n.id === 'n1');
+    assert.strictEqual(exported.sourceSwitches[0].startSlug, 'b4', 'carried by sync and backups');
+  });
+
   // --- Common lists ---
 
   const entriesOf = (list) => plain(list.entries.map((e) => [e.original, e.translation, e.kind]).sort());
