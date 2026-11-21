@@ -713,6 +713,71 @@ process.on('beforeExit', () => {
     assert.strictEqual((await S.getNovelById('mine')).title, 'Tu chân 4 vạn năm', 'unless the site title is preferred, as when a book is just added');
   });
 
+  // --- Switching source from a chapter onward ---
+
+  await test('chapter numbers are read from the title formats the sources use', () => {
+    const { S } = makeEnv();
+    const cases = [
+      ['Thứ 2553 chương Trở lại', 2553],
+      ['Chương 2553: Trở lại', 2553],
+      ['Thứ 2,011 chương Ai?', 2011],
+      ['第2553章 回归', 2553],
+      ['Chapter 12 - Return', 12],
+      ['chương 7', 7],
+      ['Xin phép nghỉ 1 thiên', null],
+      ['Kết thúc cảm nghĩ cùng báo trước', null]
+    ];
+    for (const [title, n] of cases) assert.strictEqual(S.chapterNumberOfTitle(title), n, title);
+  });
+
+  const sourceList = (slugs, from = 1) => slugs.map((slug, i) => ({ chapterNumber: i + 1, slug, title: `Chương ${from + i}: ${slug}`, url: `https://x/${slug}/` }));
+
+  await test('the start of a new source is guessed from the chapter number in its titles, else its position', () => {
+    const { S } = makeEnv();
+    const list = [{ title: 'Lên khung thông tri!' }, { title: 'Chương 1: A' }, { title: 'Chương 2: B' }, { title: 'Chương 3: C' }];
+    assert.strictEqual(S.guessSwitchStart(list, 2), 2, 'the chapter titled 2, past a notice');
+    const untitled = [{ title: 'A' }, { title: 'B' }, { title: 'C' }];
+    assert.strictEqual(S.guessSwitchStart(untitled, 2), 1, 'by position when titles have no numbers');
+    assert.strictEqual(S.guessSwitchStart(untitled, 99), 2, 'clamped to the list');
+    assert.strictEqual(S.guessSwitchStart([], 5), -1, 'nothing to pick');
+  });
+
+  await test('a switch keeps the chapters before it and continues from the picked chapter of the new source, renumbered', () => {
+    const { S } = makeEnv();
+    const main = sourceList(['a1', 'a2', 'a3', 'a4', 'a5']);
+    const b = sourceList(['notice', 'b2', 'b3', 'b4', 'b5', 'b6']);
+    const sw = { id: 's1', fromChapter: 4, slug: 'uukanshu-1', startSlug: 'b4' };
+    const merged = plain(S.mergeSourceSwitches(main, [sw], { s1: b }));
+    assert.deepStrictEqual(merged.map((c) => [c.chapterNumber, c.slug, c.source || null, c.sourceSlug || null]), [
+      [1, 'a1', null, null], [2, 'a2', null, null], [3, 'a3', null, null],
+      [4, 'b4', 's1', 'uukanshu-1'], [5, 'b5', 's1', 'uukanshu-1'], [6, 'b6', 's1', 'uukanshu-1']
+    ]);
+    assert.strictEqual(merged[3].url, 'https://x/b4/', 'the new source page');
+    assert.strictEqual(merged[3].title, 'Chương 4: b4', 'its own title');
+  });
+
+  await test('several switches apply in chapter order, each from its own start', () => {
+    const { S } = makeEnv();
+    const main = sourceList(['a1', 'a2', 'a3', 'a4', 'a5', 'a6']);
+    const b = sourceList(['b1', 'b2', 'b3', 'b4', 'b5', 'b6']);
+    const c = sourceList(['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7']);
+    const later = { id: 's2', fromChapter: 5, slug: 'host-c', startSlug: 'c6' };
+    const earlier = { id: 's1', fromChapter: 3, slug: 'host-b', startSlug: 'b3' };
+    const merged = plain(S.mergeSourceSwitches(main, [later, earlier], { s1: b, s2: c }));
+    assert.deepStrictEqual(merged.map((c2) => `${c2.chapterNumber}:${c2.slug}`), ['1:a1', '2:a2', '3:b3', '4:b4', '5:c6', '6:c7']);
+  });
+
+  await test('when a switch source cannot be loaded or its start chapter is gone, the chapters it gave last time stay', () => {
+    const { S } = makeEnv();
+    const main = sourceList(['a1', 'a2', 'a3']);
+    const sw = { id: 's1', fromChapter: 3, slug: 'host-b', startSlug: 'b3' };
+    const previous = plain(S.mergeSourceSwitches(main, [sw], { s1: sourceList(['b1', 'b2', 'b3', 'b4']) }));
+    const offline = plain(S.mergeSourceSwitches(main, [sw], {}, previous));
+    assert.deepStrictEqual(offline.map((c) => `${c.chapterNumber}:${c.slug}`), ['1:a1', '2:a2', '3:b3', '4:b4'], 'not loaded');
+    const renamed = plain(S.mergeSourceSwitches(main, [sw], { s1: sourceList(['x1', 'x2']) }, previous));
+    assert.deepStrictEqual(renamed.map((c) => `${c.chapterNumber}:${c.slug}`), ['1:a1', '2:a2', '3:b3', '4:b4'], 'start gone');
+  });
+
   // --- Common lists ---
 
   const entriesOf = (list) => plain(list.entries.map((e) => [e.original, e.translation, e.kind]).sort());

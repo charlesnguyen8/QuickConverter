@@ -471,6 +471,42 @@ function stampNameList(previous, nameList, now) {
   });
 }
 
+function chapterNumberOfTitle(title) {
+  const text = String(title || '').trim();
+  const match = text.match(/^(?:thứ\s*([\d,.]+)\s*chương|chương\s*([\d,.]+)|chapter\s*([\d,.]+)|第\s*([\d,]+)\s*章)/i);
+  if (!match) return null;
+  const digits = (match[1] || match[2] || match[3] || match[4]).replace(/[,.]/g, '');
+  const n = Number(digits);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function guessSwitchStart(chapters, fromChapter) {
+  const list = Array.isArray(chapters) ? chapters : [];
+  if (list.length === 0) return -1;
+  const byNumber = list.findIndex((c) => chapterNumberOfTitle(c && c.title) === Number(fromChapter));
+  if (byNumber !== -1) return byNumber;
+  return Math.min(Math.max(Number(fromChapter) - 1, 0), list.length - 1);
+}
+
+function mergeSourceSwitches(mainList, switches, listsBySwitch, previous = []) {
+  const ordered = [...(switches || [])].filter((s) => s && s.id).sort((a, b) => Number(a.fromChapter) - Number(b.fromChapter));
+  let merged = [...(mainList || [])];
+  ordered.forEach((sw) => {
+    const from = Number(sw.fromChapter);
+    const list = (listsBySwitch || {})[sw.id];
+    const start = Array.isArray(list) ? list.findIndex((c) => c && String(c.slug) === String(sw.startSlug)) : -1;
+    const head = merged.filter((c) => c && Number(c.chapterNumber) < from);
+    let tail;
+    if (start === -1) {
+      tail = (previous || []).filter((c) => c && c.source === sw.id && Number(c.chapterNumber) >= from);
+    } else {
+      tail = list.slice(start).map((c, i) => ({ ...c, chapterNumber: from + i, source: sw.id, sourceSlug: sw.slug }));
+    }
+    merged = head.concat(tail);
+  });
+  return merged;
+}
+
 function isPlaceholderTitle(novel, provider) {
   const title = String((novel && novel.title) || '').trim();
   if (!title || title.toLowerCase().includes('unknown')) return true;
@@ -1328,6 +1364,12 @@ const StorageService = {
     });
     return result;
   },
+
+  chapterNumberOfTitle,
+
+  guessSwitchStart,
+
+  mergeSourceSwitches,
 
   parseNameListBlock,
 
